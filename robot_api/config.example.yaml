@@ -1,0 +1,75 @@
+# Public template: copy to the corresponding local filename; never commit live settings.
+active_backend: desk
+robot: xlerobot
+backends:
+  mujoco:
+    enabled: 1
+    provide_state: 1
+    accept_action: 1
+    required: 1
+    url: http://127.0.0.1:5001
+    timeout: 120
+    launch_hint: serve/main.py
+  mujoco_3dgs:
+    enabled: 1
+    provide_state: 1
+    accept_action: 1
+    required: 1
+    url: http://127.0.0.1:5002
+    timeout: 120
+    launch_hint: serve_3dgs/main.py
+  desk:
+    enabled: 1
+    provide_state: 1
+    accept_action: 1
+    required: 1
+    url: http://127.0.0.1:5008
+    timeout: 30
+    launch_hint: serve_desk/main.py
+  dream:
+    enabled: 0
+    provide_state: 1
+    accept_action: 0
+    required: 1
+    url: http://127.0.0.1:5006
+    timeout: 200
+    launch_hint: serve_dream/main.py
+  isaacsim:
+    enabled: 0
+    provide_state: 0
+    accept_action: 0
+    required: 0
+    url: http://127.0.0.1:5101
+    timeout: 120
+  gazebo:
+    enabled: 0
+    provide_state: 0
+    accept_action: 0
+    required: 0
+    url: http://127.0.0.1:5201
+    timeout: 120
+  real:
+    enabled: 0
+    provide_state: 0
+    accept_action: 0
+    required: 0
+navigation:
+  enabled: 0
+  backend: nav2
+  url: http://127.0.0.1:5102
+  timeout: 120
+policy_services:
+  act:
+    enabled: 0
+    url: http://127.0.0.1:5003
+    max_steps: 1000
+  pi05:
+    enabled: 0
+    url: http://127.0.0.1:5005
+    task: pick up the object and place it
+  diffusion_policy:
+    enabled: 0
+    url: http://127.0.0.1:5004
+  pi0:
+    enabled: 0
+    url: http://127.0.0.1:5005

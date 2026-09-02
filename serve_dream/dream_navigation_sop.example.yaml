@@ -1,0 +1,72 @@
+# Public template: copy to the corresponding local filename; never commit live settings.
+schema_version: fqplanner/dream-navigation-sop/v1
+contract_version: dream/g1-agent-*/v1
+frame_id: map
+yaw_unit: radians
+reviewed_targets:
+  table_2:
+    aliases:
+    - table2
+    - table_2
+    - 桌子2
+    - 二号桌
+    - 2号桌
+    goal_xyt:
+    - 1.0
+    - 2.0
+    - 0.0
+    motion_mode: forward_path
+    require_final_orientation: true
+    purpose: table2 附近的人工审核观察点
+  table_1:
+    aliases:
+    - table1
+    - table_1
+    - 桌子1
+    - 一号桌
+    - 1号桌
+    goal_xyt:
+    - 4.0
+    - 4.0
+    - 0.0
+    motion_mode: forward_path
+    require_final_orientation: true
+    purpose: table1 附近的人工审核观察点
+door_transit:
+  target_id: door_1
+  aliases:
+  - door1
+  - door_1
+  - 窄门
+  - 过门
+  - 穿门
+  legs:
+  - name: door_approach
+    leg_index: 2
+    goal_xyt:
+    - 3.0
+    - 2.0
+    - 1.5707963267948966
+    motion_mode: forward_path
+    require_final_orientation: true
+  - name: door_lateral_exit
+    leg_index: 3
+    goal_xyt:
+    - 3.0
+    - 3.0
+    - 1.5707963267948966
+    motion_mode: lateral_path_aligned
+    require_final_orientation: true
+execution_rules:
+- 所有点位固定使用 map 坐标系，goal_xyt 的 yaw 必须是弧度。
+- POST 返回 202/accepted 只表示接收；必须轮询到 state=succeeded 且 result.success=true 才算到达。
+- 过门必须拆成门外接近和横移出门两条命令，等待前一段 succeeded 后才能发送后一段。
+- 两段门任务必须使用同一个 task_id，leg_index 递增。
+- lateral_path_aligned 只允许 target_id=door_1 的审核门出口段，不得用于任意目标。
+- 不得把门外点、门出口点和 table1 合成一条普通折线路径。
+- 横移成功后，前往 table1 必须另发 forward_path 命令并等待终态。
+- failed/cancelled/超时不能伪造成到达；取消会锁定导航并撤销定位批准，继续前需现场重新审核。
+source:
+  type: synthetic_public_example
+  caveat: Replace all coordinates after site calibration and operator review; this
+    is not a deployable real map.

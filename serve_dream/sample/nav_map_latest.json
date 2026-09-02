@@ -1,0 +1,5 @@
+{
+  "robot_xyt": [1.0, 1.0, 0.0],
+  "obs_id": 1,
+  "note": "Synthetic offline fixture; not a live robot pose."
+}

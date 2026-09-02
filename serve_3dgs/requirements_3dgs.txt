@@ -1,0 +1,14 @@
+# serve_3dgs: MotrixSim physics + 3DGS rendering
+# Python 3.10+ environment with CUDA-capable PyTorch is expected.
+motrixsim>=0.7.1
+torch>=2.7.0
+gaussian_renderer>=0.2.0
+gsplat>=1.5.3
+scipy>=1.14
+numpy>=2.0
+flask>=3.0
+flask-cors>=6.0
+rich>=14.0
+pyyaml>=6.0
+trimesh>=4.0
+pyrender>=0.1.45

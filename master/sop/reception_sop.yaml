@@ -1,0 +1,90 @@
+# 「G1 会议接待」Demo SOP + 任务状态定义 —— 大脑组前期准备产出
+# 对齐飞书 wiki(SfUtwiOf8iKpOOk20OhchqXYnoh)的 SOP 样例 6 节 + 任务状态定义。
+# 机器人 = 宇树 G1 人形(无底盘,腿式行走);导航归世界模型组,大脑只给【语义地名】不给坐标。
+# VLA 还在训 → pick / walk / place 拆成独立技能调用,大脑在每步之间插状态确认(critic 闭环)。
+
+# ============ 一、接待 SOP(对齐 wiki 样例 6 节)============
+
+# 1. 任务输入
+task_input:
+  meeting_room: 会议室名(区域名,给导航语义,不给坐标)
+  start_time: 会议开始时间
+  headcount: 参会人数(饮料需求的唯一输入)
+  standard_image: 标准桌面图片(物品目标位置/朝向/间距;待拍,可复用桌面 photos/standard + 关系版 vlm_judge)
+  tea_room: {存放位置: 茶水间, 可取种类: [可乐], 库存: 实时扫描}
+
+# 2. 会议室目标状态
+target_state:
+  - 会议室灯已打开
+  - 每位参会人至少对应一份饮料(可乐)
+  - 可乐按标准间隔摆放,标签朝向一致
+  - 办公椅位置变化不影响机器人安全退出和人员入座
+
+# 3. 饮料补货规则
+beverage_restock:
+  item: 可乐
+  per_person: 1                       # 需求 need = headcount × per_person(大脑读此字段)
+  source: 茶水间
+  rule: 先统计会议室现有 → 少于参会人数则算缺口 → 前往茶水间取对应数量 → 补货后再次计数,避免少拿或重复取物
+  steps:                              # pick-walk-place 拆步,【一个一个】补,每步 verify(大脑杠杆着力点)
+    - {step: walk, to: 茶水间, verify: 走到没}
+    - {step: pick, target: 可乐, verify: 抓到没(手上有没有=empty-grasp 检测)}
+    - {step: walk, to: 会议室, verify: 走到没}
+    - {step: place, target: 可乐, verify: 放上没(先到位·完整版再查间隔朝向)}
+    - {step: recount, verify: 数量够没(重新数并更新缺口)}
+
+# 4. 摆放与整理规则
+placement:
+  rules:
+    - 优先按标准图片确定物品类别、目标区域、朝向与间距
+    - 放置前确认目标位置无个人物品或其他障碍;无法安全放置时停止并上报
+    - 每次抓取、搬运、放置后都确认动作是否成功;失败按策略重试,超过上限请求人工协助
+    - 可乐间隔摆放、标签朝向一致(完整 demo);单次补货最简版先只确认放上桌
+  items:                             # 完整 demo 的整理项(当前先做可乐补货,整理暂搁置,结构预留)
+    - {category: 可乐, count: 按人数, rule: 间隔摆放且标签朝向一致}
+    - {category: 笔筒, rule: 标准位置, status: 完整demo接入}
+    - {category: 纸巾盒, rule: 标准位置, status: 完整demo接入}
+    - {category: 盆栽, rule: 标准位置, status: 完整demo接入}
+
+# 5. 安全与异常处理
+safety_exception:
+  - 检测到人员或办公椅进入路径时减速、绕行或停止,不强行通过
+  - 饮料库存不足 → 播报异常并记录(已补 N 罐,还缺 M)
+  - 目标物不可抓取(抓取失败超上限)→ 停下上报,请求人工
+  - 灯控失败 / 地图不一致 → 播报异常并记录失败原因
+
+# 6. 完成确认与经验沉淀
+completion:
+  - 复扫会议室,将当前状态与标准图片、参会人数、摆放规则对比
+  - 全部条件满足 → 播报任务完成;发现缺项 → 执行补救
+  - 任务结束总结有效策略与失败案例,生成新版 SOP(见 learned_rules;由 reflect.py 自动产出)
+
+# ============ 二、任务状态定义(状态字段 + 成功/失败条件)============
+
+task_state:
+  inputs:    [meeting_room, start_time, headcount, per_person]      # ① 触发(飞书/语音/硬编码)
+  observed:  [lights_on, meeting_cola, tea_stock, chairs_blocking]  # ② 扫描观测
+  computed:                                                         # ③ 计算
+    need: headcount × per_person
+    gap: max(need − meeting_cola, 0)
+  progress:  [placed, rounds, aborted]                              # ④ 执行进度(已补数/每步verify记录/是否中止)
+  success_conditions:                                               # ⑤ 完成(全满足 = verdict✓)
+    - satisfied:  meeting_cola ≥ need           # 每位参会人 ≥ 1 饮料
+    - light_ok:   lights_on                     # 灯已开
+    - layout_ok:  已摆放可乐间隔/朝向全部合格    # 单次补货/最简版不纳入
+    - not_aborted: 未中途停下上报
+  failure_conditions:                                               # 任一触发 → 停下上报
+    - 茶水间库存不足(补不齐缺口)
+    - 抓取失败超重试上限
+    - 路径受阻(办公椅)超重试上限
+    - 灯控失败 / 地图不一致
+
+# ============ 学到的经验规则(reflect.py 事后反思自动追加;含 wiki 举例种子)============
+learned_rules:
+  - 补货前先统计现有数量再算缺口,避免少拿或重复取物
+  - 一个一个补,每罐补完重新数,数够即停(不预设次数)
+  - 执行模块报告成功时,大脑需主动重新观测确认(pick/walk/place 都不采信自报)
+  - 办公椅阻挡时优先从桌子另一侧接近
+  - 可乐放置后再次检查数量与间距
+  - 抓不到/过不去先重试,超上限就停下上报,不硬闯
+  - 导航只给语义地名(会议室/茶水间),坐标与避障由世界模型组解决

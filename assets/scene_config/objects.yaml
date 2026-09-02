@@ -1,0 +1,117 @@
+# 物体配置文件
+# 编辑此文件即可增删场景中的可操作物体，无需修改 Python 代码
+#
+# 参数说明:
+#   name:        物体名称（唯一标识）
+#   obj_groups:  物体类别或分组名（如 pot、fruit、cookware），查可用类别: python scene/utils/get_available_object.py
+#   graspable:   是否可被抓取
+#   placement.fixture:        放在哪个家具上（引用 fixture_refs 中的 name）
+#   placement.size:           放置区域大小 [宽, 深]
+#   placement.pos:            [横向, 纵向]  null=随机, 1.0=靠前, -1.0=靠后
+#   placement.sample_region_kwargs.ref: 参照哪个家具放置（引用 fixture_refs 中的 name）
+  # - name: pot
+  #   obj_groups: pot
+  #   graspable: true
+  #   placement:
+  #     fixture: counter
+  #     sample_region_kwargs:
+  #       ref: stove
+  #     size: [0.50, 0.30]
+  #     pos: ["ref", -1.0]
+
+  # - name: canned_food
+  #   obj_groups: canned_food
+  #   graspable: true
+  #   placement:
+  #     fixture: counter
+  #     sample_region_kwargs:
+  #       ref: stove
+  #     size: [0.20, 0.20]
+  #     pos: ["ref", 1.0]
+
+# 家具引用注册
+# id 使用 FixtureType 枚举名: COUNTER, ISLAND, STOVE, SINK, CABINET, FRIDGE, MICROWAVE 等
+fixture_refs:
+  - name: counter
+    id: COUNTER
+
+  - name: stove
+    id: STOVE
+
+  - name: island
+    id: ISLAND
+
+  - name: sink
+    id: SINK
+
+  - name: cab
+    id: CABINET
+
+# 物体配置列表
+objects:
+  # 在炉灶旁边的台面上放一个锅
+  - name: pot
+    obj_groups: pot
+    graspable: true
+    placement:
+      fixture: counter
+      sample_region_kwargs:
+        ref: stove
+      size: [0.50, 0.30]
+      pos: ["ref", -1.0]
+
+  # 在台面随机区域放一个杯子
+  - name: cup
+    obj_groups: glass_cup
+    graspable: true
+    placement:
+      fixture: counter
+      size: [0.40, 1.30]
+
+  # 在台面随机区域放一个碗
+  - name: bowl
+    obj_groups: bowl
+    graspable: true
+    placement:
+      fixture: counter
+      size: [0.30, 1.30]
+
+  # 在台面随机区域放一个苹果
+  - name: apple
+    obj_groups: apple
+    graspable: true
+    placement:
+      fixture: counter
+      size: [0.30, 1.30]
+
+  # 在台面上放一个马克杯
+  - name: mug
+    obj_groups: mug
+    graspable: true
+    placement:
+      fixture: counter
+      size: [0.30, 0.30]
+
+  # 在岛台上放一块海绵
+  - name: sponge
+    obj_groups: sponge
+    graspable: true
+    placement:
+      fixture: island
+      size: [0.20, 0.20]
+
+  # # 在台面上放一个罐头
+  # - name: canned_food
+  #   obj_groups: canned_food
+  #   graspable: true
+  #   placement:
+  #     fixture: counter
+  #     size: [0.20, 0.20]
+
+  # # 在台面上放一瓶水
+  # - name: bottled_water
+  #   obj_groups: bottled_water
+  #   graspable: true
+  #   placement:
+  #     fixture: counter
+  #     size: [0.20, 0.20]

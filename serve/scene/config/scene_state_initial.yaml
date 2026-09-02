@@ -1,0 +1,42 @@
+last_updated: 初始状态
+locations:
+  nav_000:
+    fixture: counter
+    objects:
+    - plate
+    - ketchup
+  nav_001:
+    fixture: island
+    objects:
+    - sponge
+  nav_008:
+    fixture: counter
+    objects:
+    - bowl
+  nav_011:
+    fixture: counter
+    objects:
+    - bread
+  nav_014:
+    fixture: counter
+    objects:
+    - cheese
+  nav_017:
+    fixture: counter
+    objects:
+    - cup
+  nav_020:
+    fixture: counter
+    objects:
+    - pot
+  nav_022:
+    fixture: counter
+    objects:
+    - apple
+  nav_066:
+    fixture: counter
+    objects:
+    - mug
+  robot_hand:
+    fixture: null
+    objects: []

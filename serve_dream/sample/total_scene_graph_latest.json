@@ -1,0 +1,12 @@
+{
+  "graph_id": "synthetic-public-fixture",
+  "root_id": "floor_0",
+  "nodes": {
+    "floor_0": {"node_id":"floor_0", "class_name":"floor", "parent_id":null, "children":["table_1","fridge_1"]},
+    "table_1": {"node_id":"table_1", "object_id":"table_1", "class_name":"table", "parent_id":"floor_0", "center":[0.5,1.0,0.8], "bbox_min":[0.0,0.5,0.0], "bbox_max":[1.0,1.5,0.8]},
+    "fridge_1": {"node_id":"fridge_1", "object_id":"fridge_1", "class_name":"fridge", "parent_id":"floor_0", "center":[4.0,0.5,1.0], "bbox_min":[3.5,0.0,0.0], "bbox_max":[4.5,1.0,2.0]},
+    "cola_can_1": {"node_id":"cola_can_1", "object_id":"cola_can_1", "class_name":"cola_can", "parent_id":"table_1", "center":[0.6,1.0,0.9]},
+    "bottled_water_1": {"node_id":"bottled_water_1", "object_id":"bottled_water_1", "class_name":"bottled_water", "parent_id":"table_1", "center":[0.7,1.0,0.9]},
+    "mobile_phone_1": {"node_id":"mobile_phone_1", "object_id":"mobile_phone_1", "class_name":"mobile_phone", "parent_id":"table_1", "center":[0.8,1.0,0.81]}
+  }
+}

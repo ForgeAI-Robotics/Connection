@@ -1,0 +1,93 @@
+# RoboCasa 场景配置
+# 固定家具（fixture）和可操作物体（object）
+# 位置在仿真启动后通过 /objects API 获取
+
+scene:
+
+  # ====== 家具 ======
+  - name: counter
+    category: counter
+    type: table
+    description: 厨房台面
+
+  - name: island
+    category: island
+    type: table
+    description: 岛台
+
+  - name: stove
+    category: stove
+    type: table
+    description: 炉灶
+
+  - name: sink
+    category: sink
+    type: table
+    description: 水槽
+
+  - name: cabinet
+    category: cabinet
+    type: container
+    description: 柜子
+
+  # ====== 可操作物体 ======
+  - name: pot
+    category: pot
+    type: object
+    description: 锅
+    graspable: true
+
+  - name: cup
+    category: glass_cup
+    type: object
+    description: 杯子
+    graspable: true
+
+  - name: bowl
+    category: bowl
+    type: object
+    description: 碗
+    graspable: true
+
+  - name: apple
+    category: apple
+    type: object
+    description: 苹果
+    graspable: true
+
+  - name: mug
+    category: mug
+    type: object
+    description: 马克杯
+    graspable: true
+
+  - name: sponge
+    category: sponge
+    type: object
+    description: 海绵
+    graspable: true
+
+  # ====== 简餐长任务:食材 + 盘子(组装目标)======
+  - name: plate
+    category: plate
+    type: object
+    description: 盘子(组装简餐的目标容器,把食材放到它上面)
+    graspable: false
+
+  - name: bread
+    category: baguette
+    type: object
+    description: 面包
+    graspable: true
+
+  - name: cheese
+    category: cheese
+    type: object
+    description: 奶酪
+    graspable: true
+
+  - name: ketchup
+    category: ketchup
+    type: object
+    description: 番茄酱
+    graspable: true

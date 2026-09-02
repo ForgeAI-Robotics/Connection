@@ -1,0 +1,79 @@
+# Public template: copy to the corresponding local filename; never commit live settings.
+audio:
+  sample_rate: 16000
+  channels: 1
+  duration: 5
+  exceed_time: 20
+  threshold: 2000
+  silence_duration: 5
+  audio_record_enable: false
+  audio_file_path: ./tmp_audio.wav
+tts:
+  tts_speak_enable: false
+  tts_random_seed: 1924
+  tts_output_file: ./tts_audio.wav
+model:
+  model_select: deepseek-chat
+  model_retry_planning: 5
+  model_dict:
+    cloud_model: deepseek-chat
+    cloud_type: default
+    cloud_api_key: ${CLOUD_API_KEY}
+    cloud_server: https://api.deepseek.com/
+    max_chat_message: 50
+collaborator:
+  host: 127.0.0.1
+  port: 6379
+  db: 0
+  clear: false
+  password: null
+logger:
+  master_logger_name: GlobalAgent
+  master_logger_level: DEBUG
+  master_logger_file: .logs/master_agent.log
+  robot_memory_yaml: .log/robot_memory.yaml
+profiling: true
+profile:
+  path: ./scene/profile.yaml
+experience:
+  exploration_rate: 0.8
+  auto_save_on_success: true
+camera:
+  enabled: false
+reception_real:
+  enabled: false
+  contract_version: fq/reception-lan/v1
+  dream_base_url: ${DREAM_BASE_URL}
+  vla_base_url: ${VLA_BASE_URL}
+  vla_result_policy: hand_state_only
+  runtime_dir: ./sop/runtime/reception
+  request_timeout_sec: 10
+  dream_poll_interval_sec: 0.5
+  vla_poll_interval_sec: 1.0
+  navigation_timeout_sec: 900
+  navigation_transport_timeout_sec: 30
+  dream_inspection_enabled: false
+  inspection_timeout_sec: 300
+  camera_handoff_timeout_sec: 60
+  door_lateral_timeout_sec: 300
+  vla_timeout_sec: 600
+  place_timeout_sec: 1800
+  snapshot_timeout_sec: 30
+  auto_retry_business_step: false
+  camera_owner: vla
+  grasp_camera_view: left_wrist
+  place_camera_view: ego_view
+  grasp_photo_verification_enabled: false
+  place_photo_verification_enabled: false
+  verification:
+    min_vlm_confidence: 0.5
+    vlm:
+      model: qwen3-vl-plus
+      api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+      api_key_env: VLM_API_KEY
+      timeout_sec: 120
+    llm:
+      model: deepseek-chat
+      api_base: https://api.deepseek.com
+      api_key_env: CLOUD_API_KEY
+      timeout_sec: 60

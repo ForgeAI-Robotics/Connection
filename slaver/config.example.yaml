@@ -1,0 +1,50 @@
+# Public template: copy to the corresponding local filename; never commit live settings.
+tool:
+  support_tool_calls: true
+  matching:
+    max_tools: 3
+    min_similarity: 0.1
+model:
+  model_select: deepseek-chat
+  model_retry_planning: 5
+  model_dict:
+    cloud_model: deepseek-chat
+    cloud_type: default
+    cloud_api_key: ${CLOUD_API_KEY}
+    cloud_server: https://api.deepseek.com/
+    max_chat_message: 50
+collaborator:
+  host: 127.0.0.1
+  port: 6379
+  db: 0
+  clear: false
+  password: null
+camera:
+  image_path: images/
+  cameras:
+  - overhead_cam
+  - head_cam
+  - right_arm_cam
+  - left_arm_cam
+  vlm:
+    model: qwen3-vl-plus
+    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    max_tokens: 400
+robot:
+  call_type: local
+  path: robot
+  name: FQrobot
+profiling: true
+robocasa:
+  server_url: http://127.0.0.1:5001
+  timeout: 120
+perception:
+  use_realtime_coords: false
+  backend: vlm
+  camera: all
+  scan: false
+  scan_angles:
+  - 0
+  - 90
+  - 180
+  - 270

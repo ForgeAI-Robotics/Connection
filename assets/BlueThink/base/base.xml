@@ -1,0 +1,241 @@
+<mujoco model="Linghou_Base">
+  <!-- Mobile base converted from S2_3DURDF.urdf (SolidWorks export) -->
+  <!-- 4-wheel independent suspension, differential drive -->
+
+  <compiler angle="radian" autolimits="true" meshdir="./"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" iterations="30" solver="Newton"/>
+
+  <default>
+    <joint armature="0.1" damping="2.0" frictionloss="0.01"/>
+    <default class="visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="1"/>
+    </default>
+    <default class="collision">
+      <geom type="mesh" group="3" condim="3" friction="1.2 0.005 0.0001"
+            contype="1" conaffinity="1"/>
+    </default>
+  </default>
+
+  <asset>
+    <!-- Chassis -->
+    <mesh name="YD_link" file="YD_link.STL"/>
+    <!-- Suspension arms -->
+    <mesh name="ZQ_Link" file="ZQ_Link.STL"/>
+    <mesh name="YQ_Link" file="YQ_Link.STL"/>
+    <mesh name="ZH_Link" file="ZH_Link.STL"/>
+    <mesh name="YH_Link" file="YH_Link.STL"/>
+    <!-- Wheels -->
+    <mesh name="ZQL_Link" file="ZQL_Link.STL"/>
+    <mesh name="YQL_Link" file="YQL_Link.STL"/>
+    <mesh name="ZHL_Link" file="ZHL_Link.STL"/>
+    <mesh name="YHL_Link" file="YHL_Link.STL"/>
+    <!-- Sensors -->
+    <mesh name="ZLD_Link" file="ZLD_Link.STL"/>
+    <mesh name="YLD_Link" file="YLD_Link.STL"/>
+    <mesh name="IMU_Link" file="IMU_Link.STL"/>
+    <mesh name="XJ_Link"  file="XJ_Link.STL"/>
+    <!-- Caster wheels -->
+    <mesh name="C1_Link" file="C1_Link.STL"/>
+    <mesh name="C2_Link" file="C2_Link.STL"/>
+    <mesh name="C3_Link" file="C3_Link.STL"/>
+    <mesh name="C4_Link" file="C4_Link.STL"/>
+    <mesh name="C5_Link" file="C5_Link.STL"/>
+    <mesh name="C6_Link" file="C6_Link.STL"/>
+    <mesh name="C7_Link" file="C7_Link.STL"/>
+    <mesh name="C8_Link" file="C8_Link.STL"/>
+  </asset>
+
+  <worldbody>
+    <!-- Ground -->
+    <geom name="ground" type="plane" size="5 5 0.1" rgba="0.8 0.85 0.8 1"
+          contype="1" conaffinity="1" condim="3" friction="1.0 0.005 0.0001"/>
+
+    <!-- Lighting -->
+    <light pos="-2 -2 4" dir="1 1 -1" diffuse="0.8 0.8 0.8"/>
+    <light pos="2 1 3"  dir="-1 -0.5 -1" diffuse="0.4 0.4 0.4"/>
+
+    <!-- ====== Chassis (free body) ====== -->
+    <body name="YD_link" pos="0 0 0.2">
+      <freejoint name="chassis_free"/>
+      <inertial pos="-0.0061 -0.00014 0.1468" mass="38.93"
+                diaginertia="0.6495 1.019 1.502"/>
+      <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YD_link" class="visual"/>
+      <geom type="mesh" mesh="YD_link" contype="0" conaffinity="0" group="3"/>
+
+      <!-- ====== Front-right suspension + wheel (ZQ → ZQL) ====== -->
+      <body name="ZQ_Link" pos="0.2307 0.2174 0.206">
+        <inertial pos="-0.00067 -0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="ZQ" type="hinge" axis="0 0 -1" range="-0.52 0.52"
+               damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="ZQ_Link" class="visual"/>
+        <geom type="mesh" mesh="ZQ_Link" contype="0" conaffinity="0" group="3"/>
+
+        <body name="ZQL_Link" pos="-0.00072 0.00062 -0.136" euler="1.5708 0 0">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="ZQL" type="hinge" axis="0 0 1" damping="0.5"
+                 frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="ZQL_Link"
+                class="visual"/>
+          <geom type="mesh" mesh="ZQL_Link" class="collision"/>
+        </body>
+      </body>
+
+      <!-- ====== Front-left suspension + wheel (YQ → YQL) ====== -->
+      <body name="YQ_Link" pos="0.2293 -0.2174 0.206">
+        <inertial pos="0.00067 0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="YQ" type="hinge" axis="0 0 -1" range="-0.52 0.52"
+               damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YQ_Link" class="visual"/>
+        <geom type="mesh" mesh="YQ_Link" contype="0" conaffinity="0" group="3"/>
+
+        <body name="YQL_Link" pos="0.00072 -0.00062 -0.136" euler="1.5708 0 3.1416">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="YQL" type="hinge" axis="0 0 1" damping="0.5"
+                 frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="YQL_Link"
+                class="visual"/>
+          <geom type="mesh" mesh="YQL_Link" class="collision"/>
+        </body>
+      </body>
+
+      <!-- ====== Rear-right suspension + wheel (ZH → ZHL) ====== -->
+      <body name="ZH_Link" pos="-0.2293 0.2174 0.206">
+        <inertial pos="-0.00067 -0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="ZH" type="hinge" axis="0 0 -1" range="-0.52 0.52"
+               damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="ZH_Link" class="visual"/>
+        <geom type="mesh" mesh="ZH_Link" contype="0" conaffinity="0" group="3"/>
+
+        <body name="ZHL_Link" pos="-0.00072 0.00062 -0.136" euler="1.5708 0 0">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="ZHL" type="hinge" axis="0 0 1" damping="0.5"
+                 frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="ZHL_Link"
+                class="visual"/>
+          <geom type="mesh" mesh="ZHL_Link" class="collision"/>
+        </body>
+      </body>
+
+      <!-- ====== Rear-left suspension + wheel (YH → YHL) ====== -->
+      <body name="YH_Link" pos="-0.2307 -0.2174 0.206">
+        <inertial pos="0.00067 0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="YH" type="hinge" axis="0 0 -1" range="-0.52 0.52"
+               damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YH_Link" class="visual"/>
+        <geom type="mesh" mesh="YH_Link" contype="0" conaffinity="0" group="3"/>
+
+        <body name="YHL_Link" pos="0.00072 -0.00062 -0.136" euler="1.5708 0 3.1416">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="YHL" type="hinge" axis="0 0 1" damping="0.5"
+                 frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="YHL_Link"
+                class="visual"/>
+          <geom type="mesh" mesh="YHL_Link" class="collision"/>
+        </body>
+      </body>
+
+      <!-- ====== Fixed sensors (welded to chassis) ====== -->
+
+      <!-- Distance sensor ZLD (right) -->
+      <body name="ZLD_Link" pos="0.221 0.201 0.366" euler="0.132 -0.191 2.608">
+        <inertial pos="-0.0441 0 -0.0315" mass="0.0117"
+                  diaginertia="3.68e-7 6.52e-7 5.89e-7"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="ZLD_Link"/>
+      </body>
+
+      <!-- Distance sensor YLD (left) -->
+      <body name="YLD_Link" pos="-0.221 -0.201 0.366" euler="0.132 -0.191 -0.534">
+        <inertial pos="-0.0441 0 -0.0315" mass="0.0117"
+                  diaginertia="3.68e-7 6.52e-7 5.89e-7"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YLD_Link"/>
+      </body>
+
+      <!-- IMU -->
+      <body name="IMU_Link" pos="0 0 0.1">
+        <inertial pos="-0.0022 0.0026 -0.0068" mass="0.00727"
+                  diaginertia="7.45e-7 2.30e-7 9.43e-7"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="IMU_Link"/>
+      </body>
+
+      <!-- Camera mount XJ -->
+      <body name="XJ_Link" pos="0.342 0.018 0.199" euler="1.5708 0 1.5708">
+        <inertial pos="0 0 0.00074" mass="0.000172"
+                  diaginertia="5.50e-10 5.50e-10 9.84e-10"/>
+        <geom type="mesh" rgba="0.867 0.9098 1.0 1" mesh="XJ_Link"/>
+        <camera name="base_cam" pos="0 0 0" xyaxes="1 0 0 0 1 0" fovy="60"/>
+      </body>
+
+      <!-- ====== Caster wheels C1-C8 (fixed, visual only) ====== -->
+      <body name="C1_Link" pos="-0.174 -0.272 0.229" euler="1.5708 0 0">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C1_Link"/>
+      </body>
+      <body name="C2_Link" pos="0.174 -0.273 0.229" euler="1.5708 0 0">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C2_Link"/>
+      </body>
+      <body name="C3_Link" pos="0.327 -0.181 0.229" euler="1.5708 0 1.24">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C3_Link"/>
+      </body>
+      <body name="C4_Link" pos="0.327 0.181 0.229" euler="1.5708 0 1.90">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C4_Link"/>
+      </body>
+      <body name="C5_Link" pos="0.174 0.273 0.229" euler="1.5708 0 3.1416">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C5_Link"/>
+      </body>
+      <body name="C6_Link" pos="-0.174 0.273 0.229" euler="1.5708 0 -3.1416">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C6_Link"/>
+      </body>
+      <body name="C7_Link" pos="-0.321 0.172 0.229" euler="1.5708 0 -1.73">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C7_Link"/>
+      </body>
+      <body name="C8_Link" pos="-0.321 -0.172 0.229" euler="1.5708 0 -1.41">
+        <inertial pos="0 0 -0.0124" mass="0.0198"
+                  diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C8_Link"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Contact exclusions: prevent parent-child body overlap -->
+  <contact>
+    <exclude body1="YD_link"  body2="ZQ_Link"/>
+    <exclude body1="YD_link"  body2="YQ_Link"/>
+    <exclude body1="YD_link"  body2="ZH_Link"/>
+    <exclude body1="YD_link"  body2="YH_Link"/>
+    <exclude body1="ZQ_Link" body2="ZQL_Link"/>
+    <exclude body1="YQ_Link" body2="YQL_Link"/>
+    <exclude body1="ZH_Link" body2="ZHL_Link"/>
+    <exclude body1="YH_Link" body2="YHL_Link"/>
+  </contact>
+
+  <!-- Velocity actuators for 4-wheel differential drive -->
+  <!-- Order: ZQL (FR) ZHL (RR) YQL (FL) YHL (RL) -->
+  <actuator>
+    <velocity name="wheel_ZQL" joint="ZQL" kv="15" forcerange="-100 100"/>
+    <velocity name="wheel_ZHL" joint="ZHL" kv="15" forcerange="-100 100"/>
+    <velocity name="wheel_YQL" joint="YQL" kv="15" forcerange="-100 100"/>
+    <velocity name="wheel_YHL" joint="YHL" kv="15" forcerange="-100 100"/>
+  </actuator>
+</mujoco>

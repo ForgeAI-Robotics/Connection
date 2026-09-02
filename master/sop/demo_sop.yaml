@@ -1,0 +1,37 @@
+# 「整理桌面」Demo SOP —— 人类口述 → 结构化(对应 7 月底 demo 文档)
+# 具身大脑读这个 + 标准摆放图,判断每个物体该 清理/整理/保留/补货。
+
+standard_layout:            # 1. 桌面最终状态:保留并放指定位置
+  - {category: 笔筒和笔,  count: "1组", rule: 保持在标准图片指定位置}
+  - {category: 纸巾盒,    count: 1,     rule: 保持在指定位置}
+  - {category: 牛奶盒,    count: 4,     rule: 不足则补齐}   # 现实里由"百岁山"换成牛奶盒(完整的=饮料,整理归位)
+  - {category: 可乐,      count: 2,     rule: 不足则补齐}   # 现实标准由 4 改为 2 罐
+  - {category: 盆栽,      count: 1,     rule: 保持在指定位置}
+  - {category: 电视,      state: 关闭,  rule: 整理结束前必须关闭}
+
+trash:                      # 2. 必须清理的垃圾
+  - {type: 垃圾纸巾,      action: 丢入垃圾桶,       keywords: [tissue, napkin, 纸巾]}
+  - {type: 零食垃圾,      action: 丢入垃圾桶,       keywords: [snack, wrapper, 零食, 包装]}
+  - {type: 开封饮料,      action: 丢入回收垃圾区,   keywords: [opened, 拉环, 吸管, empty, 空瓶, 空罐]}
+  # 注:未开封的整罐可乐/整盒牛奶=饮料(整理归位,见 standard_layout);只有【已开封】才算垃圾:
+  #    可乐易拉环已拉开、牛奶吸管已插进盒口、或空瓶/压扁空盒。判"是不是饮料垃圾"看开封,不看摆放。
+
+keep_in_place:              # 3. 必须保持原位的物体
+  - {type: 开会笔记本,    rule: 不移动不丢弃,       keywords: [laptop, notebook, 笔记本]}
+  - {type: 手机,          rule: 不移动不丢弃,       keywords: [phone, mobile, 手机]}
+  - {type: 耳机,          rule: 不移动不丢弃(个人物品), keywords: [earbuds, earphone, airpods, 耳机, 耳塞]}
+  - {type: 其他个人物品,  rule: 默认保持原位除非SOP明确要求清理, keywords: [glasses, 眼镜, wallet, key, 钱包]}
+
+restock:                    # 4. 饮料补货规则(现实里百岁山已换成牛奶盒)
+  - {item: 牛奶盒, min: 4, source: 茶水间, keywords: [milk, 牛奶, carton, 牛奶盒]}
+  - {item: 可乐,   min: 2, source: 茶水间, keywords: [cola, coke, 可乐]}
+
+# 5. 具身大脑优化 SOP:机器人行为总结生成(事后反思模块产出,示例种子)
+learned_rules:
+  - 手机、笔记本、眼镜等个人物品默认禁动
+  - 清理只针对能明确认出的垃圾(纸巾团/包装/空罐/开封饮料);认不出的小物默认保留,宁漏扫勿误扔
+  - 半瓶饮料不直接丢弃,先判断是否属于待保留饮料
+  - 饮料补货前先统计当前数量,避免重复取物
+  - 可乐和百岁山分别放入标准图对应区域,不混放
+  - 清理垃圾前优先移除遮挡物,但不改变个人物品位置
+  - 关闭电视放在桌面整理完成后的最后一步

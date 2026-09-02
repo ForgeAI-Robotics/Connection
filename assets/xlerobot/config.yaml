@@ -1,0 +1,33 @@
+name: xlerobot
+description: "XLeRobot mobile dual-arm with grippers"
+xml: "xlerobot.xml"
+base_link: "chassis"
+mobile_base: true
+
+arms:
+  left:
+    prefix: "Left_"
+    end_effector: "Moving_Jaw"
+    joints:
+      - Rotation_L
+      - Pitch_L
+      - Elbow_L
+      - Wrist_Pitch_L
+      - Wrist_Roll_L
+      - Jaw_L
+  right:
+    prefix: "Right_"
+    end_effector: "Moving_Jaw"
+    joints:
+      - Rotation_R
+      - Pitch_R
+      - Elbow_R
+      - Wrist_Pitch_R
+      - Wrist_Roll_R
+      - Jaw_R
+
+cameras:
+  - overhead_cam
+  - head_cam
+  - right_arm_cam
+  - left_arm_cam

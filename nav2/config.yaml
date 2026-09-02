@@ -1,0 +1,55 @@
+# nav2/config.yaml - 地图生成与工作点配置
+
+# 机器人尺寸信息
+robot:
+  name: "XLeRobot"             # XLeRobot 双臂移动机器人
+  base_length: 0.40            # 底盘长度 (米)
+  base_width: 0.50             # 底盘宽度 (米)，包含左右轮外廓
+  base_radius: 0.25            # 底盘外接圆半径 (米)，用于碰撞避障
+  arm_max_reach: 0.9           # 当前仿真任务使用的有效工作距离 (米)
+  arm_mount_height: 0.78       # 机械臂安装高度 (米)
+
+# 地图生成参数 (map_generator.py)
+map:
+  resolution: 0.05          # 栅格分辨率 (米/像素)
+  inflate_radius: 0.05       # 障碍物膨胀半径 (米)
+  border_occupied_margin: 0.20 # 地图四周强制设为障碍的宽度 (米)
+  clear_robot_radius: 0.0  # 清理机器人初始位置半径 (米)，避免地图保留机器人 footprint
+  shrink_footprints: 0.0    # 收缩家具 footprint (米)
+  output_dir: "maps"
+
+# 可通行点提取参数 (free_points_generator.py)
+free_points:
+  map_file: "maps/kitchen_map.yaml"
+  output: "maps/free_points.json"
+  spacing: 0.20             # 采样间距 (米)
+  clearance: 0.25          # 最小离障碍距离 (米)
+
+# 工作点选择参数 (workpoints_generator.py)
+waypoints:
+  free_points_path: "maps/free_points.json"
+  output_path: "../serve/scene/config/waypoints.yaml"
+  max_reach: 0.9          # 当前仿真任务使用的有效工作距离 (米)
+  min_dist: 0.10             # 最小安全距离再加上安全保障 (米)
+  merge_target_distance: 0.20 # 目标之间小于该距离时共用一个平均最优工作点 (米)
+  # 办公室场景(建图组 total_scene_graph 的 fixture object_id):
+  must_cover:
+    - table
+    - fridge
+  fixtures:
+    table: "table_1"
+    fridge: "fridge_1"
+  # 厨房 robocasa 仿真(切回仿真时:注释掉上面 4 行,取消注释下面):
+  # must_cover: [counter, island, stove, sink]
+  # fixtures:
+  #   counter: "counter_1_main_group"
+  #   island: "island_island_group"
+  #   stove: "stovetop_main_group"
+  #   sink: "sink_island_group"
+
+# 路径规划参数 (serve/tools/path_planner.py)
+path_planner:
+  free_points_path: "maps/free_points.json"
+  neighbor_radius: 0.8      # 邻接连边半径 (米)，略大于 spacing
+  connect_neighbors: 3      # 起终点连接最近 N 个 free_point
+  line_clearance: 0.35      # 直线可达/图边检查的底盘安全半径 (米)

@@ -1,0 +1,24 @@
+# Public template: copy to the corresponding local filename; never commit live settings.
+exchange:
+  mode: dir
+  protocol: agent_http_v1
+  base_url: http://192.0.2.20:8001
+  nav_url: http://192.0.2.20:8001
+  dir: serve_dream/sample
+  map_yaml: map.yaml
+  scene_graph: total_scene_graph_latest.json
+  pose_file: nav_map_latest.json
+nav:
+  position_tolerance_m: 0.35
+  yaw_tolerance_deg: 25.0
+  result_timeout_sec: 1800
+  result_poll_interval_sec: 0.5
+  request_timeout_sec: 10
+  input_yaw_unit: degrees
+safety:
+  real_control_enabled: false
+  ack_env: FQPLANNER_DREAM_REAL_CONTROL_ACK
+  ack_value: AGENT_HTTP_NAVIGATION_AUTHORIZED
+navigation_sop: serve_dream/dream_navigation_sop.yaml
+server:
+  port: 5006

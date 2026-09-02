@@ -1,0 +1,3 @@
+lark-channel-sdk==1.0.0
+python-dotenv==1.1.1
+requests>=2.32,<3

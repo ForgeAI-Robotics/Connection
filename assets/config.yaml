@@ -1,0 +1,19 @@
+# FQPlanner 全局配置
+# 切换机器人只需修改 robot 字段
+
+# 机器人选择: "xlerobot" 或 "BlueThink"
+robot: "BlueThink"
+
+# 场景选择: "robot_nav"(导航场景), "robot_only"(纯机器人), 或自定义路径
+scene: "robot_nav"
+
+# 渲染相机 (用于3DGS viewer screens)
+viewer_cameras:
+  # - overhead_cam
+  - head_cam
+  - right_arm_cam
+  - left_arm_cam
+
+# 3DGS composite mesh 叠绘 (Hunyuan3D 物体)。默认 false 关闭——每帧重载 mesh 很慢，
+# 且当前 hunyuan_bottle_body 缺失会渲染失败。需要叠绘时改 true。
+composite_mesh: false

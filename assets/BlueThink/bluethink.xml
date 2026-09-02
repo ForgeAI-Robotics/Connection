@@ -1,0 +1,421 @@
+<!-- BlueThink Mobile — robot only (no scene elements).
+     Use this file when attaching to an external scene (e.g. 3DGS). -->
+<mujoco model="BlueThink">
+  <compiler angle="radian" autolimits="true" meshdir="./"/>
+
+  <option timestep="0.002" gravity="0 0 -9.81" iterations="30" solver="Newton"/>
+
+  <default>
+    <default class="bluethink">
+      <material specular="0.5" shininess="0.25"/>
+      <joint armature="0.08" damping="4.0" frictionloss="0.1"/>
+      <general dyntype="none" biastype="affine"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom type="mesh" group="3"/>
+      </default>
+    </default>
+    <!-- Base wheel defaults -->
+    <joint armature="0.1" damping="2.0" frictionloss="0.01"/>
+    <default class="base_visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="1"/>
+    </default>
+    <default class="wheel_collision">
+      <geom type="mesh" group="3" condim="3" friction="1.2 0.005 0.0001"
+            contype="1" conaffinity="1"/>
+    </default>
+  </default>
+
+  <asset>
+    <!-- ======== BlueThink arm meshes ======== -->
+    <mesh name="Base_Link" file="Base_Link.STL"/>
+
+    <mesh name="Left_Shoulder_Base_Link" file="Left_Shoulder_Base_Link.STL"/>
+    <mesh name="Left_Shoulder_Pitch_Link" file="Left_Shoulder_Pitch_Link.STL"/>
+    <mesh name="Left_Shoulder_Roll_Link" file="Left_Shoulder_Roll_Link.STL"/>
+    <mesh name="Left_Shoulder_Yaw_Link" file="Left_Shoulder_Yaw_Link.STL"/>
+    <mesh name="Left_Elbow_Pitch_Link" file="Left_Elbow_Pitch_Link.STL"/>
+    <mesh name="Left_Wrist_Yaw_Link" file="Left_Wrist_Yaw_Link.STL"/>
+    <mesh name="Left_Wrist_Pitch_Link" file="Left_Wrist_Pitch_Link.STL"/>
+    <mesh name="Left_Wrist_Roll_Link" file="Left_Wrist_Roll_Link.STL"/>
+
+    <mesh name="Right_Shoulder_Base_Link" file="Right_Shoulder_Base_Link.STL"/>
+    <mesh name="Right_Shoulder_Pitch_Link" file="Right_Shoulder_Pitch_Link.STL"/>
+    <mesh name="Right_Shoulder_Roll_Link" file="Right_Shoulder_Roll_Link.STL"/>
+    <mesh name="Right_Shoulder_Yaw_Link" file="Right_Shoulder_Yaw_Link.STL"/>
+    <mesh name="Right_Elbow_Pitch_Link" file="Right_Elbow_Pitch_Link.STL"/>
+    <mesh name="Right_Wrist_Yaw_Link" file="Right_Wrist_Yaw_Link.STL"/>
+    <mesh name="Right_Wrist_Pitch_Link" file="Right_Wrist_Pitch_Link.STL"/>
+    <mesh name="Right_Wrist_Roll_Link" file="Right_Wrist_Roll_Link.STL"/>
+
+    <!-- collision meshes (reuse visual meshes) -->
+    <mesh name="Base_Link_c" file="Base_Link.STL"/>
+    <mesh name="Left_Shoulder_Base_Link_c" file="Left_Shoulder_Base_Link.STL"/>
+    <mesh name="Left_Shoulder_Pitch_Link_c" file="Left_Shoulder_Pitch_Link.STL"/>
+    <mesh name="Left_Shoulder_Roll_Link_c" file="Left_Shoulder_Roll_Link.STL"/>
+    <mesh name="Left_Shoulder_Yaw_Link_c" file="Left_Shoulder_Yaw_Link.STL"/>
+    <mesh name="Left_Elbow_Pitch_Link_c" file="Left_Elbow_Pitch_Link.STL"/>
+    <mesh name="Left_Wrist_Yaw_Link_c" file="Left_Wrist_Yaw_Link.STL"/>
+    <mesh name="Left_Wrist_Pitch_Link_c" file="Left_Wrist_Pitch_Link.STL"/>
+    <mesh name="Left_Wrist_Roll_Link_c" file="Left_Wrist_Roll_Link.STL"/>
+    <mesh name="Right_Shoulder_Base_Link_c" file="Right_Shoulder_Base_Link.STL"/>
+    <mesh name="Right_Shoulder_Pitch_Link_c" file="Right_Shoulder_Pitch_Link.STL"/>
+    <mesh name="Right_Shoulder_Roll_Link_c" file="Right_Shoulder_Roll_Link.STL"/>
+    <mesh name="Right_Shoulder_Yaw_Link_c" file="Right_Shoulder_Yaw_Link.STL"/>
+    <mesh name="Right_Elbow_Pitch_Link_c" file="Right_Elbow_Pitch_Link.STL"/>
+    <mesh name="Right_Wrist_Yaw_Link_c" file="Right_Wrist_Yaw_Link.STL"/>
+    <mesh name="Right_Wrist_Pitch_Link_c" file="Right_Wrist_Pitch_Link.STL"/>
+    <mesh name="Right_Wrist_Roll_Link_c" file="Right_Wrist_Roll_Link.STL"/>
+
+    <mesh name="D435i_Solid" file="D435i_Solid.stl" scale="0.001 0.001 0.001"/>
+    <mesh name="bind" file="bind.STL" scale="0.001 0.001 0.001"/>
+
+    <!-- ======== Linghou mobile base meshes ======== -->
+    <mesh name="YD_link" file="base/YD_link.STL"/>
+    <mesh name="ZQ_Link" file="base/ZQ_Link.STL"/>
+    <mesh name="YQ_Link" file="base/YQ_Link.STL"/>
+    <mesh name="ZH_Link" file="base/ZH_Link.STL"/>
+    <mesh name="YH_Link" file="base/YH_Link.STL"/>
+    <mesh name="ZQL_Link" file="base/ZQL_Link.STL"/>
+    <mesh name="YQL_Link" file="base/YQL_Link.STL"/>
+    <mesh name="ZHL_Link" file="base/ZHL_Link.STL"/>
+    <mesh name="YHL_Link" file="base/YHL_Link.STL"/>
+    <mesh name="ZLD_Link" file="base/ZLD_Link.STL"/>
+    <mesh name="YLD_Link" file="base/YLD_Link.STL"/>
+    <mesh name="IMU_Link" file="base/IMU_Link.STL"/>
+    <mesh name="XJ_Link"  file="base/XJ_Link.STL"/>
+    <mesh name="C1_Link" file="base/C1_Link.STL"/>
+    <mesh name="C2_Link" file="base/C2_Link.STL"/>
+    <mesh name="C3_Link" file="base/C3_Link.STL"/>
+    <mesh name="C4_Link" file="base/C4_Link.STL"/>
+    <mesh name="C5_Link" file="base/C5_Link.STL"/>
+    <mesh name="C6_Link" file="base/C6_Link.STL"/>
+    <mesh name="C7_Link" file="base/C7_Link.STL"/>
+    <mesh name="C8_Link" file="base/C8_Link.STL"/>
+  </asset>
+
+  <worldbody>
+    <!-- ====== Mobile chassis (free body) ====== -->
+    <body name="YD_link" pos="0 0 0.2">
+      <freejoint name="chassis_free"/>
+      <inertial pos="-0.0061 -0.00014 0.1468" mass="38.93"
+                diaginertia="0.6495 1.019 1.502"/>
+      <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YD_link" class="base_visual"/>
+      <geom type="mesh" mesh="YD_link" contype="0" conaffinity="0" group="3"/>
+
+      <!-- Front-right suspension + wheel (ZQ → ZQL) -->
+      <body name="ZQ_Link" pos="0.2307 0.2174 0.206">
+        <inertial pos="-0.00067 -0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="ZQ" type="hinge" axis="0 0 -1" range="-0.52 0.52" damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="ZQ_Link" class="base_visual"/>
+        <geom type="mesh" mesh="ZQ_Link" contype="0" conaffinity="0" group="3"/>
+        <body name="ZQL_Link" pos="-0.00072 0.00062 -0.136" euler="1.5708 0 0">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="ZQL" type="hinge" axis="0 0 1" damping="0.5" frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="ZQL_Link" class="base_visual"/>
+          <geom type="mesh" mesh="ZQL_Link" class="wheel_collision"/>
+        </body>
+      </body>
+
+      <!-- Front-left suspension + wheel (YQ → YQL) -->
+      <body name="YQ_Link" pos="0.2293 -0.2174 0.206">
+        <inertial pos="0.00067 0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="YQ" type="hinge" axis="0 0 -1" range="-0.52 0.52" damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YQ_Link" class="base_visual"/>
+        <geom type="mesh" mesh="YQ_Link" contype="0" conaffinity="0" group="3"/>
+        <body name="YQL_Link" pos="0.00072 -0.00062 -0.136" euler="1.5708 0 3.1416">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="YQL" type="hinge" axis="0 0 1" damping="0.5" frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="YQL_Link" class="base_visual"/>
+          <geom type="mesh" mesh="YQL_Link" class="wheel_collision"/>
+        </body>
+      </body>
+
+      <!-- Rear-right suspension + wheel (ZH → ZHL) -->
+      <body name="ZH_Link" pos="-0.2293 0.2174 0.206">
+        <inertial pos="-0.00067 -0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="ZH" type="hinge" axis="0 0 -1" range="-0.52 0.52" damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="ZH_Link" class="base_visual"/>
+        <geom type="mesh" mesh="ZH_Link" contype="0" conaffinity="0" group="3"/>
+        <body name="ZHL_Link" pos="-0.00072 0.00062 -0.136" euler="1.5708 0 0">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="ZHL" type="hinge" axis="0 0 1" damping="0.5" frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="ZHL_Link" class="base_visual"/>
+          <geom type="mesh" mesh="ZHL_Link" class="wheel_collision"/>
+        </body>
+      </body>
+
+      <!-- Rear-left suspension + wheel (YH → YHL) -->
+      <body name="YH_Link" pos="-0.2307 -0.2174 0.206">
+        <inertial pos="0.00067 0.0242 -0.0616" mass="0.65"
+                  diaginertia="0.000761 0.000581 0.000522"/>
+        <joint name="YH" type="hinge" axis="0 0 -1" range="-0.52 0.52" damping="15"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YH_Link" class="base_visual"/>
+        <geom type="mesh" mesh="YH_Link" contype="0" conaffinity="0" group="3"/>
+        <body name="YHL_Link" pos="0.00072 -0.00062 -0.136" euler="1.5708 0 3.1416">
+          <inertial pos="0 0 0.000785" mass="1.223"
+                    diaginertia="0.00205 0.00205 0.00377"/>
+          <joint name="YHL" type="hinge" axis="0 0 1" damping="0.5" frictionloss="0.05"/>
+          <geom type="mesh" rgba="0.251 0.251 0.251 1" mesh="YHL_Link" class="base_visual"/>
+          <geom type="mesh" mesh="YHL_Link" class="wheel_collision"/>
+        </body>
+      </body>
+
+      <!-- Sensors welded to chassis (no collision) -->
+      <body name="ZLD_Link" pos="0.221 0.201 0.366" euler="0.132 -0.191 2.608">
+        <inertial pos="-0.0441 0 -0.0315" mass="0.0117" diaginertia="3.68e-7 6.52e-7 5.89e-7"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="ZLD_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="YLD_Link" pos="-0.221 -0.201 0.366" euler="0.132 -0.191 -0.534">
+        <inertial pos="-0.0441 0 -0.0315" mass="0.0117" diaginertia="3.68e-7 6.52e-7 5.89e-7"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="YLD_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="IMU_Link" pos="0 0 0.1">
+        <inertial pos="-0.0022 0.0026 -0.0068" mass="0.00727" diaginertia="7.45e-7 2.30e-7 9.43e-7"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="IMU_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="XJ_Link" pos="0.342 0.018 0.199" euler="1.5708 0 1.5708">
+        <inertial pos="0 0 0.00074" mass="0.000172" diaginertia="5.50e-10 5.50e-10 9.84e-10"/>
+        <geom type="mesh" rgba="0.867 0.9098 1.0 1" mesh="XJ_Link" contype="0" conaffinity="0"/>
+        <camera name="chassis_cam" pos="0 0 0" xyaxes="1 0 0 0 1 0" fovy="60"/>
+      </body>
+
+      <!-- Caster wheels C1-C8 (no collision) -->
+      <body name="C1_Link" pos="-0.174 -0.272 0.229" euler="1.5708 0 0">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C1_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="C2_Link" pos="0.174 -0.273 0.229" euler="1.5708 0 0">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C2_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="C3_Link" pos="0.327 -0.181 0.229" euler="1.5708 0 1.24">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C3_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="C4_Link" pos="0.327 0.181 0.229" euler="1.5708 0 1.90">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C4_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="C5_Link" pos="0.174 0.273 0.229" euler="1.5708 0 3.1416">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C5_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="C6_Link" pos="-0.174 0.273 0.229" euler="1.5708 0 -3.1416">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C6_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="C7_Link" pos="-0.321 0.172 0.229" euler="1.5708 0 -1.73">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C7_Link" contype="0" conaffinity="0"/>
+      </body>
+      <body name="C8_Link" pos="-0.321 -0.172 0.229" euler="1.5708 0 -1.41">
+        <inertial pos="0 0 -0.0124" mass="0.0198" diaginertia="1.88e-6 4.36e-6 4.96e-6"/>
+        <geom type="mesh" rgba="0.867 0.867 0.89 1" mesh="C8_Link" contype="0" conaffinity="0"/>
+      </body>
+
+      <!-- ====== BlueThink torso + dual arms (welded to chassis) ====== -->
+      <body name="Base_Link" pos="0 0 0.15">
+        <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="Base_Link" contype="0" conaffinity="0"/>
+        <geom type="mesh" mesh="Base_Link_c" contype="0" conaffinity="0" group="3"/>
+
+        <!-- Left arm -->
+        <geom type="mesh" pos="0 0 1.217" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Shoulder_Base_Link" class="visual"/>
+        <geom type="mesh" mesh="Left_Shoulder_Base_Link_c" contype="0" conaffinity="0" group="3"/>
+
+        <body name="Left_Shoulder_Pitch_Link" pos="0 0.096 1.217">
+          <inertial pos="0.000548544 0.0663442 -4.15012e-07" quat="0.706027 0.706028 -0.0390513 -0.0390512" mass="1.03708" diaginertia="0.000984578 0.000805446 0.000601473"/>
+          <joint name="Left_Shoulder_Pitch_Joint" pos="0 0 0" axis="0 1 0" range="-2.95 1.75" actuatorfrcrange="-80 80" damping="5.0" armature="0.1"/>
+          <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Shoulder_Pitch_Link" class="visual"/>
+          <geom type="mesh" mesh="Left_Shoulder_Pitch_Link_c" class="collision"/>
+
+          <body name="Left_Shoulder_Roll_Link" pos="0.0328 0.075 0">
+            <inertial pos="-0.0328266 -1.13123e-05 -0.0818732" quat="0.999999 -5.96695e-05 0.00108523 3.57239e-06" mass="0.611931" diaginertia="0.000491319 0.000474503 0.000257744"/>
+            <joint name="Left_Shoulder_Roll_Joint" pos="0 0 0" axis="1 0 0" range="-0.35 3.49" actuatorfrcrange="-80 80" damping="5.0" armature="0.1"/>
+            <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Shoulder_Roll_Link" class="visual"/>
+            <geom type="mesh" mesh="Left_Shoulder_Roll_Link_c" class="collision"/>
+
+            <body name="Left_Shoulder_Yaw_Link" pos="-0.0328 0 -0.12">
+              <inertial pos="0.00682315 -4.46513e-05 -0.1302" quat="0.999907 0.000439506 -0.0135609 0.0015817" mass="0.600777" diaginertia="0.000474077 0.000448036 0.000256075"/>
+              <joint name="Left_Shoulder_Yaw_Joint" pos="0 0 0" axis="0 0 -1" range="-2.79 2.79" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+              <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Shoulder_Yaw_Link" class="visual"/>
+              <geom type="mesh" mesh="Left_Shoulder_Yaw_Link_c" class="collision"/>
+
+              <body name="Left_Elbow_Pitch_Link" pos="0.0095 -0.0325 -0.15">
+                <inertial pos="-0.00904037 0.0323651 -0.0740066" quat="0.696924 0.0285959 0.0271449 0.716061" mass="0.571822" diaginertia="0.000376127 0.000374479 0.000227307"/>
+                <joint name="Left_Elbow_Pitch_Joint" pos="0 0 0" axis="0 -1 0" range="0 2.355" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+                <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Elbow_Pitch_Link" class="visual"/>
+                <geom type="mesh" mesh="Left_Elbow_Pitch_Link_c" class="collision"/>
+
+                <body name="Left_Wrist_Yaw_Link" pos="-0.0095 0.0325 -0.11">
+                  <inertial pos="3.6974e-08 0.00647896 -0.0555903" quat="0.94453 -0.328426 -1.51645e-05 -1.21749e-05" mass="0.477607" diaginertia="0.00025201 0.00024229 0.000212373"/>
+                  <joint name="Left_Wrist_Yaw_Joint" pos="0 0 0" axis="0 0 -1" range="-2.79 2.79" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+                  <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Wrist_Yaw_Link" class="visual"/>
+                  <geom type="mesh" mesh="Left_Wrist_Yaw_Link_c" class="collision"/>
+
+                  <body name="Left_Wrist_Pitch_Link" pos="0 -0.022 -0.06">
+                    <inertial pos="-0.00711282 0.0182114 -0.05963" quat="0.68952 -0.0294918 -0.103506 0.716225" mass="0.463907" diaginertia="0.000268703 0.000228847 0.000197985"/>
+                    <joint name="Left_Wrist_Pitch_Joint" pos="0 0 0" axis="0 -1 0" range="-1.57 1.57" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+                    <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Wrist_Pitch_Link" class="visual"/>
+                    <geom type="mesh" mesh="Left_Wrist_Pitch_Link_c" class="collision"/>
+
+                    <body name="Left_Wrist_Roll_Link" pos="0.0225 0.022 -0.064">
+                      <inertial pos="-0.00727023 2.82403e-10 -0.0363234" quat="0.95983 0 0.280582 0" mass="0.0737529" diaginertia="6.44148e-05 5.80309e-05 3.20992e-05"/>
+                      <joint name="Left_Wrist_Roll_Joint" pos="0 0 0" axis="1 0 0" range="-1.57 1.57" actuatorfrcrange="-36 36" damping="3.5" armature="0.06"/>
+                      <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Left_Wrist_Roll_Link" class="visual"/>
+                      <geom type="mesh" mesh="Left_Wrist_Roll_Link_c" class="collision"/>
+                      <body name="Left_bind" pos="0.045 0.045 -0.056" quat="0 0 0 1">
+                        <inertial pos="0 0 0" mass="0.05" diaginertia="1e-5 1e-5 1e-5"/>
+                        <geom type="mesh" mesh="bind" rgba="0.4 0.4 0.4 1" euler="3.14 0 -1.57"/>
+                        <body name="Left_D435i" pos="0.01 0.046 -0.036">
+                          <inertial pos="0 0 0" mass="0.072" diaginertia="1e-5 1e-5 1e-5"/>
+                          <geom type="mesh" mesh="D435i_Solid" rgba="0.2 0.2 0.2 1" euler="3.14 0 -1.57"/>
+                          <camera name="left_ee_cam" pos="0 0 0" xyaxes="1 0 0 0 1 0" fovy="60"/>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+
+        <!-- Right arm -->
+        <geom type="mesh" pos="0 0 1.217" rgba="0.890196 0.890196 0.913725 1" mesh="Right_Shoulder_Base_Link" class="visual"/>
+        <geom type="mesh" mesh="Right_Shoulder_Base_Link_c" contype="0" conaffinity="0" group="3"/>
+
+        <body name="Right_Shoulder_Pitch_Link" pos="0 -0.096 1.217">
+          <inertial pos="0.000550446 -0.0663447 3.85924e-07" quat="0.706028 0.706027 0.0390512 0.0390513" mass="1.03708" diaginertia="0.000984578 0.000805446 0.000601472"/>
+          <joint name="Right_Shoulder_Pitch_Joint" pos="0 0 0" axis="0 -1 0" range="-2.97 1.75" actuatorfrcrange="-80 80" damping="5.0" armature="0.1"/>
+          <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Right_Shoulder_Pitch_Link" class="visual"/>
+          <geom type="mesh" mesh="Right_Shoulder_Pitch_Link_c" class="collision"/>
+
+          <body name="Right_Shoulder_Roll_Link" pos="0.0328 -0.075 0">
+            <inertial pos="-0.0328495 -5.65908e-10 -0.0818729" quat="0.999999 -5.96718e-05 0.00108527 3.5726e-06" mass="0.611585" diaginertia="0.000491308 0.000474492 0.000257741"/>
+            <joint name="Right_Shoulder_Roll_Joint" pos="0 0 0" axis="1 0 0" range="-3.49 0.35" actuatorfrcrange="-80 80" damping="5.0" armature="0.1"/>
+            <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="Right_Shoulder_Roll_Link" class="visual"/>
+            <geom type="mesh" mesh="Right_Shoulder_Roll_Link_c" class="collision"/>
+
+            <body name="Right_Shoulder_Yaw_Link" pos="-0.0328 0 -0.12">
+              <inertial pos="0.00682315 -4.46513e-05 -0.1302" quat="0.999907 0.000439506 -0.0135609 0.0015817" mass="0.600777" diaginertia="0.000474077 0.000448036 0.000256075"/>
+              <joint name="Right_Shoulder_Yaw_Joint" pos="0 0 0" axis="0 0 -1" range="-2.79 2.79" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+              <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Right_Shoulder_Yaw_Link" class="visual"/>
+              <geom type="mesh" mesh="Right_Shoulder_Yaw_Link_c" class="collision"/>
+
+              <body name="Right_Elbow_Pitch_Link" pos="0.0095 -0.0325 -0.15">
+                <inertial pos="-0.00904915 0.0323897 -0.074007" quat="0.696919 0.0285977 0.0271462 0.716065" mass="0.571476" diaginertia="0.000376115 0.000374468 0.000227305"/>
+                <joint name="Right_Elbow_Pitch_Joint" pos="0 0 0" axis="0 -1 0" range="0 2.355" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+                <geom type="mesh" rgba="0.792157 0.819608 0.933333 1" mesh="Right_Elbow_Pitch_Link" class="visual"/>
+                <geom type="mesh" mesh="Right_Elbow_Pitch_Link_c" class="collision"/>
+
+                <body name="Right_Wrist_Yaw_Link" pos="-0.0095 0.0325 -0.11">
+                  <inertial pos="-3.68521e-08 -0.00650166 -0.0555926" quat="0.943669 0.330892 1.53047e-05 -1.28235e-05" mass="0.477587" diaginertia="0.000252125 0.000242673 0.000212105"/>
+                  <joint name="Right_Wrist_Yaw_Joint" pos="0 0 0" axis="0 0 -1" range="-2.79 2.79" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+                  <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Right_Wrist_Yaw_Link" class="visual"/>
+                  <geom type="mesh" mesh="Right_Wrist_Yaw_Link_c" class="collision"/>
+
+                  <body name="Right_Wrist_Pitch_Link" pos="0 0.022 -0.06">
+                    <inertial pos="-0.0071253 -0.0182055 -0.0596463" quat="0.715861 -0.100996 -0.0262831 0.6904" mass="0.464091" diaginertia="0.000269231 0.000229126 0.000198148"/>
+                    <joint name="Right_Wrist_Pitch_Joint" pos="0 0 0" axis="0 1 0" range="-1.57 1.57" actuatorfrcrange="-36 36" damping="5.0" armature="0.1"/>
+                    <geom type="mesh" rgba="0.898039 0.917647 0.929412 1" mesh="Right_Wrist_Pitch_Link" class="visual"/>
+                    <geom type="mesh" mesh="Right_Wrist_Pitch_Link_c" class="collision"/>
+
+                    <body name="Right_Wrist_Roll_Link" pos="0.0225 -0.022 -0.064">
+                      <inertial pos="-0.00727023 2.82408e-10 -0.0363234" quat="0.95983 0 0.280582 0" mass="0.0737529" diaginertia="6.44148e-05 5.80309e-05 3.20992e-05"/>
+                      <joint name="Right_Wrist_Roll_Joint" pos="0 0 0" axis="1 0 0" range="-1.57 1.57" actuatorfrcrange="-36 36" damping="3.5" armature="0.06"/>
+                      <geom type="mesh" rgba="0.890196 0.890196 0.913725 1" mesh="Right_Wrist_Roll_Link" class="visual"/>
+                      <geom type="mesh" mesh="Right_Wrist_Roll_Link_c" class="collision"/>
+                      <body name="Right_bind" pos="0.045 0.045 -0.056" quat="0 0 0 1">
+                        <inertial pos="0 0 0" mass="0.05" diaginertia="1e-5 1e-5 1e-5"/>
+                        <geom type="mesh" mesh="bind" rgba="0.4 0.4 0.4 1" euler="3.14 0 -1.57"/>
+                        <body name="Right_D435i" pos="0.01 0.046 -0.036">
+                          <inertial pos="0 0 0" mass="0.072" diaginertia="1e-5 1e-5 1e-5"/>
+                          <geom type="mesh" mesh="D435i_Solid" rgba="0.2 0.2 0.2 1" euler="3.14 0 1.57"/>
+                          <camera name="right_ee_cam" pos="0 0 0" xyaxes="1 0 0 0 1 0" fovy="60"/>
+                        </body>
+                      </body>
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+
+        <body name="D435i_Cam" pos="0.033 0 1.09">
+          <geom type="mesh" mesh="D435i_Solid" rgba="0.2 0.2 0.2 1" euler="0 -1.57 1.57"/>
+          <camera name="base_cam" pos="0 0 0" xyaxes="0 -1 0 0 0 1" fovy="60"/>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Contact exclusions -->
+  <contact>
+    <!-- Base chassis -->
+    <exclude body1="YD_link"  body2="ZQ_Link"/>
+    <exclude body1="YD_link"  body2="YQ_Link"/>
+    <exclude body1="YD_link"  body2="ZH_Link"/>
+    <exclude body1="YD_link"  body2="YH_Link"/>
+    <exclude body1="ZQ_Link" body2="ZQL_Link"/>
+    <exclude body1="YQ_Link" body2="YQL_Link"/>
+    <exclude body1="ZH_Link" body2="ZHL_Link"/>
+    <exclude body1="YH_Link" body2="YHL_Link"/>
+
+    <!-- Arms -->
+    <exclude body1="Base_Link" body2="Left_Shoulder_Pitch_Link"/>
+    <exclude body1="Base_Link" body2="Right_Shoulder_Pitch_Link"/>
+    <exclude body1="Left_Shoulder_Pitch_Link" body2="Left_Shoulder_Roll_Link"/>
+    <exclude body1="Left_Shoulder_Roll_Link" body2="Left_Shoulder_Yaw_Link"/>
+    <exclude body1="Left_Shoulder_Yaw_Link" body2="Left_Elbow_Pitch_Link"/>
+    <exclude body1="Left_Elbow_Pitch_Link" body2="Left_Wrist_Yaw_Link"/>
+    <exclude body1="Left_Wrist_Yaw_Link" body2="Left_Wrist_Pitch_Link"/>
+    <exclude body1="Left_Wrist_Pitch_Link" body2="Left_Wrist_Roll_Link"/>
+    <exclude body1="Right_Shoulder_Pitch_Link" body2="Right_Shoulder_Roll_Link"/>
+    <exclude body1="Right_Shoulder_Roll_Link" body2="Right_Shoulder_Yaw_Link"/>
+    <exclude body1="Right_Shoulder_Yaw_Link" body2="Right_Elbow_Pitch_Link"/>
+    <exclude body1="Right_Elbow_Pitch_Link" body2="Right_Wrist_Yaw_Link"/>
+    <exclude body1="Right_Wrist_Yaw_Link" body2="Right_Wrist_Pitch_Link"/>
+    <exclude body1="Right_Wrist_Pitch_Link" body2="Right_Wrist_Roll_Link"/>
+    <!-- bind/D435i camera exclusions -->
+    <exclude body1="Left_Wrist_Roll_Link" body2="Left_bind"/>
+    <exclude body1="Left_bind" body2="Left_D435i"/>
+    <exclude body1="Right_Wrist_Roll_Link" body2="Right_bind"/>
+    <exclude body1="Right_bind" body2="Right_D435i"/>
+  </contact>
+
+  <actuator>
+    <!-- Arm actuators -->
+    <position name="left_actuator1" joint="Left_Shoulder_Pitch_Joint" kp="4000" kv="200" forcerange="-1500 1500"/>
+    <position name="left_actuator2" joint="Left_Shoulder_Roll_Joint" kp="4000" kv="200" forcerange="-1500 1500"/>
+    <position name="left_actuator3" joint="Left_Shoulder_Yaw_Joint" kp="3000" kv="150" forcerange="-1000 1000"/>
+    <position name="left_actuator4" joint="Left_Elbow_Pitch_Joint" kp="2500" kv="125" forcerange="-800 800"/>
+    <position name="left_actuator5" joint="Left_Wrist_Yaw_Joint"   kp="1800" kv="90" forcerange="-250 250"/>
+    <position name="left_actuator6" joint="Left_Wrist_Pitch_Joint" kp="1600" kv="80" forcerange="-250 250"/>
+    <position name="left_actuator7" joint="Left_Wrist_Roll_Joint"  kp="1400" kv="70" forcerange="-250 250"/>
+
+    <position name="right_actuator1" joint="Right_Shoulder_Pitch_Joint" kp="4000" kv="200" forcerange="-1500 1500"/>
+    <position name="right_actuator2" joint="Right_Shoulder_Roll_Joint" kp="4000" kv="200" forcerange="-1500 1500"/>
+    <position name="right_actuator3" joint="Right_Shoulder_Yaw_Joint" kp="3000" kv="150" forcerange="-1000 1000"/>
+    <position name="right_actuator4" joint="Right_Elbow_Pitch_Joint" kp="2500" kv="125" forcerange="-800 800"/>
+    <position name="right_actuator5" joint="Right_Wrist_Yaw_Joint"   kp="1800" kv="90" forcerange="-250 250"/>
+    <position name="right_actuator6" joint="Right_Wrist_Pitch_Joint" kp="1600" kv="80" forcerange="-250 250"/>
+    <position name="right_actuator7" joint="Right_Wrist_Roll_Joint"  kp="1400" kv="70" forcerange="-250 250"/>
+
+    <!-- Wheel actuators (differential drive) -->
+    <!-- ctrl[14]=ZQL(FR) ctrl[15]=ZHL(RR) ctrl[16]=YQL(FL) ctrl[17]=YHL(RL) -->
+    <velocity name="wheel_ZQL" joint="ZQL" kv="20" ctrlrange="-10 10" forcerange="-200 200"/>
+    <velocity name="wheel_ZHL" joint="ZHL" kv="20" ctrlrange="-10 10" forcerange="-200 200"/>
+    <velocity name="wheel_YQL" joint="YQL" kv="20" ctrlrange="-10 10" forcerange="-200 200"/>
+    <velocity name="wheel_YHL" joint="YHL" kv="20" ctrlrange="-10 10" forcerange="-200 200"/>
+  </actuator>
+</mujoco>

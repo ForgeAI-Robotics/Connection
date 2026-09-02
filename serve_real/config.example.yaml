@@ -1,0 +1,13 @@
+# Public template: copy to the corresponding local filename; never commit live settings.
+real_base:
+  enabled: 0
+  port: /dev/ttyACM0
+  speed_scale: 0.1
+  max_speed: 0.2
+real_arm:
+  enabled: 0
+  host: 192.0.2.40
+  port: 9999
+  timeout: 60
+  command_byte: 170
+  fail_on_error: 1

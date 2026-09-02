@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>G1 会议接待 · 大脑补货闭环</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #0f172a; color: #e2e8f0;
+           min-height: 100vh; padding: 32px 20px; line-height: 1.5; }
+    .wrap { max-width: 860px; margin: 0 auto; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .sub { color: #94a3b8; font-size: 13px; margin-bottom: 20px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+    .card h3 { font-size: 14px; color: #cbd5e1; margin-bottom: 12px; }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    select, input { padding: 9px 12px; border: 1px solid #334155; border-radius: 8px; background: #0f172a;
+                    color: #e2e8f0; font-size: 14px; outline: none; }
+    .btn { padding: 9px 18px; border: none; border-radius: 8px; background: #0ea5e9; color: #fff;
+           font-size: 14px; cursor: pointer; }
+    .btn:hover { background: #0284c7; }
+    .btn:disabled { opacity: .5; cursor: default; }
+    label.ck { color: #94a3b8; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .think { margin: 10px 0; padding: 10px 12px; background: #0f172a; border-radius: 8px; font-size: 13px;
+             color: #a5b4fc; line-height: 1.7; }
+    .think b { color: #818cf8; }
+    .kv { font-size: 13px; color: #cbd5e1; padding: 3px 0; }
+    .kv .g { color: #22c55e; } .kv .r { color: #ef4444; } .kv .m { color: #a78bfa; }
+    .bar { height: 6px; background: #334155; border-radius: 3px; overflow: hidden; margin: 8px 0 12px; }
+    .bar > i { display: block; height: 100%; background: #22c55e; border-radius: 3px; transition: width .3s; }
+    .round { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+    .round > .rh { font-size: 13px; font-weight: 600; color: #e2e8f0; margin-bottom: 8px; }
+    .step { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 0;
+            font-family: ui-monospace, monospace; color: #cbd5e1; }
+    .bdg { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center;
+           border-radius: 5px; font-size: 12px; padding: 0 5px; }
+    .bdg.ok { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .bdg.no { background: #2a1215; color: #f87171; border: 1px solid #7f1d1d; }
+    .recov { font-size: 12px; color: #fbbf24; padding: 3px 0 3px 26px; }
+    .rule { font-size: 13px; color: #4ade80; padding: 4px 0; }
+    .finding { font-size: 12.5px; color: #94a3b8; padding: 2px 0; }
+    .tag { font-size: 11px; padding: 1px 7px; border-radius: 4px; background: #334155; color: #cbd5e1; margin-left: 6px; }
+    .verdict { font-size: 16px; font-weight: 700; margin: 6px 0; }
+    .verdict.ok { color: #22c55e; } .verdict.no { color: #ef4444; }
+    .spk { padding: 10px 12px; background: #0f172a; border-radius: 8px; font-size: 13px; color: #e2e8f0; }
+    .muted { color: #64748b; font-size: 12px; }
+    #out > .card { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>🤖 G1 会议接待 · 大脑补货闭环</h1>
+    <div class="sub">触发 → 开灯 → 扫描 → 数缺口 → <b>一个一个补货(每步重新确认)</b> → 复核 → 播报 → 事后反思生成新 SOP</div>
+
+    <div class="card">
+      <div class="row">
+        <select id="scenario">
+          <option value="normal">正常</option>
+          <option value="grasp_fail">抓取失败(如实报错→重试)</option>
+          <option value="walk_blocked">办公椅挡路(→重试)</option>
+          <option value="place_miss">放偏谎报成功(→大脑逮住)</option>
+          <option value="label_wrong">标签朝向乱(→终局复核逮住)</option>
+        </select>
+        <span class="muted">参会人数</span>
+        <input id="headcount" type="number" value="4" min="1" max="12" style="width:70px">
+        <label class="ck"><input type="checkbox" id="reflect" checked> 事后反思(LLM,稍慢)</label>
+        <button class="btn" id="run" onclick="run()">运行接待</button>
+      </div>
+      <div id="status" class="muted" style="margin-top:10px"></div>
+    </div>
+
+    <div id="out"></div>
+
+    <div class="card" id="sop-card">
+      <h3>📋 接待 SOP · learned_rules <span class="tag" id="sop-ver"></span></h3>
+      <div id="sop-body" class="muted">加载中…</div>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => (s==null?'':String(s)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const bdg = ok => `<span class="bdg ${ok?'ok':'no'}">${ok?'✓':'✗'}</span>`;
+
+async function run() {
+  const btn = $('run'); btn.disabled = true;
+  const scenario = $('scenario').value, headcount = +$('headcount').value, reflect = $('reflect').checked;
+  $('status').textContent = '机器人执行中…' + (reflect ? '(含 LLM 反思,约 5-15s)' : '');
+  $('out').innerHTML = '';
+  try {
+    const r = await fetch('/api/reception/run', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({scenario, headcount, reflect})});
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error || '运行失败');
+    renderTrace(d.trace);
+    $('status').textContent = '';
+    loadSop();
+  } catch (e) {
+    $('status').innerHTML = '<span style="color:#ef4444">出错: ' + esc(e.message) + '</span>';
+  } finally { btn.disabled = false; }
+}
+
+function card(html) { const c = document.createElement('div'); c.className='card'; c.style.display='block'; c.innerHTML=html; $('out').appendChild(c); }
+
+function renderTrace(t) {
+  const tr = t.trigger||{}, sb = t.scan_before||{}, g = t.gap||{}, fc = t.final_check||{};
+  // ①-④ 触发 + 环境 + 缺口
+  card(`<h3>① 触发 & 环境准备</h3>
+    <div class="kv">会议室「阳光厅」· 参会 <b>${tr.headcount}</b> 人</div>
+    <div class="kv">② 开灯: ${bdg((t.steps&&t.steps.light&&t.steps.light.verify_ok))} ${esc(t.steps&&t.steps.light&&t.steps.light.verify_detail)}</div>
+    <div class="kv">③ 扫描: 会议室现有可乐 <b>${sb.meeting_cola}</b> 罐 · 茶水间库存 <b>${sb.tea_stock}</b> 罐 · 办公椅挡路 ${sb.chairs_blocking?'<span class="r">是</span>':'否'}</div>
+    <div class="think"><b>🧠 缺口计算:</b> 需求 ${g.need} 罐(${tr.headcount}人 × ${tr.per_person}) − 现有 ${g.have} = 缺口 <b>${g.gap}</b> 罐</div>`);
+
+  // ⑤ 补货循环
+  let rounds = '';
+  (t.rounds||[]).forEach((rd, i) => {
+    const pct = Math.round((i+1) / Math.max(g.need,1) * 100);
+    let atts = '';
+    (rd.attempts||[]).forEach(a => {
+      const multi = (rd.attempts.length>1) ? `<div class="muted" style="font-size:11px">尝试 ${a.n}</div>` : '';
+      let steps = (a.steps||[]).map(s =>
+        `<div class="step">${bdg(s.verify_ok)} <span>${esc(s.step)}</span>
+          <span class="muted">· 自报${s.exec&&s.exec.success?'成功':'失败'}</span>
+          <span style="margin-left:auto;color:${s.verify_ok?'#94a3b8':'#f87171'}">${esc(s.verify_detail)}</span></div>`).join('');
+      let recov = a.fail_at ? `<div class="recov">↻ ${esc(a.fail_at)} 失败 → 按观测到的现状恢复(状态守卫决定从哪步续)</div>` : '';
+      atts += multi + steps + recov;
+    });
+    rounds += `<div class="round"><div class="rh">第 ${rd.round} 罐 ${rd.ok?bdg(true):bdg(false)}</div>${atts}</div>`;
+  });
+  card(`<h3>⑤ 补货循环 · 一个一个补,每步重新观测确认</h3>
+    <div class="bar"><i style="width:${(t.rounds||[]).length/Math.max(g.need,1)*100}%"></i></div>${rounds}`);
+
+  // ⑥ 完成确认 & ⑦ 上报(结构化 report card;旧 trace 无 report_card 则回退 final_check)
+  const rc = t.report_card || {};
+  const rcVerdict = rc.verdict != null ? rc.verdict : fc.verdict;
+  let rcBody;
+  if (rc.checks) {
+    rcBody = rc.checks.map(c => `<div class="kv">${bdg(c.pass)} ${esc(c.name)}:${esc(c.detail)}</div>`).join('')
+      + ((rc.anomalies && rc.anomalies.length) ? `<div class="kv r">⚠ 异常:${esc(rc.anomalies.join('；'))}</div>` : '')
+      + `<div class="kv m">→ ${esc(rc.advice)}</div>`;
+  } else {
+    rcBody = `<div class="kv">${bdg(fc.satisfied)} 会议室可乐 ${fc.have_before}→${fc.have_after},满足 ${fc.need} 人需求</div>`
+      + `<div class="kv">${bdg(fc.light_ok)} 灯光已开</div>`
+      + `<div class="kv">${bdg(fc.layout_ok)} 全局摆放 ${fc.layout_ok?'全部合格':fc.bad_slots+' 罐不合格'}</div>`;
+  }
+  card(`<h3>⑥ 完成确认 & ⑦ 上报</h3>
+    ${rcBody}
+    <div class="verdict ${rcVerdict?'ok':'no'}">${rcVerdict?'任务完成 ✅':'任务未完成 ❌'}</div>
+    <div class="spk">🔊 ${esc(t.report)}</div>`);
+
+  // ⑧ 反思
+  const rf = t.reflection;
+  if (rf && !rf.error) {
+    const finds = (rf.findings||[]).map(f => `<div class="finding">· [${esc(f.type)}] ${esc(f.detail)}</div>`).join('');
+    const rules = (rf.new_rules||[]).map(x => `<div class="rule">+ ${esc(x)}</div>`).join('') || '<div class="muted">(无新增 — 未暴露既有规则之外的问题)</div>';
+    card(`<h3>⑧ 事后反思 → 新版 SOP</h3>
+      <div style="margin-bottom:8px">${finds}</div>
+      <div class="think"><b>🧠 提炼新经验规则</b> <span class="tag">${esc(rf.source)}</span></div>
+      ${rules}
+      ${rf.sop_v2 ? `<div class="muted" style="margin-top:8px">↳ 已写入 ${esc(rf.sop_v2)}</div>` : ''}`);
+  } else if (rf && rf.error) {
+    card(`<h3>⑧ 事后反思</h3><div class="muted">跳过: ${esc(rf.error)}</div>`);
+  }
+}
+
+async function loadSop() {
+  try {
+    const d = await (await fetch('/api/reception/sop')).json();
+    $('sop-ver').textContent = d.version || '';
+    const rules = (d.sop && d.sop.learned_rules) || [];
+    $('sop-body').innerHTML = rules.map(r => {
+      const isV2 = /\[v2·auto/.test(r);
+      return `<div class="kv" style="${isV2?'color:#4ade80':''}">• ${esc(r)}</div>`;
+    }).join('') || '<span class="muted">无</span>';
+  } catch (e) { $('sop-body').innerHTML = '<span class="muted">SOP 读取失败</span>'; }
+}
+loadSop();
+</script>
+</body>
+</html>

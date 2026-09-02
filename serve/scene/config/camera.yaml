@@ -1,0 +1,30 @@
+# Camera rendering configuration for the MuJoCo service (robosuite PandaOmron).
+# Images are rendered on request by /camera/latest, not by a background loop.
+# http://localhost:5001/camera/latest查看图片
+# 相机名用 robosuite PandaOmron 自带的:overhead_cam/side_cam(make_scene 加的世界相机),
+# robot0_frontview(机身前视)/robot0_eye_in_hand(腕部手眼)/robot0_agentview_center(机身)。
+screenshot:
+  default_camera: overhead_cam
+  width: 960
+  height: 720
+  jpeg_quality: 90
+
+preview:
+  cameras:
+    - overhead_cam
+    - robot0_frontview
+    - robot0_eye_in_hand
+    - robot0_agentview_center
+  width: 320
+  height: 240
+  jpeg_quality: 88
+
+cameras:
+  overhead_cam:
+    label: Top
+  robot0_frontview:
+    label: Front
+  robot0_eye_in_hand:
+    label: Wrist
+  robot0_agentview_center:
+    label: Agent

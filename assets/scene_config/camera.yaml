@@ -1,0 +1,32 @@
+# Camera rendering configuration.
+# Images are rendered on request by /camera/latest, not by a background loop.
+# model_name: optional — maps logical camera name to actual model camera name.
+#   Used when the simulation model uses a different name (e.g. 3DGS uses "follower" instead of "overhead_cam").
+#   If absent, the logical name is used directly.
+
+screenshot:
+  default_camera: overhead_cam
+  width: 640
+  height: 480
+  jpeg_quality: 80
+
+preview:
+  cameras:
+    - overhead_cam
+    - head_cam
+    - right_arm_cam
+    - left_arm_cam
+  width: 160
+  height: 120
+  jpeg_quality: 80
+
+cameras:
+  overhead_cam:
+    label: Top
+    model_name: follower
+  right_arm_cam:
+    label: Right wrist
+  left_arm_cam:
+    label: Left wrist
+  head_cam:
+    label: Head
