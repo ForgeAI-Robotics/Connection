@@ -10,9 +10,20 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from integrations.dream_client import DreamClient, DreamRecoveryRequired
-from integrations.reception_verify import ReceptionVerifier
-from integrations.vla_client import VlaClient, VlaRecoveryRequired
+try:
+    # Normal entry: master/run.py places the master directory on sys.path.
+    from integrations.dream_client import DreamClient, DreamRecoveryRequired
+    from integrations.reception_verify import ReceptionVerifier
+    from integrations.vla_client import VlaClient, VlaRecoveryRequired
+except ModuleNotFoundError as exc:
+    # Managed Windows tasks may preserve only the repository root on sys.path.
+    # Fall back only when the top-level integrations package itself is absent;
+    # never hide a missing dependency imported from inside these modules.
+    if exc.name != "integrations" and not str(exc.name).startswith("integrations."):
+        raise
+    from master.integrations.dream_client import DreamClient, DreamRecoveryRequired
+    from master.integrations.reception_verify import ReceptionVerifier
+    from master.integrations.vla_client import VlaClient, VlaRecoveryRequired
 from .reception_store import ReceptionStore, now_iso
 
 
@@ -317,11 +328,20 @@ class ReceptionRealRunner:
         if status.get("navigation_transport_ready") is not True:
             raise ReceptionPipelineError("DREAM导航通路未就绪")
         if status.get("motion_ready") is not True:
-            blockers = status.get("motion_blockers") or []
-            detail = ", ".join(map(str, blockers)) or "UNKNOWN"
-            raise ReceptionPipelineError(
-                f"DREAM motion_ready=false，阻塞项: {detail}"
-            )
+            blockers = {str(value) for value in (status.get("motion_blockers") or [])}
+            # An idle DREAM transaction is deliberately disarmed: Gateway and
+            # Token become ready only after a reviewed Agent goal is created
+            # and g1_agent_navigation_service performs its bounded Arm loop.
+            # Accept only that exact standby condition. Localization approval,
+            # transport ownership and the absence of an active command remain
+            # mandatory above; every other blocker remains fail-closed.
+            idle_disarmed = {"GATEWAY_NOT_READY", "TOKEN_NOT_READY"}
+            unexpected = blockers - idle_disarmed
+            if not blockers or unexpected:
+                detail = ", ".join(sorted(blockers)) or "UNKNOWN"
+                raise ReceptionPipelineError(
+                    f"DREAM motion_ready=false，阻塞项: {detail}"
+                )
         if status.get("active_command_id"):
             raise ReceptionPipelineError(
                 f"DREAM存在活动命令: {status.get('active_command_id')}")
@@ -370,6 +390,9 @@ class ReceptionRealRunner:
                 "navigation_transport_ready": status.get("navigation_transport_ready"),
                 "motion_ready": status.get("motion_ready"),
                 "motion_blockers": status.get("motion_blockers") or [],
+                "idle_disarmed_before_first_command": (
+                    status.get("motion_ready") is not True
+                ),
                 "active_command_id": status.get("active_command_id"),
             },
             "vla": {

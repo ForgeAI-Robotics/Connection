@@ -360,12 +360,23 @@ class ReceptionRealPipelineTest(unittest.TestCase):
             vla=VlaClient(vla_url),
         )
 
-    def test_preflight_blocks_motion_gate_without_commands(self):
+    def test_preflight_accepts_exact_idle_disarmed_gate_without_commands(self):
         FakeDreamHandler.motion_ready = False
         FakeDreamHandler.motion_blockers = ["GATEWAY_NOT_READY", "TOKEN_NOT_READY"]
         report = self._preflight_report()
+        self.assertTrue(report["ready"], report)
+        self.assertTrue(report["dream"]["idle_disarmed_before_first_command"])
+        self.assertEqual({}, FakeDreamHandler.commands)
+        self.assertEqual({}, FakeVlaHandler.tasks)
+
+    def test_preflight_rejects_any_nonstandby_motion_blocker(self):
+        FakeDreamHandler.motion_ready = False
+        FakeDreamHandler.motion_blockers = [
+            "GATEWAY_NOT_READY", "TOKEN_NOT_READY", "LOCALIZATION_DEGRADED",
+        ]
+        report = self._preflight_report()
         self.assertFalse(report["ready"], report)
-        self.assertIn("GATEWAY_NOT_READY", report["blockers"][0])
+        self.assertIn("LOCALIZATION_DEGRADED", report["blockers"][0])
         self.assertEqual({}, FakeDreamHandler.commands)
         self.assertEqual({}, FakeVlaHandler.tasks)
 
