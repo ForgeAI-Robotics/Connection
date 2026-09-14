@@ -7,7 +7,7 @@ import time
 from pbd_ag_client import PBDAGClient
 
 
-client = PBDAGClient(os.environ.get("PBD_AG_SERVER", "http://192.0.2.99:8088"))
+client = PBDAGClient(os.environ.get("PBD_AG_SERVER", "http://10.11.32.63:8088"))
 cursor = 0
 
 while True:

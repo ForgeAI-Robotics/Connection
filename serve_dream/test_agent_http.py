@@ -4,8 +4,6 @@ import json
 import math
 import os
 import sys
-import shutil
-import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -111,9 +109,9 @@ class AgentHttpContractTest(unittest.TestCase):
         self.assertEqual(target["target_id"], "table_2")
         self.assertEqual(target["motion_mode"], "forward_path")
         self.assertEqual(target["yaw_unit"], "radians")
-        self.assertAlmostEqual(target["x"], 1.0)
-        self.assertAlmostEqual(target["y"], 2.0)
-        self.assertAlmostEqual(target["yaw"], 0.0)
+        self.assertAlmostEqual(target["x"], 0.9948137550501258)
+        self.assertAlmostEqual(target["y"], 1.402057782965935)
+        self.assertAlmostEqual(target["yaw"], -0.3193204258080712)
 
     def test_accepted_is_polled_until_succeeded(self):
         payload = agent_http.build_navigation_payload(
@@ -141,18 +139,14 @@ class AgentHttpContractTest(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertTrue(result["six_d_sync_active"])
 
-    def test_synthetic_map_and_graph(self):
-        from selftest import make_pgm
-        data_dir = os.path.join(_HERE, "sample")
-        with tempfile.TemporaryDirectory() as tmp:
-            shutil.copy(os.path.join(data_dir, "map.yaml"), tmp)
-            make_pgm(os.path.join(tmp, "map.pgm"))
-            map_data = rosmap.load_map_data(os.path.join(tmp, "map.yaml"))
-        self.assertEqual((map_data["width"], map_data["height"]), (40, 30))
-        self.assertAlmostEqual(map_data["resolution"], 0.025)
+    def test_delivered_map_and_graph(self):
+        data_dir = os.path.join(_HERE, "integration", "20260821")
+        map_data = rosmap.load_map_data(os.path.join(data_dir, "map.yaml"))
+        self.assertEqual((map_data["width"], map_data["height"]), (338, 374))
+        self.assertAlmostEqual(map_data["resolution"], 0.05)
         graph = scene_graph.load_graph(os.path.join(data_dir, "total_scene_graph_latest.json"))
         self.assertIn("table_1", scene_graph.graph_fixtures(graph))
-        self.assertIn("fridge_1", scene_graph.graph_fixtures(graph))
+        self.assertIn("table_2", scene_graph.graph_fixtures(graph))
         self.assertIsNone(scene_graph.door_navigation_contract(graph))
 
     def test_server_rejects_real_action_by_default(self):

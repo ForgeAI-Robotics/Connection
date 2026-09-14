@@ -12,14 +12,14 @@ Two modes:
 
   **Local mode** (policy loaded in-process):
     python teleop/pi05/sim_pi05_inference.py \
-        --policy-path /opt/models/49000/pretrained_model \
-        --base-model-path /opt/models/pi05_base \
-        --tokenizer-path /opt/models/pi05_base \
+        --policy-path /data/FQIntern/49000/pretrained_model \
+        --base-model-path /data/FQIntern/pi05_base \
+        --tokenizer-path /data/FQIntern/pi05_base \
         --task "pick up the object" --device cuda
 
   **Dataset replay mode** (remote pi05_server, no local model needed):
     python teleop/pi05/sim_pi05_inference.py \
-        --data-path /opt/models/dataset --episode 0 \
+        --data-path /data/FQIntern/dataset --episode 0 \
         --pi05-url http://127.0.0.1:5005 \
         --scene robot_only
 """

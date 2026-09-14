@@ -70,7 +70,7 @@ def main():
         print("[1] rosmap 适配")
         md = rosmap.load_map_data(os.path.join(tmp, "map.yaml"))
         check("resolution=0.025", md["resolution"] == 0.025)
-        check("origin=(-1,-1)", abs(md["origin"][0] + 1.0) < 1e-6 and abs(md["origin"][1] + 1.0) < 1e-6)
+        check("origin=(-3.1,-5.1)", abs(md["origin"][0] + 3.1) < 1e-6 and abs(md["origin"][1] + 5.1) < 1e-6)
         check("grid 尺寸一致", len(md["grid"]) == md["width"] * md["height"], f"{md['width']}x{md['height']}")
         check("trinary 值透传", {0, 205, 254} == set(md["grid"]))
 
@@ -79,10 +79,10 @@ def main():
         fx = scene_graph.graph_fixtures(g)
         ob = scene_graph.graph_objects(g)
         check("fixtures= table_1+fridge_1", set(fx) == {"table_1", "fridge_1"})
-        check("table_1 pos", abs(fx["table_1"]["pos"][0] - 0.5) < 1e-6)
-        check("fridge_1 size=bbox 全尺寸", abs(fx["fridge_1"]["size"][0] - 1.0) < 1e-4)
+        check("table_1 pos", abs(fx["table_1"]["pos"][0] - 0.695676) < 1e-6)
+        check("fridge_1 size=bbox 全尺寸", abs(fx["fridge_1"]["size"][0] - (5.076632 - 3.927049)) < 1e-4)
         check("关键 objects 存在", {"cola_can_1", "bottled_water_1", "mobile_phone_1"}.issubset(ob))
-        check("cola_can_1 pos+parent", abs(ob["cola_can_1"]["pos"][0] - 0.6) < 1e-4
+        check("cola_can_1 pos+parent", abs(ob["cola_can_1"]["pos"][0] - 0.801077) < 1e-4
               and ob["cola_can_1"]["parent"] == "table_1")
         check("grasped 恒 False", not any(o["grasped"] for o in ob.values()))
 
@@ -150,7 +150,7 @@ def main():
         g2, src = exchange.load_json_file(http_cfg, _THIS, "scene_graph", "total_scene_graph_latest.json")
         check("HTTP 拉场景图", g2 is not None and "table_1" in g2["nodes"])
         pose2, _ = exchange.load_json_file(http_cfg, _THIS, "pose_file", "nav_map_latest.json")
-        check("HTTP 拉位姿", abs(pose2["robot_xyt"][0] - 1.0) < 1e-4)
+        check("HTTP 拉位姿", abs(pose2["robot_xyt"][0] - 1.64645) < 1e-4)
         md2 = rosmap.load_map_data(exchange.map_yaml_path(http_cfg, _THIS))
         check("HTTP 拉地图(yaml+pgm→缓存→解析)", md2["width"] == 40)
         resp, code = exchange.nav_forward(http_cfg, 0.95, -1.70, -134.6, timeout=5)
@@ -185,8 +185,8 @@ def main():
             check("GET /objects", "cola_can_1" in c.get("/objects").get_json())
             check("GET /fixtures", "table_1" in c.get("/fixtures").get_json())
             bs = c.get("/base_status").get_json()
-            check("GET /base_status(位姿+yaw_deg)", abs(bs["pos"][0] - 1.0) < 1e-4
-                  and abs(bs["yaw_deg"]) < 0.1)
+            check("GET /base_status(位姿+yaw_deg)", abs(bs["pos"][0] - 1.64645) < 1e-4
+                  and abs(bs["yaw_deg"] - (math.degrees(-2.054726) % 360)) < 0.1)
             check("GET /map_data", c.get("/map_data").get_json()["width"] == 40)
             check("POST /nav 缺参→400", c.post("/nav", json={}).status_code == 400)
             check("POST /grasp→501(VLA 职责)", c.post("/grasp", json={"obj_name": "x"}).status_code == 501)

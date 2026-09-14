@@ -30,11 +30,11 @@
     <mesh name="Moving_Jaw_part1" file="Moving_Jaw_part1.ply.convex.stl"/>
     <mesh name="Moving_Jaw_part2" file="Moving_Jaw_part2.ply.convex.stl"/>
     <mesh name="Moving_Jaw_part3" file="Moving_Jaw_part3.ply.convex.stl"/>
-
+    
     <!-- Camera meshes -->
     <mesh name="XLeRobot_camera1" file="XLeRobot_camera1.stl" scale="0.001 0.001 0.001"/>
     <mesh name="XLeRobot_camera2" file="XLeRobot_camera2.stl" scale="0.001 0.001 0.001"/>
-
+    
     <!-- Base and head meshes -->
     <mesh name="raskogbody" file="raskogbody.stl" scale="0.0009 0.001 0.0009"/>
     <mesh name="raskogwheel1" file="raskogwheel1.stl" scale="0.0009 0.001 0.0009"/>
@@ -75,11 +75,11 @@
 
   <worldbody>
     <light directional="true" pos="-0.5 0.5 3" dir="0 0 -1"/>
-
+    
     <!-- Chassis with freejoint (similar to car) - not fixed to ground -->
     <body name="chassis" pos="0 0 0.38">
       <freejoint/>
-
+      
       <!-- Simplified base_link visual representation -->
       <!-- <geom type="box" size="0.2 0.2 0.38" pos="0 0 0.35" rgba="0.2 0.2 0.6 0.3" class="visual"/>
       <geom type="box" size="0.1575 0.2025 0.045" pos="0 0 0.73" rgba="0.6 0.5 0.1 0.5" class="visual"/> -->
@@ -94,12 +94,12 @@
       <geom type="box" size="0.008 0.2 0.05" pos="-0.04 0.00 0.34" class="collision" friction="1 0.005 0.0001" rgba="0.9 0.3 0.3 0.5"/>
       <!-- Base link inertial properties (mass set to 0, mass moved to wheels) -->
       <inertial pos="0 0 -0.38" mass="10" diaginertia="0.001 0.001 0.001"/>
-
+      
       <!-- Raskog visual meshes -->
       <geom type="mesh" mesh="raskogbody" pos="-0.01668 0.502 0.515" euler="1.5708 0 0" material="blue" class="visual"/>
       <geom type="mesh" mesh="raskogwheel1" pos="-0.01668 0.502 0.515" euler="1.5708 0 0" material="grey" class="visual"/>
       <geom type="mesh" mesh="raskogwheel2" pos="-0.01668 0.502 0.515" euler="1.5708 0 0" material="motor" class="visual"/>
-
+      
       <!-- Drive wheels (active wheels, similar to car) -->
       <!-- Positioned at the bottom of chassis, with wheels touching the ground -->
       <body name="left_wheel" pos="-0.15 0.225 -0.32" zaxis="0 1 0">
@@ -112,7 +112,7 @@
         <inertial pos="0 0 0" mass="1" diaginertia="0.01 0.01 0.01"/>
         <geom class="wheel"/>
       </body>
-
+      
       <!-- Caster wheels (passive wheels, similar to car's front wheel) -->
       <!-- Positioned at the bottom of chassis, touching the ground -->
       <!-- Note: caster wheels are geoms (not bodies) with zero friction for free rolling -->
@@ -129,7 +129,7 @@
         <!-- Collision meshes -->
         <geom type="mesh" mesh="Base" class="collision"/>
         <geom type="mesh" mesh="Base_Motor" class="collision"/>
-
+        
         <body name="Rotation_Pitch" pos="0 -0.0452 0.0165" euler="1.5708 0 0">
           <inertial pos="-0.0307604 -1.66727e-05 -0.0252713" mass="0.100006" fullinertia="8.3759e-05 8.10403e-05 2.39783e-05 7.55525e-08 -1.16342e-06 1.54663e-07"/>
           <joint name="Rotation_L" type="hinge" axis="0 -1 0" range="-2.16 2.16" class="sts3215"/>
@@ -139,7 +139,7 @@
           <!-- Collision meshes -->
           <geom type="mesh" mesh="Rotation_Pitch" class="collision"/>
           <geom type="mesh" mesh="Rotation_Pitch_Motor" class="collision"/>
-
+          
           <body name="Upper_Arm" pos="0 0.1025 0.0306" euler="1.5708 0 0">
             <inertial pos="-0.0898471 -0.00838224 0.0184089" mass="0.103" fullinertia="4.08002e-05 0.000147318 0.000142487 -1.97819e-05 -4.03016e-08 8.97326e-09"/>
             <joint name="Pitch_L" type="hinge" axis="-1 0 0" range="-0.22 3.37" class="sts3215"/>
@@ -149,7 +149,7 @@
             <!-- Collision meshes -->
             <geom type="mesh" mesh="Upper_Arm" class="collision"/>
             <geom type="mesh" mesh="Upper_Arm_Motor" class="collision"/>
-
+            
             <body name="Lower_Arm" pos="0 0.11257 0.028" euler="-1.5708 0 0">
               <inertial pos="-0.0980701 0.00324376 0.0182831" mass="0.104" fullinertia="2.87438e-05 0.000159844 0.00014529 7.41152e-06 1.26409e-06 -4.90188e-08"/>
               <joint name="Elbow_L" type="hinge" axis="1 0 0" range="-0.22 3.14" class="sts3215"/>
@@ -159,7 +159,7 @@
               <!-- Collision meshes -->
               <geom type="mesh" mesh="Lower_Arm" class="collision"/>
               <geom type="mesh" mesh="Lower_Arm_Motor" class="collision"/>
-
+              
               <body name="Wrist_Pitch_Roll" pos="0 0.0052 0.1349" euler="-1.5708 0 0">
                 <inertial pos="-0.000103312 -0.0386143 0.0281156" mass="0.079" fullinertia="3.68263e-05 2.5391e-05 2.1e-05 1.7893e-08 -5.28128e-08 3.6412e-06"/>
                 <joint name="Wrist_Pitch_L" type="hinge" axis="1 0 0" range="-1.6580628494556928 1.6580627293335335" class="sts3215"/>
@@ -169,7 +169,7 @@
                 <!-- Collision meshes -->
                 <geom type="mesh" mesh="Wrist_Pitch_Roll" class="collision"/>
                 <geom type="mesh" mesh="Wrist_Pitch_Roll_Motor" class="collision"/>
-
+                
                 <body name="Fixed_Jaw" pos="0 -0.0601 0" euler="0 1.5708 0">
                   <inertial pos="0.000213627 0.000245138 -0.025187" mass="0.087" fullinertia="2.75087e-05 4.33657e-05 3.45059e-05 -3.35241e-07 -5.7352e-06 -5.17847e-08"/>
                   <joint name="Wrist_Roll_L" type="hinge" axis="0 -1 0" range="-2.7438472969992493 2.841206309382605" class="sts3215"/>
@@ -214,7 +214,7 @@
         <!-- Collision meshes -->
         <geom type="mesh" mesh="Base" class="collision"/>
         <geom type="mesh" mesh="Base_Motor" class="collision"/>
-
+        
         <body name="Rotation_Pitch_2" pos="0 -0.0452 0.0165" euler="1.5708 0 0">
           <inertial pos="-0.0307604 -1.66727e-05 -0.0252713" mass="0.100006" fullinertia="8.3759e-05 8.10403e-05 2.39783e-05 7.55525e-08 -1.16342e-06 1.54663e-07"/>
           <joint name="Rotation_R" type="hinge" axis="0 -1 0" range="-2.16 2.16" class="sts3215"/>
@@ -224,7 +224,7 @@
           <!-- Collision meshes -->
           <geom type="mesh" mesh="Rotation_Pitch" class="collision"/>
           <geom type="mesh" mesh="Rotation_Pitch_Motor" class="collision"/>
-
+          
           <body name="Upper_Arm_2" pos="0 0.1025 0.0306" euler="1.5708 0 0">
             <inertial pos="-0.0898471 -0.00838224 0.0184089" mass="0.103" fullinertia="4.08002e-05 0.000147318 0.000142487 -1.97819e-05 -4.03016e-08 8.97326e-09"/>
             <joint name="Pitch_R" type="hinge" axis="-1 0 0" range="-0.22 3.37" class="sts3215"/>
@@ -234,7 +234,7 @@
             <!-- Collision meshes -->
             <geom type="mesh" mesh="Upper_Arm" class="collision"/>
             <geom type="mesh" mesh="Upper_Arm_Motor" class="collision"/>
-
+            
             <body name="Lower_Arm_2" pos="0 0.11257 0.028" euler="-1.5708 0 0">
               <inertial pos="-0.0980701 0.00324376 0.0182831" mass="0.104" fullinertia="2.87438e-05 0.000159844 0.00014529 7.41152e-06 1.26409e-06 -4.90188e-08"/>
               <joint name="Elbow_R" type="hinge" axis="1 0 0" range="-0.22 3.14" class="sts3215"/>
@@ -244,7 +244,7 @@
               <!-- Collision meshes -->
               <geom type="mesh" mesh="Lower_Arm" class="collision"/>
               <geom type="mesh" mesh="Lower_Arm_Motor" class="collision"/>
-
+              
               <body name="Wrist_Pitch_Roll_2" pos="0 0.0052 0.1349" euler="-1.5708 0 0">
                 <inertial pos="-0.000103312 -0.0386143 0.0281156" mass="0.079" fullinertia="3.68263e-05 2.5391e-05 2.1e-05 1.7893e-08 -5.28128e-08 3.6412e-06"/>
                 <joint name="Wrist_Pitch_R" type="hinge" axis="1 0 0" range="-1.6580628494556928 1.6580627293335335" class="sts3215"/>
@@ -254,7 +254,7 @@
                 <!-- Collision meshes -->
                 <geom type="mesh" mesh="Wrist_Pitch_Roll" class="collision"/>
                 <geom type="mesh" mesh="Wrist_Pitch_Roll_Motor" class="collision"/>
-
+                
                 <body name="Fixed_Jaw_2" pos="0 -0.0601 0" euler="0 1.5708 0">
                   <inertial pos="0.000213627 0.000245138 -0.025187" mass="0.087" fullinertia="2.75087e-05 4.33657e-05 3.45059e-05 -3.35241e-07 -5.7352e-06 -5.17847e-08"/>
                   <joint name="Wrist_Roll_R" type="hinge" axis="0 -1 0" range="-2.7438472969992493 2.841206309382605" class="sts3215"/>
@@ -296,7 +296,7 @@
         <!-- Visual meshes -->
         <geom type="mesh" mesh="topbase1" pos="-0.44 -0.005 -0.6" euler="0 0 0" material="white" class="visual"/>
         <geom type="mesh" mesh="topbase2" pos="-0.298 0.006 -0.715" euler="0 0 3.14" material="motor" class="visual"/>
-
+        
         <!-- Head -->
         <body name="head_pan_link" pos="-0.103 0 0.323">
           <inertial pos="0 0 0" mass="0.2556" diaginertia="0.0129 0.0095 0.0184"/>
@@ -304,14 +304,14 @@
           <!-- Visual meshes -->
           <geom type="mesh" mesh="tophead1" pos="-0.335 -0.005 -0.923" material="white" class="visual"/>
           <geom type="mesh" mesh="tophead4" pos="1.17 -0.009 0.262" euler="3.14 -1.57 3.14" material="motor" class="visual"/>
-
+          
           <body name="head_tilt_link" pos="0.001 0.002 0.09815" euler="0 0 3.14159265">
             <inertial pos="0 0 0" mass="0.02087" diaginertia="0.0061 0.0014 0.0061"/>
             <joint name="head_tilt_joint" type="hinge" axis="0 1 0" range="-0.76 1.45" class="sts3215"/>
             <!-- Visual meshes -->
             <geom type="mesh" mesh="tophead5" pos="0.16265 -0.006 -1.16815" material="white" class="visual"/>
             <geom type="mesh" mesh="tophead6" pos="0.16265 -0.006 -1.16815" material="motor" class="visual"/>
-
+            
             <!-- Camera frames -->
             <body name="head_camera_link" pos="0.0097 0.0026 0.0272">
               <inertial pos="0 0 0" mass="0.001" diaginertia="1e-6 1e-6 1e-6"/>
@@ -346,7 +346,7 @@
     <exclude body1="Upper_Arm" body2="Wrist_Pitch_Roll"/>
     <exclude body1="Upper_Arm" body2="Base"/>
     <exclude body1="Moving_Jaw" body2="Wrist_Pitch_Roll"/>
-
+    
     <!-- Second arm adjacent collisions -->
     <exclude body1="Base_2" body2="Rotation_Pitch_2"/>
     <exclude body1="Rotation_Pitch_2" body2="Upper_Arm_2"/>
@@ -360,7 +360,7 @@
     <exclude body1="Upper_Arm_2" body2="Wrist_Pitch_Roll_2"/>
     <exclude body1="Upper_Arm_2" body2="Base_2"/>
     <exclude body1="Moving_Jaw_2" body2="Wrist_Pitch_Roll_2"/>
-
+    
     <!-- Disable collisions between the two arms -->
     <exclude body1="Base" body2="Base_2"/>
     <exclude body1="chassis" body2="Base_2"/>

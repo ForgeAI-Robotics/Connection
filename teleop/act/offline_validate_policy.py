@@ -5,8 +5,8 @@ output actions against recorded ground-truth actions.
 Usage:
     conda activate lerobot
     python teleop/act/offline_validate_policy.py \
-        --policy-path /opt/robot/scrips/outputs/train/act_clear_table/checkpoints/100000/pretrained_model \
-        --data-path /opt/robot/下载/dual_arm_lerobot_data \
+        --policy-path /home/fangqi/scrips/outputs/train/act_clear_table/checkpoints/100000/pretrained_model \
+        --data-path /home/fangqi/下载/dual_arm_lerobot_data \
         --episode 0 \
         --device cuda
 """

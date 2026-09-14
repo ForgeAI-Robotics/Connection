@@ -81,22 +81,22 @@ class FakeDreamHandler(_JsonHandler):
                     "legs": [
                         {
                             "target_id": "table_2", "route_phase": "", "leg_index": 1,
-                            "goal_xyt": [1.0, 2.0, 0.0],
+                            "goal_xyt": [0.9948137550501258, 1.402057782965935, -0.3193204258080712],
                             "motion_mode": "forward_path", "require_final_orientation": True,
                         },
                         {
                             "target_id": "door_1", "route_phase": "door_approach", "leg_index": 2,
-                            "goal_xyt": [3.0, 2.0, 1.5707963267948966],
+                            "goal_xyt": [3.733075988421528, 6.215369909530748, 2.718279944258407],
                             "motion_mode": "forward_path", "require_final_orientation": True,
                         },
                         {
                             "target_id": "door_1", "route_phase": "door_lateral_exit", "leg_index": 3,
-                            "goal_xyt": [3.0, 3.0, 1.5707963267948966],
+                            "goal_xyt": [4.185939449618811, 7.560143924693016, 2.7689146673931306],
                             "motion_mode": "lateral_path_aligned", "require_final_orientation": True,
                         },
                         {
                             "target_id": "table_1", "route_phase": "table1_approach", "leg_index": 4,
-                            "goal_xyt": [4.0, 4.0, 0.0],
+                            "goal_xyt": [3.0873798986272165, 8.279995338440145, 1.175238157458919],
                             "motion_mode": "forward_path", "require_final_orientation": True,
                         },
                     ],
@@ -107,12 +107,12 @@ class FakeDreamHandler(_JsonHandler):
                         "evidence": {
                             "navigation_contract": {
                                 "door_approach": {
-                                    "goal_xyt": [3.0, 2.0, 1.5707963267948966],
+                                    "goal_xyt": [3.733075988421528, 6.215369909530748, 2.718279944258407],
                                     "motion_mode": "forward_path",
                                     "require_final_orientation": True,
                                 },
                                 "door_lateral_exit": {
-                                    "goal_xyt": [3.0, 3.0, 1.5707963267948966],
+                                    "goal_xyt": [4.185939449618811, 7.560143924693016, 2.7689146673931306],
                                     "motion_mode": "lateral_path_aligned",
                                     "require_final_orientation": True,
                                 },
@@ -360,12 +360,23 @@ class ReceptionRealPipelineTest(unittest.TestCase):
             vla=VlaClient(vla_url),
         )
 
-    def test_preflight_blocks_motion_gate_without_commands(self):
+    def test_preflight_accepts_exact_idle_disarmed_gate_without_commands(self):
         FakeDreamHandler.motion_ready = False
         FakeDreamHandler.motion_blockers = ["GATEWAY_NOT_READY", "TOKEN_NOT_READY"]
         report = self._preflight_report()
+        self.assertTrue(report["ready"], report)
+        self.assertTrue(report["dream"]["idle_disarmed_before_first_command"])
+        self.assertEqual({}, FakeDreamHandler.commands)
+        self.assertEqual({}, FakeVlaHandler.tasks)
+
+    def test_preflight_rejects_any_nonstandby_motion_blocker(self):
+        FakeDreamHandler.motion_ready = False
+        FakeDreamHandler.motion_blockers = [
+            "GATEWAY_NOT_READY", "TOKEN_NOT_READY", "LOCALIZATION_DEGRADED",
+        ]
+        report = self._preflight_report()
         self.assertFalse(report["ready"], report)
-        self.assertIn("GATEWAY_NOT_READY", report["blockers"][0])
+        self.assertIn("LOCALIZATION_DEGRADED", report["blockers"][0])
         self.assertEqual({}, FakeDreamHandler.commands)
         self.assertEqual({}, FakeVlaHandler.tasks)
 

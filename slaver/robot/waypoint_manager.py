@@ -86,7 +86,7 @@ def _load_perception_config():
 def get_object_pos(obj_name):
     """查询物体坐标：记忆模式用场景状态，实时模式调API"""
     use_realtime = _load_perception_config()
-
+    
     if not use_realtime:
         # 记忆模式：直接跳到记忆查询，不调任何 API
         try:
@@ -112,7 +112,7 @@ def get_object_pos(obj_name):
         except Exception as e:
             print(f"[waypoint] 记忆模式查询失败: {e}", file=sys.stderr)
         return None
-
+    
     # 实时模式：调 API
     try:
         objects = get_objects()

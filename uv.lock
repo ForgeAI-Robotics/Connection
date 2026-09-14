@@ -1519,10 +1519,10 @@ wheels = [
 
 [[package]]
 name = "nvidia-curand-cu12"
-version = "192.0.2.99"
+version = "10.3.9.55"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bd/fc/7be5d0082507269bb04ac07cc614c84b78749efb96e8cf4100a8a1178e98/nvidia_curand_cu12-192.0.2.99-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:8387d974240c91f6a60b761b83d4b2f9b938b7e0b9617bae0f0dafe4f5c36b86", size = 63618038, upload-time = "2025-01-23T17:57:41.838Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bd/fc/7be5d0082507269bb04ac07cc614c84b78749efb96e8cf4100a8a1178e98/nvidia_curand_cu12-10.3.9.55-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:8387d974240c91f6a60b761b83d4b2f9b938b7e0b9617bae0f0dafe4f5c36b86", size = 63618038, upload-time = "2025-01-23T17:57:41.838Z" },
 ]
 
 [[package]]

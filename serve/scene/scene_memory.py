@@ -193,7 +193,7 @@ def coords_to_waypoint(pos: list) -> str:
         return 'unknown'
     p = np.array(pos[:2])
     coords = _load_waypoint_coords()
-
+    
     best_name = 'unknown'
     best_dist = float('inf')  # 不设上限，总是返回最近的
     for name, wp_coords in coords.items():
@@ -201,6 +201,6 @@ def coords_to_waypoint(pos: list) -> str:
         if dist < best_dist:
             best_dist = dist
             best_name = name
-
+    
     print(f"[SceneMemory] 放置位置 {p.tolist()} → 最近工作点 {best_name} (dist={best_dist:.2f})")
     return best_name

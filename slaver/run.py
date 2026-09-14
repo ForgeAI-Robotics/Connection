@@ -52,7 +52,7 @@ class RobotManager:
         self.threads = []
         self.loop = asyncio.get_event_loop()
         self.robot_name = None
-
+        
         # Initialize tool matcher with configuration
         self.tool_matcher = ToolMatcher(
             max_tools=config["tool"]["matching"]["max_tools"],

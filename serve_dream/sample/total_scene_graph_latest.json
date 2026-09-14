@@ -1,12 +1,1181 @@
 {
-  "graph_id": "synthetic-public-fixture",
+  "graph_id": "g1_total_scene_graph::g1_20260713_141433_table",
   "root_id": "floor_0",
+  "created_at": "2026-07-14T10:41:13",
+  "global_scene_graph_path": "/home/fq/BJHYZJ_FQ/DREAM/relation_result/g1_20260713_141433_large/auto_0159/scene_graph.json",
+  "local_scene_graph_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/local_scene_graph.json",
+  "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+  "inspected_global_parent_id": "table_1",
+  "navigation_goal": {
+    "ok": true,
+    "mode": "inspect_support_object",
+    "source": "manual_image_override",
+    "target_object": {
+      "object_id": "table_1",
+      "class_name": "table",
+      "center_xy": [
+        0.695676,
+        1.903997
+      ]
+    },
+    "arrival": {
+      "known": false,
+      "arrived": true,
+      "reason": "manual_image_override"
+    }
+  },
+  "inspection_history": [
+    {
+      "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+      "parent_id": "table_1",
+      "local_scene_graph_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/local_scene_graph.json",
+      "local_objects_attached": 4,
+      "created_at": "2026-07-13T17:56:11"
+    }
+  ],
   "nodes": {
-    "floor_0": {"node_id":"floor_0", "class_name":"floor", "parent_id":null, "children":["table_1","fridge_1"]},
-    "table_1": {"node_id":"table_1", "object_id":"table_1", "class_name":"table", "parent_id":"floor_0", "center":[0.5,1.0,0.8], "bbox_min":[0.0,0.5,0.0], "bbox_max":[1.0,1.5,0.8]},
-    "fridge_1": {"node_id":"fridge_1", "object_id":"fridge_1", "class_name":"fridge", "parent_id":"floor_0", "center":[4.0,0.5,1.0], "bbox_min":[3.5,0.0,0.0], "bbox_max":[4.5,1.0,2.0]},
-    "cola_can_1": {"node_id":"cola_can_1", "object_id":"cola_can_1", "class_name":"cola_can", "parent_id":"table_1", "center":[0.6,1.0,0.9]},
-    "bottled_water_1": {"node_id":"bottled_water_1", "object_id":"bottled_water_1", "class_name":"bottled_water", "parent_id":"table_1", "center":[0.7,1.0,0.9]},
-    "mobile_phone_1": {"node_id":"mobile_phone_1", "object_id":"mobile_phone_1", "class_name":"mobile_phone", "parent_id":"table_1", "center":[0.8,1.0,0.81]}
+    "floor_0": {
+      "node_id": "floor_0",
+      "object_id": null,
+      "class_name": "floor",
+      "parent_id": null,
+      "parent_relation": null,
+      "children": [
+        "fridge_1",
+        "table_1"
+      ],
+      "is_part": false,
+      "center": [
+        0.0,
+        0.0,
+        0.73795
+      ],
+      "bbox_min": [
+        0.0,
+        0.0,
+        0.73795
+      ],
+      "bbox_max": [
+        0.0,
+        0.0,
+        0.73795
+      ],
+      "nav_pose": null,
+      "confidence": 1.0,
+      "evidence": {
+        "floor_height": 0.7379503816366195
+      }
+    },
+    "fridge_1": {
+      "node_id": "fridge_1",
+      "object_id": "fridge_1",
+      "class_name": "fridge",
+      "parent_id": "floor_0",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        4.373303,
+        -0.950603,
+        1.757953
+      ],
+      "bbox_min": [
+        3.927049,
+        -1.544174,
+        0.780054
+      ],
+      "bbox_max": [
+        5.076632,
+        -0.28668,
+        2.760054
+      ],
+      "nav_pose": null,
+      "confidence": 0.182266,
+      "evidence": {
+        "num_points": 692,
+        "semantic_score_max": 0.182266,
+        "semantic_score_mean": 0.133225,
+        "geometry_stats": {
+          "bbox_mode": "percentile",
+          "robust_bbox_percentile": 2.0,
+          "raw_bbox_min": [
+            3.590997,
+            -1.972111,
+            0.734528
+          ],
+          "raw_bbox_max": [
+            5.51577,
+            -0.089699,
+            2.883327
+          ],
+          "raw_bbox_extent": [
+            1.924774,
+            1.882412,
+            2.148798
+          ]
+        },
+        "parent_relation": {
+          "relation": "on",
+          "confidence": 1.0,
+          "evidence": {
+            "floor_height": 0.73795,
+            "child_lower_z": 0.780054,
+            "stand_floor_threshold": 0.15
+          }
+        }
+      }
+    },
+    "table_1": {
+      "node_id": "table_1",
+      "object_id": "table_1",
+      "class_name": "table",
+      "parent_id": "floor_0",
+      "parent_relation": "on",
+      "children": [
+        "table_1::local::manual_table_photo_qwen_hybrid::mobile_phone_1",
+        "table_1::local::manual_table_photo_qwen_hybrid::bottled_water_1",
+        "table_1::local::manual_table_photo_qwen_hybrid::snack_wrapper_1",
+        "table_1::local::manual_table_photo_qwen_hybrid::pliers_1",
+        "table_1::local::manual_table_photo_qwen_hybrid::cola_can_1",
+        "table_1::local::manual_table_photo_qwen_hybrid::screwdriver_1",
+        "table_1::local::manual_table_photo_qwen_hybrid::utility_knife_1"
+      ],
+      "is_part": false,
+      "center": [
+        0.695676,
+        1.903997,
+        0.935897
+      ],
+      "bbox_min": [
+        0.436597,
+        1.556021,
+        0.735734
+      ],
+      "bbox_max": [
+        1.296714,
+        2.164294,
+        1.220559
+      ],
+      "nav_pose": null,
+      "confidence": 0.13659,
+      "evidence": {
+        "num_points": 55,
+        "semantic_score_max": 0.13659,
+        "semantic_score_mean": 0.120818,
+        "geometry_stats": {
+          "bbox_mode": "percentile",
+          "robust_bbox_percentile": 2.0,
+          "raw_bbox_min": [
+            0.411329,
+            1.525005,
+            0.722185
+          ],
+          "raw_bbox_max": [
+            1.321925,
+            2.182873,
+            1.322146
+          ],
+          "raw_bbox_extent": [
+            0.910596,
+            0.657868,
+            0.59996
+          ]
+        },
+        "parent_relation": {
+          "relation": "on",
+          "confidence": 1.0,
+          "evidence": {
+            "floor_height": 0.73795,
+            "child_lower_z": 0.735734,
+            "stand_floor_threshold": 0.15
+          }
+        }
+      }
+    },
+    "table_1::local::manual_table_photo_qwen_hybrid::bottled_water_1": {
+      "node_id": "table_1::local::manual_table_photo_qwen_hybrid::bottled_water_1",
+      "object_id": "bottled_water_1",
+      "class_name": "bottled water",
+      "parent_id": "table_1",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        0.6572232656249999,
+        1.723997,
+        1.070047925925926
+      ],
+      "bbox_min": [
+        0.6272232656249999,
+        1.693997,
+        1.0300479259259259
+      ],
+      "bbox_max": [
+        0.6872232656249999,
+        1.753997,
+        1.110047925925926
+      ],
+      "confidence": 0.921764075756073,
+      "source": "local_fine_grained_image",
+      "evidence": {
+        "bbox_xyxy": [
+          731.52,
+          65.21,
+          860.35,
+          429.96
+        ],
+        "center_xy": [
+          795.94,
+          247.59
+        ],
+        "image_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/rgb.jpg",
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+        "global_parent_id": "table_1",
+        "projection": {
+          "method": "parent_proxy_layout",
+          "depth_error": "missing_depth_intrinsics_or_pose"
+        },
+        "attributes": {
+          "proposal_group": "inventory_confirmed",
+          "semantic_source": "qwen_full_image_inventory",
+          "grounding_prompt": "water bottle",
+          "inventory_confidence": 0.95,
+          "inventory_expected_count": 1,
+          "inventory_locations": [
+            "top left"
+          ],
+          "inventory_observed_attributes": {
+            "brand": "unknown",
+            "package": "bottle",
+            "drink_type": "water",
+            "fullness": "sealed_full",
+            "condition": "clean",
+            "power_state": "unknown"
+          },
+          "brand": "unknown",
+          "package": "bottle",
+          "drink_type": "water",
+          "fullness": "sealed_full",
+          "condition": "clean",
+          "power_state": "unknown",
+          "mask_area": 32765,
+          "mask_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/sam2_masks/rgb_q2_000_bottled_water.png",
+          "taxonomy_category": "bottled_water",
+          "alternative_class_hypotheses": [
+            {
+              "class_name": "snack wrapper",
+              "detector_confidence": 0.17579427361488342,
+              "inventory_confidence": 0.95,
+              "grounding_prompt": "food wrapper"
+            }
+          ],
+          "target_support_association": {
+            "support_object_id": "table_2",
+            "support_class": "table",
+            "mode": "surface_bottom_contact",
+            "contact_xy": [
+              795.94,
+              429.96
+            ],
+            "horizontal_match": true,
+            "horizontal_containment": 1.0,
+            "vertical_match": true
+          },
+          "requires_mllm_verification": false,
+          "mllm_ambiguity_reasons": [],
+          "mllm_verification": {
+            "object_id": "bottled_water_1",
+            "class_name": "bottled water",
+            "bbox_xyxy": [
+              731.52,
+              65.21,
+              860.35,
+              429.96
+            ],
+            "status": "accepted_qwen_inventory",
+            "answer": true,
+            "confidence": 0.95,
+            "caption": "Accepted from Qwen full-image semantics with unambiguous GroundingDINO/SAM2 localization."
+          }
+        }
+      }
+    },
+    "table_1::local::manual_table_photo_qwen_hybrid::cola_can_1": {
+      "node_id": "table_1::local::manual_table_photo_qwen_hybrid::cola_can_1",
+      "object_id": "cola_can_1",
+      "class_name": "cola can",
+      "parent_id": "table_1",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        0.8010767812499999,
+        1.723997,
+        1.0455201481481482
+      ],
+      "bbox_min": [
+        0.7710767812499999,
+        1.693997,
+        1.0055201481481482
+      ],
+      "bbox_max": [
+        0.83107678125,
+        1.753997,
+        1.0855201481481482
+      ],
+      "confidence": 0.4706081449985504,
+      "source": "local_fine_grained_image",
+      "evidence": {
+        "bbox_xyxy": [
+          1348.48,
+          293.42,
+          1470.94,
+          466.65
+        ],
+        "center_xy": [
+          1409.71,
+          380.04
+        ],
+        "image_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/rgb.jpg",
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+        "global_parent_id": "table_1",
+        "projection": {
+          "method": "parent_proxy_layout",
+          "depth_error": "missing_depth_intrinsics_or_pose"
+        },
+        "attributes": {
+          "proposal_group": "inventory_confirmed",
+          "semantic_source": "qwen_full_image_inventory",
+          "grounding_prompt": "can",
+          "inventory_confidence": 0.98,
+          "inventory_expected_count": 1,
+          "inventory_locations": [
+            "top right"
+          ],
+          "inventory_observed_attributes": {
+            "brand": "Coca-Cola",
+            "package": "can",
+            "drink_type": "cola",
+            "fullness": "sealed_full",
+            "condition": "clean",
+            "power_state": "unknown"
+          },
+          "brand": "Coca-Cola",
+          "package": "can",
+          "drink_type": "cola",
+          "fullness": "sealed_full",
+          "condition": "clean",
+          "power_state": "unknown",
+          "mask_area": 14968,
+          "mask_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/sam2_masks/rgb_q4_000_cola_can.png",
+          "taxonomy_category": "cola_drink",
+          "alternative_class_hypotheses": [
+            {
+              "class_name": "bottled water",
+              "detector_confidence": 0.3567379415035248,
+              "inventory_confidence": 0.95,
+              "grounding_prompt": "bottle"
+            }
+          ],
+          "target_support_association": {
+            "support_object_id": "table_2",
+            "support_class": "table",
+            "mode": "surface_bottom_contact",
+            "contact_xy": [
+              1409.71,
+              466.65
+            ],
+            "horizontal_match": true,
+            "horizontal_containment": 1.0,
+            "vertical_match": true
+          },
+          "requires_mllm_verification": false,
+          "mllm_ambiguity_reasons": [],
+          "mllm_verification": {
+            "object_id": "cola_can_1",
+            "class_name": "cola can",
+            "bbox_xyxy": [
+              1348.48,
+              293.42,
+              1470.94,
+              466.65
+            ],
+            "status": "accepted_qwen_inventory",
+            "answer": true,
+            "confidence": 0.98,
+            "caption": "Accepted from Qwen full-image semantics with unambiguous GroundingDINO/SAM2 localization."
+          }
+        }
+      }
+    },
+    "table_1::local::manual_table_photo_qwen_hybrid::mobile_phone_1": {
+      "node_id": "table_1::local::manual_table_photo_qwen_hybrid::mobile_phone_1",
+      "object_id": "mobile_phone_1",
+      "class_name": "mobile phone",
+      "parent_id": "table_1",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        0.6319025625,
+        1.723997,
+        0.9843266296296297
+      ],
+      "bbox_min": [
+        0.6019025625,
+        1.693997,
+        0.9443266296296297
+      ],
+      "bbox_max": [
+        0.6619025625,
+        1.753997,
+        1.0243266296296296
+      ],
+      "confidence": 0.9286941289901733,
+      "source": "local_fine_grained_image",
+      "evidence": {
+        "bbox_xyxy": [
+          559.16,
+          584.53,
+          816.64,
+          836.43
+        ],
+        "center_xy": [
+          687.9,
+          710.48
+        ],
+        "image_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/rgb.jpg",
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+        "global_parent_id": "table_1",
+        "projection": {
+          "method": "parent_proxy_layout",
+          "depth_error": "missing_depth_intrinsics_or_pose"
+        },
+        "attributes": {
+          "proposal_group": "inventory_confirmed",
+          "semantic_source": "qwen_full_image_inventory",
+          "grounding_prompt": "mobile phone",
+          "inventory_confidence": 0.99,
+          "inventory_expected_count": 1,
+          "inventory_locations": [
+            "bottom left"
+          ],
+          "inventory_observed_attributes": {
+            "brand": "unknown",
+            "package": "other",
+            "drink_type": "unknown",
+            "fullness": "unknown",
+            "condition": "clean",
+            "power_state": "off"
+          },
+          "brand": "unknown",
+          "package": "other",
+          "drink_type": "unknown",
+          "fullness": "unknown",
+          "condition": "clean",
+          "power_state": "off",
+          "mask_area": 35308,
+          "mask_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/sam2_masks/rgb_q6_000_mobile_phone.png",
+          "taxonomy_category": "mobile_phone",
+          "alternative_class_hypotheses": [
+            {
+              "class_name": "utility knife",
+              "detector_confidence": 0.20239363610744476,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "utility knife"
+            },
+            {
+              "class_name": "snack wrapper",
+              "detector_confidence": 0.17639702558517456,
+              "inventory_confidence": 0.95,
+              "grounding_prompt": "food wrapper"
+            }
+          ],
+          "target_support_association": {
+            "support_object_id": "table_2",
+            "support_class": "table",
+            "mode": "surface_bottom_contact",
+            "contact_xy": [
+              687.9,
+              836.43
+            ],
+            "horizontal_match": true,
+            "horizontal_containment": 1.0,
+            "vertical_match": true
+          },
+          "requires_mllm_verification": false,
+          "mllm_ambiguity_reasons": [],
+          "mllm_verification": {
+            "object_id": "mobile_phone_1",
+            "class_name": "mobile phone",
+            "bbox_xyxy": [
+              559.16,
+              584.53,
+              816.64,
+              836.43
+            ],
+            "status": "accepted_qwen_inventory",
+            "answer": true,
+            "confidence": 0.99,
+            "caption": "Accepted from Qwen full-image semantics with unambiguous GroundingDINO/SAM2 localization."
+          }
+        }
+      }
+    },
+    "table_1::local::manual_table_photo_qwen_hybrid::pliers_1": {
+      "node_id": "table_1::local::manual_table_photo_qwen_hybrid::pliers_1",
+      "object_id": "pliers_1",
+      "class_name": "pliers",
+      "parent_id": "table_1",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        0.714117796875,
+        1.723997,
+        1.0468201481481483
+      ],
+      "bbox_min": [
+        0.684117796875,
+        1.693997,
+        1.0068201481481482
+      ],
+      "bbox_max": [
+        0.744117796875,
+        1.753997,
+        1.0868201481481483
+      ],
+      "confidence": 0.7260957956314087,
+      "source": "local_fine_grained_image",
+      "evidence": {
+        "bbox_xyxy": [
+          930.27,
+          309.1,
+          1147.1,
+          436.93
+        ],
+        "center_xy": [
+          1038.69,
+          373.01
+        ],
+        "image_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/rgb.jpg",
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+        "global_parent_id": "table_1",
+        "projection": {
+          "method": "parent_proxy_layout",
+          "depth_error": "missing_depth_intrinsics_or_pose"
+        },
+        "attributes": {
+          "proposal_group": "inventory_confirmed",
+          "semantic_source": "qwen_full_image_inventory",
+          "grounding_prompt": "pliers",
+          "inventory_confidence": 0.97,
+          "inventory_expected_count": 1,
+          "inventory_locations": [
+            "top center"
+          ],
+          "inventory_observed_attributes": {
+            "brand": "unknown",
+            "package": "tool",
+            "drink_type": "unknown",
+            "fullness": "unknown",
+            "condition": "clean",
+            "power_state": "unknown"
+          },
+          "brand": "unknown",
+          "package": "tool",
+          "drink_type": "unknown",
+          "fullness": "unknown",
+          "condition": "clean",
+          "power_state": "unknown",
+          "mask_area": 8252,
+          "mask_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/sam2_masks/rgb_q10_000_pliers.png",
+          "alternative_class_hypotheses": [
+            {
+              "class_name": "screwdriver",
+              "detector_confidence": 0.37197938561439514,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "screwdriver"
+            },
+            {
+              "class_name": "utility knife",
+              "detector_confidence": 0.3146386444568634,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "utility knife"
+            }
+          ],
+          "target_support_association": {
+            "support_object_id": "table_2",
+            "support_class": "table",
+            "mode": "surface_bottom_contact",
+            "contact_xy": [
+              1038.69,
+              436.93
+            ],
+            "horizontal_match": true,
+            "horizontal_containment": 1.0,
+            "vertical_match": true
+          },
+          "requires_mllm_verification": false,
+          "mllm_ambiguity_reasons": [],
+          "mllm_verification": {
+            "object_id": "pliers_2",
+            "class_name": "pliers",
+            "bbox_xyxy": [
+              930.27,
+              309.1,
+              1147.1,
+              436.93
+            ],
+            "status": "accepted_qwen_inventory",
+            "answer": true,
+            "confidence": 0.97,
+            "caption": "Accepted from Qwen full-image semantics with unambiguous GroundingDINO/SAM2 localization."
+          }
+        }
+      }
+    },
+    "table_1::local::manual_table_photo_qwen_hybrid::screwdriver_1": {
+      "node_id": "table_1::local::manual_table_photo_qwen_hybrid::screwdriver_1",
+      "object_id": "screwdriver_1",
+      "class_name": "screwdriver",
+      "parent_id": "table_1",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        0.780061546875,
+        1.723997,
+        1.0044155185185186
+      ],
+      "bbox_min": [
+        0.7500615468749999,
+        1.693997,
+        0.9644155185185186
+      ],
+      "bbox_max": [
+        0.810061546875,
+        1.753997,
+        1.0444155185185187
+      ],
+      "confidence": 0.22566983103752136,
+      "source": "local_fine_grained_image",
+      "evidence": {
+        "bbox_xyxy": [
+          1148.97,
+          520.64,
+          1491.12,
+          683.36
+        ],
+        "center_xy": [
+          1320.04,
+          602.0
+        ],
+        "image_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/rgb.jpg",
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+        "global_parent_id": "table_1",
+        "projection": {
+          "method": "parent_proxy_layout",
+          "depth_error": "missing_depth_intrinsics_or_pose"
+        },
+        "attributes": {
+          "proposal_group": "inventory_confirmed",
+          "semantic_source": "qwen_full_image_inventory",
+          "grounding_prompt": "smartphone",
+          "inventory_confidence": 0.99,
+          "inventory_expected_count": 1,
+          "inventory_locations": [
+            "bottom left"
+          ],
+          "inventory_observed_attributes": {
+            "brand": "unknown",
+            "package": "other",
+            "drink_type": "unknown",
+            "fullness": "unknown",
+            "condition": "clean",
+            "power_state": "off"
+          },
+          "brand": "unknown",
+          "package": "other",
+          "drink_type": "unknown",
+          "fullness": "unknown",
+          "condition": "clean",
+          "power_state": "off",
+          "mask_area": 9497,
+          "mask_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/sam2_masks/rgb_q7_001_mobile_phone.png",
+          "taxonomy_category": "mobile_phone",
+          "alternative_class_hypotheses": [
+            {
+              "class_name": "screwdriver",
+              "detector_confidence": 0.6499811410903931,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "screwdriver"
+            },
+            {
+              "class_name": "utility knife",
+              "detector_confidence": 0.5923154950141907,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "utility knife"
+            },
+            {
+              "class_name": "pliers",
+              "detector_confidence": 0.4456578493118286,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "pliers"
+            }
+          ],
+          "target_support_association": {
+            "support_object_id": "table_2",
+            "support_class": "table",
+            "mode": "surface_bottom_contact",
+            "contact_xy": [
+              1320.04,
+              683.36
+            ],
+            "horizontal_match": true,
+            "horizontal_containment": 1.0,
+            "vertical_match": true
+          },
+          "requires_mllm_verification": true,
+          "mllm_ambiguity_reasons": [
+            "competing_semantic_hypothesis",
+            "localized_count_exceeds_inventory"
+          ],
+          "mllm_verification": {
+            "object_id": "mobile_phone_3",
+            "class_name": "screwdriver",
+            "bbox_xyxy": [
+              1148.97,
+              520.64,
+              1491.12,
+              683.36
+            ],
+            "crop_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/mllm_verify_crops/mobile_phone_3.png",
+            "status": "corrected",
+            "api_usage": {
+              "prompt_tokens": 523,
+              "completion_tokens": 112,
+              "total_tokens": 635,
+              "completion_tokens_details": {
+                "text_tokens": 112
+              },
+              "prompt_tokens_details": {
+                "image_tokens": 93,
+                "text_tokens": 430,
+                "cached_tokens": 0
+              }
+            },
+            "answer": false,
+            "confidence": 0.95,
+            "corrected_label": "screwdriver",
+            "observed_attributes": {
+              "brand": "unknown",
+              "package": "unknown",
+              "drink_type": "unknown",
+              "fullness": "unknown",
+              "condition": "clean",
+              "power_state": "unknown"
+            },
+            "caption": "The red box contains a screwdriver with a red and black handle and a metallic shaft, not a mobile phone.",
+            "original_detector_label": "mobile phone"
+          }
+        }
+      }
+    },
+    "table_1::local::manual_table_photo_qwen_hybrid::snack_wrapper_1": {
+      "node_id": "table_1::local::manual_table_photo_qwen_hybrid::snack_wrapper_1",
+      "object_id": "snack_wrapper_1",
+      "class_name": "snack wrapper",
+      "parent_id": "table_1",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        0.680393578125,
+        1.723997,
+        1.0157386666666668
+      ],
+      "bbox_min": [
+        0.650393578125,
+        1.693997,
+        0.9757386666666668
+      ],
+      "bbox_max": [
+        0.710393578125,
+        1.753997,
+        1.0557386666666668
+      ],
+      "confidence": 0.769953191280365,
+      "source": "local_fine_grained_image",
+      "evidence": {
+        "bbox_xyxy": [
+          781.07,
+          477.79,
+          1008.52,
+          603.92
+        ],
+        "center_xy": [
+          894.8,
+          540.85
+        ],
+        "image_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/rgb.jpg",
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+        "global_parent_id": "table_1",
+        "projection": {
+          "method": "parent_proxy_layout",
+          "depth_error": "missing_depth_intrinsics_or_pose"
+        },
+        "attributes": {
+          "proposal_group": "inventory_confirmed",
+          "semantic_source": "qwen_full_image_inventory",
+          "grounding_prompt": "snack wrapper",
+          "inventory_confidence": 0.95,
+          "inventory_expected_count": 1,
+          "inventory_locations": [
+            "center left",
+            "center"
+          ],
+          "inventory_observed_attributes": {
+            "brand": "unknown",
+            "package": "wrapper",
+            "drink_type": "unknown",
+            "fullness": "nonempty",
+            "condition": "uncrumpled",
+            "power_state": "unknown"
+          },
+          "brand": "unknown",
+          "package": "wrapper",
+          "drink_type": "unknown",
+          "fullness": "nonempty",
+          "condition": "uncrumpled",
+          "power_state": "unknown",
+          "mask_area": 14665,
+          "mask_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/sam2_masks/rgb_q8_000_snack_wrapper.png",
+          "taxonomy_category": "snack_wrapper",
+          "target_support_association": {
+            "support_object_id": "table_2",
+            "support_class": "table",
+            "mode": "surface_bottom_contact",
+            "contact_xy": [
+              894.8,
+              603.92
+            ],
+            "horizontal_match": true,
+            "horizontal_containment": 1.0,
+            "vertical_match": true
+          },
+          "requires_mllm_verification": false,
+          "mllm_ambiguity_reasons": [],
+          "mllm_verification": {
+            "object_id": "snack_wrapper_1",
+            "class_name": "snack wrapper",
+            "bbox_xyxy": [
+              781.07,
+              477.79,
+              1008.52,
+              603.92
+            ],
+            "status": "accepted_qwen_inventory",
+            "answer": true,
+            "confidence": 0.95,
+            "caption": "Accepted from Qwen full-image semantics with unambiguous GroundingDINO/SAM2 localization."
+          }
+        }
+      }
+    },
+    "table_1::local::manual_table_photo_qwen_hybrid::utility_knife_1": {
+      "node_id": "table_1::local::manual_table_photo_qwen_hybrid::utility_knife_1",
+      "object_id": "utility_knife_1",
+      "class_name": "utility knife",
+      "parent_id": "table_1",
+      "parent_relation": "on",
+      "children": [],
+      "is_part": false,
+      "center": [
+        0.729361546875,
+        1.723997,
+        0.9749886666666667
+      ],
+      "bbox_min": [
+        0.699361546875,
+        1.693997,
+        0.9349886666666667
+      ],
+      "bbox_max": [
+        0.759361546875,
+        1.753997,
+        1.0149886666666668
+      ],
+      "confidence": 0.20179137587547302,
+      "source": "local_fine_grained_image",
+      "evidence": {
+        "bbox_xyxy": [
+          1001.1,
+          687.15,
+          1206.35,
+          834.66
+        ],
+        "center_xy": [
+          1103.72,
+          760.9
+        ],
+        "image_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/rgb.jpg",
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid",
+        "global_parent_id": "table_1",
+        "projection": {
+          "method": "parent_proxy_layout",
+          "depth_error": "missing_depth_intrinsics_or_pose"
+        },
+        "attributes": {
+          "proposal_group": "inventory_confirmed",
+          "semantic_source": "qwen_full_image_inventory",
+          "grounding_prompt": "smartphone",
+          "inventory_confidence": 0.99,
+          "inventory_expected_count": 1,
+          "inventory_locations": [
+            "bottom left"
+          ],
+          "inventory_observed_attributes": {
+            "brand": "unknown",
+            "package": "other",
+            "drink_type": "unknown",
+            "fullness": "unknown",
+            "condition": "clean",
+            "power_state": "off"
+          },
+          "brand": "unknown",
+          "package": "other",
+          "drink_type": "unknown",
+          "fullness": "unknown",
+          "condition": "clean",
+          "power_state": "off",
+          "mask_area": 8652,
+          "mask_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/sam2_masks/rgb_q7_002_mobile_phone.png",
+          "taxonomy_category": "mobile_phone",
+          "alternative_class_hypotheses": [
+            {
+              "class_name": "utility knife",
+              "detector_confidence": 0.5368452668190002,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "utility knife"
+            },
+            {
+              "class_name": "screwdriver",
+              "detector_confidence": 0.4422294497489929,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "screwdriver"
+            },
+            {
+              "class_name": "pliers",
+              "detector_confidence": 0.2035435140132904,
+              "inventory_confidence": 0.97,
+              "grounding_prompt": "pliers"
+            }
+          ],
+          "target_support_association": {
+            "support_object_id": "table_2",
+            "support_class": "table",
+            "mode": "surface_bottom_contact",
+            "contact_xy": [
+              1103.72,
+              834.66
+            ],
+            "horizontal_match": true,
+            "horizontal_containment": 1.0,
+            "vertical_match": true
+          },
+          "requires_mllm_verification": true,
+          "mllm_ambiguity_reasons": [
+            "competing_semantic_hypothesis",
+            "localized_count_exceeds_inventory"
+          ],
+          "mllm_verification": {
+            "object_id": "mobile_phone_2",
+            "class_name": "utility knife",
+            "bbox_xyxy": [
+              1001.1,
+              687.15,
+              1206.35,
+              834.66
+            ],
+            "crop_path": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid/local_relation_mllm/mllm_verify_crops/mobile_phone_2.png",
+            "status": "corrected",
+            "api_usage": {
+              "prompt_tokens": 512,
+              "completion_tokens": 105,
+              "total_tokens": 617,
+              "completion_tokens_details": {
+                "text_tokens": 105
+              },
+              "prompt_tokens_details": {
+                "image_tokens": 82,
+                "text_tokens": 430,
+                "cached_tokens": 0
+              }
+            },
+            "answer": false,
+            "confidence": 0.95,
+            "corrected_label": "utility knife",
+            "observed_attributes": {
+              "brand": "unknown",
+              "package": "other",
+              "drink_type": "unknown",
+              "fullness": "sealed_full",
+              "condition": "clean",
+              "power_state": "unknown"
+            },
+            "caption": "red box contains a yellow utility knife with black handle, not a mobile phone.",
+            "original_detector_label": "mobile phone"
+          }
+        }
+      }
+    }
+  },
+  "edges": [
+    {
+      "child_id": "fridge_1",
+      "parent_id": "floor_0",
+      "relation": "on",
+      "confidence": 1.0,
+      "evidence": {
+        "floor_height": 0.73795,
+        "child_lower_z": 0.780054,
+        "stand_floor_threshold": 0.15
+      }
+    },
+    {
+      "child_id": "table_1",
+      "parent_id": "floor_0",
+      "relation": "on",
+      "confidence": 1.0,
+      "evidence": {
+        "floor_height": 0.73795,
+        "child_lower_z": 0.735734,
+        "stand_floor_threshold": 0.15
+      }
+    },
+    {
+      "child_id": "table_1::local::manual_table_photo_qwen_hybrid::mobile_phone_1",
+      "parent_id": "table_1",
+      "relation": "on",
+      "confidence": 0.9286941289901733,
+      "evidence": {
+        "source_stage": "local_fine_grained_image",
+        "local_object_id": "mobile_phone_1",
+        "no_intermediate_surface_node": true,
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid"
+      }
+    },
+    {
+      "child_id": "table_1::local::manual_table_photo_qwen_hybrid::bottled_water_1",
+      "parent_id": "table_1",
+      "relation": "on",
+      "confidence": 0.921764075756073,
+      "evidence": {
+        "source_stage": "local_fine_grained_image",
+        "local_object_id": "bottled_water_1",
+        "no_intermediate_surface_node": true,
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid"
+      }
+    },
+    {
+      "child_id": "table_1::local::manual_table_photo_qwen_hybrid::snack_wrapper_1",
+      "parent_id": "table_1",
+      "relation": "on",
+      "confidence": 0.769953191280365,
+      "evidence": {
+        "source_stage": "local_fine_grained_image",
+        "local_object_id": "snack_wrapper_1",
+        "no_intermediate_surface_node": true,
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid"
+      }
+    },
+    {
+      "child_id": "table_1::local::manual_table_photo_qwen_hybrid::pliers_1",
+      "parent_id": "table_1",
+      "relation": "on",
+      "confidence": 0.7260957956314087,
+      "evidence": {
+        "source_stage": "local_fine_grained_image",
+        "local_object_id": "pliers_1",
+        "no_intermediate_surface_node": true,
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid"
+      }
+    },
+    {
+      "child_id": "table_1::local::manual_table_photo_qwen_hybrid::cola_can_1",
+      "parent_id": "table_1",
+      "relation": "on",
+      "confidence": 0.4706081449985504,
+      "evidence": {
+        "source_stage": "local_fine_grained_image",
+        "local_object_id": "cola_can_1",
+        "no_intermediate_surface_node": true,
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid"
+      }
+    },
+    {
+      "child_id": "table_1::local::manual_table_photo_qwen_hybrid::screwdriver_1",
+      "parent_id": "table_1",
+      "relation": "on",
+      "confidence": 0.22566983103752136,
+      "evidence": {
+        "source_stage": "local_fine_grained_image",
+        "local_object_id": "screwdriver_1",
+        "no_intermediate_surface_node": true,
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid"
+      }
+    },
+    {
+      "child_id": "table_1::local::manual_table_photo_qwen_hybrid::utility_knife_1",
+      "parent_id": "table_1",
+      "relation": "on",
+      "confidence": 0.20179137587547302,
+      "evidence": {
+        "source_stage": "local_fine_grained_image",
+        "local_object_id": "utility_knife_1",
+        "no_intermediate_surface_node": true,
+        "capture_dir": "/home/fq/BJHYZJ_FQ/DREAM/debug/g1_qwen_hybrid_test/g1_20260713_141433_table/local_captures/manual_table_photo_qwen_hybrid"
+      }
+    }
+  ],
+  "summary": {
+    "global_nodes": 3,
+    "local_objects_attached": 7,
+    "previous_local_objects_carried": 0,
+    "cumulative_local_objects": 7,
+    "inspection_count": 1,
+    "local_objects_dropped_at_merge": 0,
+    "total_nodes": 10,
+    "total_edges": 9,
+    "local_parent_policy": "direct_to_inspected_global_support_or_container"
+  },
+  "local_merge_filter": {
+    "dropped": [],
+    "drop_classes": [
+      "cabinet",
+      "ceiling",
+      "chair",
+      "counter",
+      "countertop",
+      "desk",
+      "door",
+      "electronic",
+      "equipment",
+      "floor",
+      "fridge",
+      "material",
+      "monitor",
+      "person",
+      "refrigerator",
+      "shelf",
+      "table",
+      "television",
+      "tv",
+      "wall",
+      "window"
+    ],
+    "keep_classes": [],
+    "focus_roi": "0,0,1,1"
   }
 }

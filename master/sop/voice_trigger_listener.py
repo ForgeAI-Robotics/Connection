@@ -10,7 +10,7 @@
 
 用法(在 G1 上,build 已 start.sh 起来后):
   python3 voice_trigger_listener.py --log <build目录>/logs/rcu.log --brain http://<Mac的IP>:8888
-  (Mac IP 现在是 192.0.2.99;日志路径按 build 部署位置,DEPLOY.md 默认 logs/rcu.log 或 logs/start.log)
+  (Mac IP 现在是 10.11.32.178;日志路径按 build 部署位置,DEPLOY.md 默认 logs/rcu.log 或 logs/start.log)
 """
 
 import argparse
@@ -54,7 +54,7 @@ def trigger_reception(brain_url):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--log", required=True, help="build 的日志文件(logs/rcu.log 或 logs/start.log)")
-    ap.add_argument("--brain", default="http://192.0.2.99:8888", help="大脑 deploy 地址")
+    ap.add_argument("--brain", default="http://10.11.32.178:8888", help="大脑 deploy 地址")
     args = ap.parse_args()
 
     # 抓 ASR 识别文本;build 日志里 ASR 行形如 `asr: recv ... text="..."`
