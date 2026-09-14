@@ -70,3 +70,4 @@ def enforce_dream_route_plan(task, plan):
     )
     result["dream_route_policy_applied"] = "table2_to_relay2_to_relay3_to_table1"
     return result
+

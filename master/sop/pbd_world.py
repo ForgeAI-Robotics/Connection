@@ -6,7 +6,7 @@ RGB(按需);回传:任务上下文 / 工作点导航目标(map 系坐标)。客�
 `PBD_AG_大脑端轻量客户端_v0.1.0/`。轮询 = 大脑按频率主动 GET 拉最新(不是 PBD 推送)。
 
 用法:
-  export PBD_AG_SERVER=http://192.0.2.99:8088
+  export PBD_AG_SERVER=http://10.11.32.63:8088
   python master/sop/pbd_world.py           # 拉一次,按接待 demo 视角打印当前场景
   python master/sop/pbd_world.py --watch    # 之后持续轮询增量事件(物体增删改)
 """
@@ -17,7 +17,7 @@ import time
 
 from pbd_ag_client import PBDAGClient
 
-SERVER = os.environ.get("PBD_AG_SERVER", "http://192.0.2.99:8088")
+SERVER = os.environ.get("PBD_AG_SERVER", "http://10.11.32.63:8088")
 
 # 接待 demo 关心的类别(联调时按 PBD 实际类名微调)
 DRINK_CLASSES = ["bottle", "cola", "thermos"]     # 饮料:可乐/瓶/保温杯

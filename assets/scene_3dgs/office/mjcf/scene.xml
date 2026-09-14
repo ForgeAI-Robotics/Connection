@@ -1,0 +1,27 @@
+<mujoco model="office">
+  <option gravity="0 0 -9.81"/>
+  <compiler meshdir="../meshes" texturedir="../meshes/"/>
+  <asset>
+    <mesh name="office" file="pgsr_office.obj"/>
+    <!-- 凸分解碰撞块的 <mesh> 注册,由 gen_collision.py 生成在 meshes/。include 走 XML 目录,要写 ../meshes/。 -->
+    <include file="../meshes/office_collision_assets.xml"/>
+  </asset>
+  <default>
+    <default class="obj_visual">
+      <geom group="0" type="mesh" contype="0" conaffinity="0"/>
+    </default>
+  </default>
+  <worldbody>
+    <light pos="0 0 5" dir="0 0 -1"/>
+    <!-- ⚠️ body 名必须叫 "mesh"(transform_ply.py / gen_map2d.py 靠它读世界变换)。
+         pos / euler 要调到 office 正立、地板贴 z=0 —— 见 README 第 2 步(最花时间的一步)。
+         3DGS 常见 Y-up,先试 euler="-90 0 0"。 -->
+    <body name="mesh" pos="0 0 0" euler="0 0 0">
+      <inertial pos="0 0 0" mass="0.001" diaginertia="2e-05 2e-05 2e-05"/>
+      <geom rgba="0.6 0.6 0.6 1" mesh="office" class="obj_visual"/>   <!-- 可视,只看不碰 -->
+      <include file="../meshes/office_collision.xml"/>                <!-- 碰撞,gen_collision 生成在 meshes/ -->
+    </body>
+    <geom name="ground" type="plane" size="50 50 0.1" rgba="0.5 0.5 0.5 1"
+          group="2" contype="1" conaffinity="1"/>
+  </worldbody>
+</mujoco>

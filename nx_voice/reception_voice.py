@@ -12,7 +12,7 @@ qwen-omni 云 ASR 转文字 → 文字含"开始接待"就 POST 给大脑 deploy
 import os, json, base64, subprocess, urllib.request, time, wave, audioop
 
 # ---------------- 配置(换机器 / 调参改这里) ----------------
-DEPLOY = os.environ.get('DEPLOY_URL', 'http://192.0.2.99:8888/publish_task')  # 大脑 deploy 触发地址
+DEPLOY = os.environ.get('DEPLOY_URL', 'http://192.168.0.229:8888/publish_task')  # 大脑 deploy 触发地址
 KEY = open(os.path.expanduser(os.environ.get('VLM_KEY_FILE', '~/.vlm_key'))).read().strip()  # dashscope 兼容模式 key
 ASR_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions'
 ASR_MODEL = 'qwen3-omni-flash'   # sk-ws- 型 key 只能走兼容模式,音频只能用 omni 系列(不支持 paraformer 原生)

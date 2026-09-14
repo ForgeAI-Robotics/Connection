@@ -10,9 +10,20 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from integrations.dream_client import DreamClient, DreamRecoveryRequired
-from integrations.reception_verify import ReceptionVerifier
-from integrations.vla_client import VlaClient, VlaRecoveryRequired
+try:
+    # Normal entry: master/run.py places the master directory on sys.path.
+    from integrations.dream_client import DreamClient, DreamRecoveryRequired
+    from integrations.reception_verify import ReceptionVerifier
+    from integrations.vla_client import VlaClient, VlaRecoveryRequired
+except ModuleNotFoundError as exc:
+    # Managed Windows tasks may preserve only the repository root on sys.path.
+    # Fall back only when the top-level integrations package itself is absent;
+    # never hide a missing dependency imported from inside these modules.
+    if exc.name != "integrations" and not str(exc.name).startswith("integrations."):
+        raise
+    from master.integrations.dream_client import DreamClient, DreamRecoveryRequired
+    from master.integrations.reception_verify import ReceptionVerifier
+    from master.integrations.vla_client import VlaClient, VlaRecoveryRequired
 from .reception_store import ReceptionStore, now_iso
 
 
@@ -26,22 +37,22 @@ TERMINAL_TASK_STATES = {
 NAVIGATION_LEGS = {
     "table2": {
         "target_id": "table_2", "route_phase": "", "leg_index": 1,
-        "goal_xyt": [1.0, 2.0, 0.0],
+        "goal_xyt": [0.9083733639083396, 1.1619836672443717, -0.3050338025357986],
         "motion_mode": "forward_path",
     },
     "relay2": {
         "target_id": "door_1", "route_phase": "door_approach", "leg_index": 2,
-        "goal_xyt": [3.0, 2.0, 1.5707963267948966],
+        "goal_xyt": [3.733075988421528, 6.215369909530748, 2.718279944258407],
         "motion_mode": "forward_path",
     },
     "relay3": {
         "target_id": "door_1", "route_phase": "door_lateral_exit", "leg_index": 3,
-        "goal_xyt": [3.0, 3.0, 1.5707963267948966],
+        "goal_xyt": [4.185939449618811, 7.560143924693016, 2.7689146673931306],
         "motion_mode": "lateral_path_aligned",
     },
     "table1": {
         "target_id": "table_1", "route_phase": "table1_approach", "leg_index": 4,
-        "goal_xyt": [4.0, 4.0, 0.0],
+        "goal_xyt": [3.0873798986272165, 8.279995338440145, 1.175238157458919],
         "motion_mode": "forward_path",
     },
 }
@@ -317,11 +328,20 @@ class ReceptionRealRunner:
         if status.get("navigation_transport_ready") is not True:
             raise ReceptionPipelineError("DREAM导航通路未就绪")
         if status.get("motion_ready") is not True:
-            blockers = status.get("motion_blockers") or []
-            detail = ", ".join(map(str, blockers)) or "UNKNOWN"
-            raise ReceptionPipelineError(
-                f"DREAM motion_ready=false，阻塞项: {detail}"
-            )
+            blockers = {str(value) for value in (status.get("motion_blockers") or [])}
+            # An idle DREAM transaction is deliberately disarmed: Gateway and
+            # Token become ready only after a reviewed Agent goal is created
+            # and g1_agent_navigation_service performs its bounded Arm loop.
+            # Accept only that exact standby condition. Localization approval,
+            # transport ownership and the absence of an active command remain
+            # mandatory above; every other blocker remains fail-closed.
+            idle_disarmed = {"GATEWAY_NOT_READY", "TOKEN_NOT_READY"}
+            unexpected = blockers - idle_disarmed
+            if not blockers or unexpected:
+                detail = ", ".join(sorted(blockers)) or "UNKNOWN"
+                raise ReceptionPipelineError(
+                    f"DREAM motion_ready=false，阻塞项: {detail}"
+                )
         if status.get("active_command_id"):
             raise ReceptionPipelineError(
                 f"DREAM存在活动命令: {status.get('active_command_id')}")
@@ -370,6 +390,9 @@ class ReceptionRealRunner:
                 "navigation_transport_ready": status.get("navigation_transport_ready"),
                 "motion_ready": status.get("motion_ready"),
                 "motion_blockers": status.get("motion_blockers") or [],
+                "idle_disarmed_before_first_command": (
+                    status.get("motion_ready") is not True
+                ),
                 "active_command_id": status.get("active_command_id"),
             },
             "vla": {

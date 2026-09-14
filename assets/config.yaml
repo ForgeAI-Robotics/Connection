@@ -17,3 +17,4 @@ viewer_cameras:
 # 3DGS composite mesh 叠绘 (Hunyuan3D 物体)。默认 false 关闭——每帧重载 mesh 很慢，
 # 且当前 hunyuan_bottle_body 缺失会渲染失败。需要叠绘时改 true。
 composite_mesh: false
+

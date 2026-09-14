@@ -6,7 +6,7 @@ import os
 from pbd_ag_client import PBDAGClient
 
 
-SERVER = os.environ.get("PBD_AG_SERVER", "http://192.0.2.99:8088")
+SERVER = os.environ.get("PBD_AG_SERVER", "http://10.11.32.63:8088")
 client = PBDAGClient(SERVER)
 
 health = client.health()

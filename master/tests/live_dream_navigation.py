@@ -246,7 +246,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base-url",
-        default=os.environ.get("DREAM_BASE_URL", "http://192.0.2.20:8001"),
+        default=os.environ.get("DREAM_BASE_URL", "http://192.168.0.185:8001"),
     )
     parser.add_argument(
         "--mode", choices=("readonly", "table2", "four-leg"), default="readonly"

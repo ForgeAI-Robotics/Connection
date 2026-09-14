@@ -1,0 +1,11 @@
+{
+  "scene": "mjcf/scene.xml",
+  "scene_gaussians": {
+    "scene": "3dgs/pgsr_office_transformed.ply"
+  },
+  "assets_dir": "assets",
+  "objects": [],
+  "composite_mesh_objects": [],
+  "fixtures": [],
+  "auto_reset": false
+}

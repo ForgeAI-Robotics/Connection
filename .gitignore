@@ -16,6 +16,7 @@ secrets*
 /serve_real/config.yaml
 /serve_dream/config.yaml
 /serve_dream/dream_navigation_sop.yaml
+/tools/
 
 # Local environments and tooling
 .git-credentials
@@ -33,6 +34,8 @@ __pycache__/
 .vscode/
 .cuda/
 .downloads/
+.venv_feishu/
+integrations/feishu/runtime/
 
 # Runtime traces, experience, media and site data
 .log/
@@ -47,6 +50,7 @@ __pycache__/
 *.backup*
 *.tmp
 **/runtime/
+/backup_*/
 /deploy/task_timeline/
 /master/memory/
 /master/sop/reception_memory/
@@ -58,6 +62,9 @@ __pycache__/
 /master/sop/demo_sop_v2.yaml
 /nav2/maps/
 /serve_dream/integration/
+/serve_dream/*.ps1
+/serve_dream/*.cmd
+/master/*.cmd
 /assets/scene/
 /assets/scene_3dgs/maps/
 **/scene_state.yaml
@@ -74,6 +81,7 @@ __pycache__/
 *.stl
 *.STL
 *.glb
+**/sugar_collision.xml
 *.pt
 *.pth
 *.onnx

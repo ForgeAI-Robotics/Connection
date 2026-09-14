@@ -76,3 +76,4 @@ class ReceptionStore:
                 os.fsync(handle.fileno())
             os.replace(tmp_path, path)
         return str(path)
+

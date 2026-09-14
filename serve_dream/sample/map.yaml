@@ -1,10 +1,9 @@
-# Synthetic offline test map; selftest creates its image in a temporary directory.
 image: map.pgm
 mode: trinary
 resolution: 0.025
 origin:
-- -1.0
-- -1.0
+- -3.1000000000000014
+- -5.100000000000001
 - 0.0
 negate: 0
 occupied_thresh: 0.65

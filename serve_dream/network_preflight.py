@@ -18,7 +18,7 @@ def get_json(base_url, path, timeout):
 
 def main():
     parser = argparse.ArgumentParser(description="DREAM Agent HTTP 只读网络预检")
-    parser.add_argument("--base-url", default="http://192.0.2.20:8001")
+    parser.add_argument("--base-url", default="http://192.168.0.185:8001")
     parser.add_argument("--timeout", type=float, default=3.0)
     args = parser.parse_args()
     host_port = args.base_url.split("//", 1)[-1].split("/", 1)[0]

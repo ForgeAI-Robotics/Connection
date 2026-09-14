@@ -1,0 +1,53 @@
+<mujoco model="mesh_raw_prune_flat_sim">
+  <option gravity="0 0 -9.81" />
+  <compiler meshdir="../meshes" texturedir="../meshes/" />
+  <asset>
+    <material name="hunyuan_bottle_mat" rgba="0.20 0.55 0.95 1" />
+    <material name="hunyuan_maojin_mat" rgba="0.90 0.25 0.25 1" />
+    <material name="hunyuan_lajitong_mat" rgba="0.40 0.40 0.40 1" />
+    <material name="hunyuan_bianzhidai_mat" rgba="0.85 0.55 0.25 1" />
+    <mesh name="hunyuan_bottle" file="hunyuan3d/bottle/bottle.glb" scale="0.333333 0.333333 0.333333" />
+    <mesh name="hunyuan_maojin" file="hunyuan3d/maojin/maojin.glb" scale="0.333333 0.333333 0.333333" />
+    <mesh name="hunyuan_lajitong" file="hunyuan3d/lajitong/lajitong.glb" scale="0.333333 0.333333 0.333333" />
+    <mesh name="hunyuan_bianzhidai" file="hunyuan3d/bianzhidai/bianzhidai.glb" scale="0.333333 0.333333 0.333333" />
+  </asset>
+  <default>
+    <default class="obj_visual">
+      <geom group="0" type="mesh" contype="0" conaffinity="0" />
+    </default>
+  </default>
+  <worldbody>
+    <light pos="0 0 5" dir="0 0 -1" />
+    <body name="mesh" pos="-1.5 0.0 1.77" euler="-326.20 180.56 -181.81">
+      <inertial pos="0 0 0" mass="0.001" diaginertia="2e-05 2e-05 2e-05" />
+      <!-- The branch does not ship object/mesh/mesh.obj. The 3DGS point cloud
+           provides appearance, while sugar_collision.xml provides physics. -->
+      <include file="object/sugar_collision.xml" />
+    </body>
+    <geom name="ground" type="plane" size="50 50 0.1" rgba="0.5 0.5 0.5 1" group="2" contype="1" conaffinity="1"/>
+    <body name="hunyuan_bottle_body" pos="0.8 0.0 1.000000" quat="0 1 0 0">
+      <joint name="hunyuan_bottle_freejoint" type="free" />
+      <inertial pos="-0.000702328 0.001313276 -0.173913410" quat="-0.035219884 0.705949265 0.035419682 0.706498861" mass="0.20" diaginertia="0.000312471 0.002106656 0.002107683" />
+      <geom name="hunyuan_bottle_visual" type="mesh" mesh="hunyuan_bottle" material="hunyuan_bottle_mat" group="2" contype="0" conaffinity="0" />
+      <geom name="hunyuan_bottle_collision" type="mesh" mesh="hunyuan_bottle" group="3" rgba="0 1 0 0" contype="1" conaffinity="1" />
+    </body>
+    <body name="hunyuan_maojin_body" pos="0.0 -1.2 0.2200000" quat="0 1 0 0">
+      <joint name="hunyuan_maojin_freejoint" type="free" />
+      <inertial pos="0.029656368 -0.000526693 -0.037308415" quat="0.999506377 -0.000155548 0.001783047 -0.031365572" mass="0.10" diaginertia="0.000678199 0.000700543 0.001290098" />
+      <geom name="hunyuan_maojin_visual" type="mesh" mesh="hunyuan_maojin" material="hunyuan_maojin_mat" group="2" contype="0" conaffinity="0" />
+      <geom name="hunyuan_maojin_collision" type="mesh" mesh="hunyuan_maojin" group="3" rgba="0 1 0 0" contype="1" conaffinity="1" />
+    </body>
+    <body name="hunyuan_lajitong_body" pos="-0.45 1.2 0.258493105" quat="0 1 0 0">
+      <joint name="hunyuan_lajitong_freejoint" type="free" />
+      <inertial pos="0.000081064 0.000711380 -0.132037735" quat="0.999965171 -0.000148167 0.000317584 0.008338718" mass="0.35" diaginertia="0.003508876 0.003517785 0.003843199" />
+      <geom name="hunyuan_lajitong_visual" type="mesh" mesh="hunyuan_lajitong" material="hunyuan_lajitong_mat" group="2" contype="0" conaffinity="0" />
+      <geom name="hunyuan_lajitong_collision" type="mesh" mesh="hunyuan_lajitong" group="3" rgba="0 1 0 0" contype="1" conaffinity="1" />
+    </body>
+    <body name="hunyuan_bianzhidai_body" pos="0.45 -1.2 0.303874049" quat="0 1 0 0">
+      <joint name="hunyuan_bianzhidai_freejoint" type="free" />
+      <inertial pos="0.001176132 -0.002161252 -0.134131335" quat="0.696563907 0.717260756 -0.005762074 -0.017393374" mass="0.15" diaginertia="0.001326188 0.001417323 0.001808860" />
+      <geom name="hunyuan_bianzhidai_visual" type="mesh" mesh="hunyuan_bianzhidai" material="hunyuan_bianzhidai_mat" group="2" contype="0" conaffinity="0" />
+      <geom name="hunyuan_bianzhidai_collision" type="mesh" mesh="hunyuan_bianzhidai" group="3" rgba="0 1 0 0" contype="1" conaffinity="1" />
+    </body>
+  </worldbody>
+</mujoco>

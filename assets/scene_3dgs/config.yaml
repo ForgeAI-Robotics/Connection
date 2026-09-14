@@ -1,0 +1,21 @@
+# scene_3dgs/config.yaml - 3DGS 场景地图生成配置
+
+scene:
+  mjcf: "nav_scene_1/mjcf/scene.xml"
+  collision_xml: "nav_scene_1/mjcf/object/sugar_collision.xml"
+
+# 场景 body 变换 (来自 scene.xml 中 mesh body 的 pos 和 euler)
+body_transform:
+  pos: [-0.62, 1.06, 4.00]
+  euler_deg: [82.89, -1.00, 0.89]
+
+# 地图生成参数
+map:
+  resolution: 0.05          # 栅格分辨率 (米/像素)
+  z_min: 0.0                # 碰撞高度下限 (米)
+  z_max: 2.0                # 碰撞高度上限 (米)
+  vahacd_dilation: 0.15      # V-HACD 分块间缝隙闭合膨胀 (米)
+  inflate_radius: 0.05       # 障碍物最终膨胀半径 (米)
+  border_margin: 0.20        # 地图四周障碍边框宽度 (米)
+  bounds_padding: 1.0         # 碰撞包围盒外扩 (米)
+  output_dir: "maps"
