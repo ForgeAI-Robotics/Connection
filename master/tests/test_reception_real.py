@@ -81,7 +81,7 @@ class FakeDreamHandler(_JsonHandler):
                     "legs": [
                         {
                             "target_id": "table_2", "route_phase": "", "leg_index": 1,
-                            "goal_xyt": [0.9948137550501258, 1.402057782965935, -0.3193204258080712],
+                            "goal_xyt": [0.9903405869861586, 1.3761315438191244, -0.39236607751253016],
                             "motion_mode": "forward_path", "require_final_orientation": True,
                         },
                         {

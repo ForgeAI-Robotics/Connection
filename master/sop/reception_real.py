@@ -37,7 +37,7 @@ TERMINAL_TASK_STATES = {
 NAVIGATION_LEGS = {
     "table2": {
         "target_id": "table_2", "route_phase": "", "leg_index": 1,
-        "goal_xyt": [0.9083733639083396, 1.1619836672443717, -0.3050338025357986],
+        "goal_xyt": [0.9903405869861586, 1.3761315438191244, -0.39236607751253016],
         "motion_mode": "forward_path",
     },
     "relay2": {
