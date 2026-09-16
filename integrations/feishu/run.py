@@ -103,6 +103,19 @@ def _safe_error(error: object) -> str:
     )[:1000]
 
 
+def _preload_lark_sdk() -> None:
+    """Import the SDK before asyncio.run() owns the event loop.
+
+    lark-channel-sdk 1.0.0 captures asyncio.get_event_loop() at import time and
+    later calls loop.run_until_complete() from a worker thread. Importing it
+    from inside asyncio.run() binds that module loop to the running loop and
+    fails with "This event loop is already running".
+    """
+
+    import lark_channel.ws.client  # noqa: F401
+    from lark_channel import FeishuChannel  # noqa: F401
+
+
 async def _run(settings: Settings) -> None:
     from lark_channel import FeishuChannel
     from lark_channel.channel.config import PolicyConfig, SafetyConfig, TextBatchConfig
@@ -176,6 +189,7 @@ def main() -> int:
     try:
         settings = load_settings(require_credentials=True)
         _configure_logging(settings)
+        _preload_lark_sdk()
         lock_path = settings.db_path.parent / "feishu.lock"
         with SingleInstanceLock(lock_path):
             asyncio.run(_run(settings))

@@ -25,6 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from log_setup import note_task_request
 from robot_api.config import load_robot_api_config
 
 app = Flask(__name__)
@@ -159,6 +160,7 @@ def publish_task():
         data["task_id"] = task_id
         data.setdefault("refresh", True)
         task_text = data["task"]
+        note_task_request("publish", task_text, task_id=task_id)
         resp = requests.post(f"{MASTER_URL}/publish_task", json=data, timeout=120)
         result = resp.json()
         if (
@@ -241,6 +243,7 @@ def task_preflight():
         data = request.get_json() or {}
         if not isinstance(data.get("task"), str) or not data["task"].strip():
             return jsonify({"ready": False, "error": "缺少有效 task 字段"}), 400
+        note_task_request("preflight", data["task"].strip())
         resp = requests.post(
             f"{MASTER_URL}/api/task_preflight", json=data, timeout=45
         )

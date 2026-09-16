@@ -69,6 +69,21 @@ class ProcessLogLayoutTest(unittest.TestCase):
             self.assertTrue((Path(raw) / "archive" / "current_task.json").exists())
             self.assertTrue((Path(raw) / "archive" / "events.jsonl").exists())
 
+    def test_inbound_task_request_prints_task_text(self):
+        captured = StringIO()
+        with mock.patch("sys.stdout", captured):
+            log_setup.note_task_request(
+                "preflight",
+                "开始接待",
+                ready=False,
+                required=True,
+                blockers=["DREAM 8001 Connection refused"],
+            )
+        text = captured.getvalue()
+        self.assertIn("[task] preflight 开始接待", text)
+        self.assertIn("ready=false", text)
+        self.assertIn("DREAM 8001 Connection refused", text)
+
 
 if __name__ == "__main__":
     unittest.main()

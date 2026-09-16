@@ -58,6 +58,28 @@ def write_process_note(line: str) -> None:
     print(text, flush=True)
 
 
+def compact_log_text(value, limit: int = 180) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    if len(text) > limit:
+        return text[: limit - 3] + "..."
+    return text
+
+
+def note_task_request(kind: str, task: str, **fields) -> None:
+    """Print inbound task text. Flask access logs only show method/path."""
+
+    parts = [f"[task] {kind}", compact_log_text(task) or "(empty)"]
+    for key, value in fields.items():
+        if value is None or value == "" or value == []:
+            continue
+        if isinstance(value, list):
+            value = "；".join(str(item) for item in value)
+        elif isinstance(value, bool):
+            value = "true" if value else "false"
+        parts.append(f"{key}={compact_log_text(value, 240)}")
+    print(" ".join(parts), flush=True)
+
+
 class _BytesTee:
     def __init__(self, original_buffer, file_obj):
         self._original = original_buffer

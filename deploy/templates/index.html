@@ -234,6 +234,16 @@
             result.style.display = 'block';
             result.textContent = '等待响应...';
             try {
+                const preflightResp = await fetch('/api/task_preflight', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task: task})
+                });
+                const preflight = await preflightResp.json();
+                if (preflight.required && preflight.ready === false) {
+                    result.textContent = '预检未通过:\n' + JSON.stringify(preflight, null, 2);
+                    return;
+                }
                 const resp = await fetch('/publish_task', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},

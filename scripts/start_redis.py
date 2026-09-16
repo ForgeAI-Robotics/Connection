@@ -23,35 +23,70 @@ def _redis_binaries():
     }
 
 
-def main():
+def redis_env():
     bins = _redis_binaries()
-    server = bins["server"]
-    if not server.exists():
-        raise SystemExit(
-            "redis-server not found. Extract packages into .runtime/redis-root "
-            "or install redis-server."
-        )
-    log_path = create_process_log_path("redis")
-    data_dir = Path(os.environ.get("FQPLANNER_REDIS_DIR", "/tmp/connection-redis"))
-    data_dir.mkdir(parents=True, exist_ok=True)
     env = os.environ.copy()
     lib = str(bins["lib"])
     env["LD_LIBRARY_PATH"] = lib + os.pathsep + env.get("LD_LIBRARY_PATH", "")
-    cmd = [
+    return env
+
+
+def redis_cli_bin() -> Path:
+    return _redis_binaries()["cli"]
+
+
+def build_redis_command(
+    *,
+    daemonize: bool,
+    log_path: Path | None = None,
+    log_to_stdout: bool = False,
+) -> list[str]:
+    """Build redis-server argv. Foreground mode keeps a tmux pane alive."""
+
+    bins = _redis_binaries()
+    server = bins["server"]
+    if not server.exists():
+        raise FileNotFoundError(
+            "redis-server not found. Extract packages into .runtime/redis-root "
+            "or install redis-server."
+        )
+    data_dir = Path(os.environ.get("FQPLANNER_REDIS_DIR", "/tmp/connection-redis"))
+    data_dir.mkdir(parents=True, exist_ok=True)
+    path = log_path or create_process_log_path("redis")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Empty --logfile means stdout, so a tmux pane can show the same lines.
+    return [
         str(server),
-        "--port", "6379",
-        "--bind", "127.0.0.1",
-        "--protected-mode", "yes",
-        "--daemonize", "yes",
-        "--dir", str(data_dir),
-        "--dbfilename", "dump.rdb",
-        "--save", "",
-        "--logfile", str(log_path),
+        "--port",
+        "6379",
+        "--bind",
+        "127.0.0.1",
+        "--protected-mode",
+        "yes",
+        "--daemonize",
+        "yes" if daemonize else "no",
+        "--dir",
+        str(data_dir),
+        "--dbfilename",
+        "dump.rdb",
+        "--save",
+        "",
+        "--logfile",
+        "" if log_to_stdout else str(path),
+        "--loglevel",
+        "notice",
     ]
+
+
+def main():
+    env = redis_env()
+    log_path = create_process_log_path("redis")
+    cmd = build_redis_command(daemonize=True, log_path=log_path)
     subprocess.check_call(cmd, env=env)
-    cli = bins["cli"]
     ping = subprocess.check_output(
-        [str(cli), "-h", "127.0.0.1", "-p", "6379", "ping"], env=env, text=True
+        [str(redis_cli_bin()), "-h", "127.0.0.1", "-p", "6379", "ping"],
+        env=env,
+        text=True,
     ).strip()
     print(f"[log] redis -> {log_path}")
     print(ping)

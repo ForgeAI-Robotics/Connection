@@ -1,0 +1,1 @@
+"""FQPlanner Linux control panel."""

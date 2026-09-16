@@ -15,6 +15,7 @@ from agents.agent import GlobalAgent
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
+from log_setup import note_task_request
 
 # The documented entry point is ``python master/run.py`` from the repository
 # root, while the master configuration contains paths relative to this module.
@@ -100,13 +101,24 @@ def task_status():
 @app.route("/api/task_preflight", methods=["POST"])
 def task_preflight():
     """提交前只读预检；不创建任务、不发送 DREAM/VLA 命令。"""
+    data = {}
     try:
         data = request.get_json() or {}
         task = data.get("task")
         if not isinstance(task, str) or not task.strip():
             return jsonify({"ready": False, "error": "缺少有效 task 字段"}), 400
-        return jsonify(master_agent.get_task_preflight(task.strip())), 200
+        task = task.strip()
+        report = master_agent.get_task_preflight(task)
+        note_task_request(
+            "preflight",
+            task,
+            ready=report.get("ready"),
+            required=report.get("required"),
+            blockers=report.get("blockers"),
+        )
+        return jsonify(report), 200
     except Exception as exc:
+        note_task_request("preflight", data.get("task") if isinstance(data, dict) else "", error=str(exc))
         return jsonify({
             "ready": False,
             "required": True,
@@ -223,6 +235,30 @@ def publish_task():
         for task in tasks:
             if not isinstance(task, str):
                 return jsonify({"error": "Invalid task format - must be a string"}), 400
+            task = task.strip()
+            report = master_agent.get_task_preflight(task)
+            note_task_request(
+                "preflight",
+                task,
+                ready=report.get("ready"),
+                required=report.get("required"),
+                blockers=report.get("blockers"),
+            )
+            if report.get("required") and not report.get("ready"):
+                blockers = report.get("blockers") or []
+                return jsonify(
+                    {
+                        "status": "rejected",
+                        "accepted": False,
+                        "ready": False,
+                        "required": True,
+                        "blockers": blockers,
+                        "error": "；".join(str(item) for item in blockers)
+                        or "下游服务未就绪",
+                        "task": task,
+                    }
+                ), 200
+            note_task_request("publish", task, task_id=task_id)
             subtask_list = master_agent.publish_global_task(
                 task, data["refresh"], task_id
             )

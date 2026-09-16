@@ -141,6 +141,12 @@ class FeishuBridge:
         if not created:
             LOGGER.info("忽略重复飞书消息 message_id=%s", message.message_id)
             return
+        LOGGER.info(
+            "收到飞书任务「%s」message_id=%s risk=%s",
+            task_text,
+            message.message_id,
+            classification.risk.value,
+        )
 
         if classification.requires_confirmation:
             await self._request_confirmation(message)
@@ -340,6 +346,7 @@ class FeishuBridge:
             await self._finish_unsubmitted(record, "brain_busy", detail, reply_to)
             return
 
+        LOGGER.info("飞书提交任务「%s」message_id=%s", record.task_text, message_id)
         if record.risk_level != "read_only":
             try:
                 preflight = await self.brain.task_preflight(record.task_text)
@@ -360,12 +367,16 @@ class FeishuBridge:
                 )
             if preflight.required and not preflight.ready:
                 detail = "；".join(preflight.blockers) or "下游服务未就绪"
+                LOGGER.info("飞书预检未通过「%s」%s", record.task_text, detail)
                 await self._finish_unsubmitted(
                     record, "preflight_failed", detail, reply_to
                 )
                 return
 
         try:
+            LOGGER.info(
+                "飞书发布任务「%s」task_id=%s", record.task_text, brain_task_id
+            )
             await self.brain.publish_task(record.task_text, brain_task_id)
         except BrainBusy as exc:
             await self._finish_unsubmitted(record, "brain_busy", str(exc), reply_to)

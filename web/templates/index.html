@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FQPlanner 控制面板</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=4">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <h1>服务器进程监控</h1>
+        <p class="hint">大脑层 / 真机层。重启拉起独立 tmux session。不会发布「开始接待」。无登录。</p>
+      </div>
+      <div class="header-right">
+        <code id="attach">tmux ls</code>
+        <span id="poll">自动刷新 3s</span>
+      </div>
+    </header>
+    <div class="shell">
+      <nav>
+        <button type="button" class="layer active" data-layer="brain">
+          <span>大脑层</span>
+          <span id="brain-dots" class="dots"></span>
+        </button>
+        <button type="button" class="layer" data-layer="robot">
+          <span>真机层</span>
+          <span id="robot-dots" class="dots"></span>
+        </button>
+      </nav>
+      <section class="workspace">
+        <div class="workspace-head">
+          <h2 id="layer-title">大脑层</h2>
+          <span id="layer-count"></span>
+        </div>
+        <div id="cards" class="cards"></div>
+        <div id="tabs" class="tabs"></div>
+        <div class="log-wrap">
+          <div class="log-head">
+            <h3 id="log-title">运行日志</h3>
+            <span id="log-meta"></span>
+          </div>
+          <pre id="log">选择服务查看运行日志。</pre>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script src="{{ url_for('static', filename='panel.js') }}?v=4"></script>
+</body>
+</html>
