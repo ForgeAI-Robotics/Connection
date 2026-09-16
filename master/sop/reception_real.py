@@ -120,7 +120,11 @@ class ReceptionRealRunner:
         self.verifier = verifier or ReceptionVerifier(
             self.config.get("verification") or {})
         default_runtime = Path(__file__).resolve().parent / "runtime" / "reception"
-        runtime_dir = self.config.get("runtime_dir") or str(default_runtime)
+        runtime_dir = (
+            os.getenv("FQPLANNER_RECEPTION_RUNTIME")
+            or self.config.get("runtime_dir")
+            or str(default_runtime)
+        )
         self.store = store or ReceptionStore(runtime_dir)
         self.state = {}
 

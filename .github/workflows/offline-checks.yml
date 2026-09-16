@@ -17,7 +17,7 @@ jobs:
       - name: Create safe local test configuration
         run: python scripts/bootstrap_local.py
       - name: Test Master contracts
-        run: python -m unittest master.tests.test_reception_real master.tests.test_dream_route_policy -v
+        run: python -m unittest master.tests.test_reception_real master.tests.test_dream_route_policy master.tests.test_log_setup -v
       - name: Test DREAM HTTP adapter
         run: python -m unittest serve_dream.test_agent_http -v
       - name: Test DREAM offline fixtures

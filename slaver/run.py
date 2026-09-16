@@ -21,6 +21,11 @@ logging.getLogger("mcp").setLevel(logging.WARNING)
 # Add project root to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+if __name__ == "__main__":
+    from log_setup import attach_process_log
+
+    attach_process_log("slaver")
+
 import yaml
 from slaver.agents.models import AzureOpenAIServerModel, OpenAIServerModel
 from slaver.agents.slaver_agent import ToolCallingAgent
@@ -230,7 +235,7 @@ class RobotManager:
             verbosity_level=2,
             model=self.model,
             model_path=self.model_path,
-            log_file="./.log/agent.log",
+            log_file=os.environ.get("FQPLANNER_PROCESS_LOG") or "./.log/agent.log",
             robot_name=self.robot_name,
             collaborator=self.collaborator,
             tool_executor=self.session.call_tool,

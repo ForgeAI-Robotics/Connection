@@ -13,6 +13,61 @@ def now_iso():
     return datetime.now().astimezone().isoformat(timespec="milliseconds")
 
 
+def _note_process_log(line):
+    try:
+        from log_setup import write_process_note
+    except ImportError:
+        return
+    write_process_note(line)
+
+
+def _compact(value, limit=180):
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        value = value.get("message") or value.get("code") or json.dumps(
+            value, ensure_ascii=False, separators=(",", ":"))
+    text = str(value).replace("\n", " ").strip()
+    if len(text) > limit:
+        return text[: limit - 3] + "..."
+    return text
+
+
+def _summarize_state(state):
+    parts = [
+        "[reception] task",
+        f"state={state.get('state')}",
+        f"phase={state.get('runtime_phase')}",
+        f"verified={state.get('verified_state')}",
+    ]
+    if state.get("task_id"):
+        parts.append(f"task_id={state.get('task_id')}")
+    if state.get("failed_phase"):
+        parts.append(f"failed_phase={state.get('failed_phase')}")
+    if state.get("failure_reason"):
+        parts.append(f"reason={_compact(state.get('failure_reason'))}")
+    return " ".join(parts)
+
+
+def _summarize_event(entry):
+    parts = [f"[reception] event={entry.get('event')}"]
+    for key in ("task_id", "command_id", "failed_phase", "error", "error_type"):
+        if entry.get(key):
+            parts.append(f"{key}={_compact(entry.get(key))}")
+    payload = entry.get("error_payload")
+    if isinstance(payload, dict):
+        result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+        err = payload.get("error")
+        detail = result.get("message")
+        if not detail and isinstance(err, dict):
+            detail = err.get("message")
+        if not detail:
+            detail = err or payload.get("wait_reason")
+        if detail:
+            parts.append(f"detail={_compact(detail)}")
+    return " ".join(parts)
+
+
 class ReceptionStore:
     def __init__(self, root):
         self.root = Path(root).resolve()
@@ -43,6 +98,7 @@ class ReceptionStore:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(tmp_path, self.state_path)
+        _note_process_log(_summarize_state(payload))
         return payload
 
     def _append(self, path, record):
@@ -53,6 +109,7 @@ class ReceptionStore:
                 handle.write(line + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
+        _note_process_log(_summarize_event(entry))
         return entry
 
     def append_event(self, event, **data):

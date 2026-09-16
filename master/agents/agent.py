@@ -132,9 +132,11 @@ class GlobalAgent:
 
     def _init_logger(self, logger_config):
         self.logger = logging.getLogger(logger_config["master_logger_name"])
-        logger_file = logger_config["master_logger_file"]
-        os.makedirs(os.path.dirname(logger_file), exist_ok=True)
-        file_handler = logging.FileHandler(logger_file)
+        logger_file = os.environ.get("FQPLANNER_PROCESS_LOG") or logger_config["master_logger_file"]
+        log_dir = os.path.dirname(logger_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        file_handler = logging.FileHandler(logger_file, encoding="utf-8")
 
         if logger_config["master_logger_level"] == "DEBUG":
             self.logger.setLevel(logging.DEBUG)

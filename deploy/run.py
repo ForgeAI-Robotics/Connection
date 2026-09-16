@@ -718,5 +718,8 @@ def timeline_frame(filename):
 
 
 if __name__ == "__main__":
+    from log_setup import attach_process_log
+
+    attach_process_log("deploy")
     print("任务控制台已启动: http://127.0.0.1:8888")
     app.run(host="0.0.0.0", port=8888, debug=False)

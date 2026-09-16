@@ -40,6 +40,8 @@ integrations/feishu/runtime/
 # Runtime traces, experience, media and site data
 .log/
 .logs/
+/log/
+.runtime/
 *.log
 *.sqlite*
 *.db

@@ -5,6 +5,11 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+if __name__ == "__main__":
+    from log_setup import attach_process_log
+
+    attach_process_log("master")
+
 import psutil
 from agents.agent import GlobalAgent
 from flask import Flask, jsonify, request
