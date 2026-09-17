@@ -229,6 +229,19 @@ class ToolCallingAgent(MultiStepAgent):
             except Exception as exc:
                 print(f"[Slaver] DREAM审核目标参数保持失败: {exc}", file=sys.stderr)
 
+        if tool_name == "capture_image":
+            try:
+                _cam_args = (
+                    json.loads(tool_arguments)
+                    if isinstance(tool_arguments, str)
+                    else dict(tool_arguments or {})
+                )
+            except Exception:
+                _cam_args = {}
+            if not str(_cam_args.get("context") or "").strip():
+                _cam_args["context"] = self.task or ""
+            tool_arguments = json.dumps(_cam_args, ensure_ascii=False)
+
         # pick_two 第二轮：master 子任务为"搜索并抓取 X 排除 Y"。强制把 Y 注入 search_and_grasp
         # 的 exclude_from，不依赖 LLM 主动传参（实测 LLM 常漏传 → 第二轮会从刚放置的目标位
         # 把第一个又取回来，导致 put two 失败）。
@@ -347,12 +360,22 @@ class ToolCallingAgent(MultiStepAgent):
             return "final_answer"
 
         # 错误类状态（failure/exception/timeout）：直接返回给 Master，由 Master LLM + VLM 综合判断
+        fail_needles = (
+            "失败",
+            "failed",
+            "error executing tool",
+            "unexpected keyword",
+            "不在场景中",
+            "已经抓取",
+            "没有抓取",
+            "无法",
+            "traceback",
+            "typeerror",
+        )
+        lowered = observation.lower() if isinstance(observation, str) else ""
         is_failed = tool_status in ("failure", "exception", "timeout") or (
-            isinstance(observation, str) and (
-                "失败" in observation or "failed" in observation.lower()
-                or "不在场景中" in observation or "已经抓取" in observation
-                or "没有抓取" in observation or "无法" in observation
-            )
+            isinstance(observation, str)
+            and any(needle in lowered or needle in observation for needle in fail_needles)
         )
 
         if is_failed:

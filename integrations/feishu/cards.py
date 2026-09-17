@@ -137,6 +137,19 @@ def task_card(
         _plain(f"状态：{state_label}"),
     ]
 
+    answer = str(status.get("answer") or "").strip()
+    if not answer:
+        for item in status.get("subtask_list") or []:
+            if not isinstance(item, dict):
+                continue
+            detail = str(item.get("result") or "").strip()
+            sub = str(item.get("subtask") or "")
+            if detail and ("拍照查看" in sub or "视野描述" in detail):
+                answer = detail
+                break
+    if answer:
+        elements.append(_plain(f"回答：{answer}"))
+
     reasoning = str(status.get("reasoning") or "").strip()
     if reasoning:
         elements.append(_plain(f"Master 规划：{reasoning}"))
@@ -206,7 +219,11 @@ def task_card(
                 else "⏳"
             )
             text = str(item.get("subtask") or "未命名子任务").replace("\n", " ")
-            lines.append(f"{icon} {text[:200]}")
+            detail = str(item.get("result") or "").strip()
+            if detail:
+                lines.append(f"{icon} {text[:120]}\n{detail[:800]}")
+            else:
+                lines.append(f"{icon} {text[:200]}")
         if lines:
             elements.append(_markdown("**子任务**\n" + "\n".join(lines)))
 

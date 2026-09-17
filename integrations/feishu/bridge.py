@@ -20,8 +20,15 @@ from .brain_client import (
     BrainTaskIdMismatch,
 )
 from .cards import STATE_LABELS, confirmation_card, task_card
-from .classifier import classify_task
+from .chat import DeepSeekChat
+from .classifier import (
+    Intent,
+    classify_task,
+    needs_llm_route,
+    refine_with_llm,
+)
 from .config import Settings
+from .scene import SceneObserver
 from .store import TaskRecord, TaskStore
 
 
@@ -62,6 +69,18 @@ class Messenger(Protocol):
     async def update_card(self, message_id: str, card: dict[str, Any]) -> None: ...
 
 
+class ChatResponder(Protocol):
+    async def reply(self, text: str) -> str: ...
+
+
+class SceneResponder(Protocol):
+    async def describe(self, text: str) -> str: ...
+
+
+class IntentRouter(Protocol):
+    async def route(self, text: str) -> str: ...
+
+
 class FeishuBridge:
     def __init__(
         self,
@@ -69,11 +88,22 @@ class FeishuBridge:
         store: TaskStore,
         brain: BrainClient,
         messenger: Messenger,
+        chat: ChatResponder | None = None,
+        scene: SceneResponder | None = None,
+        router: IntentRouter | None = None,
     ) -> None:
         self.settings = settings
         self.store = store
         self.brain = brain
         self.messenger = messenger
+        self.chat = chat or DeepSeekChat()
+        self.scene = scene or SceneObserver()
+        if router is not None:
+            self.router = router
+        elif hasattr(self.chat, "route"):
+            self.router = self.chat  # type: ignore[assignment]
+        else:
+            self.router = None
         self._tasks: set[asyncio.Task] = set()
 
     def _spawn(self, coroutine) -> None:
@@ -129,6 +159,7 @@ class FeishuBridge:
             return
 
         classification = classify_task(task_text)
+        classification = await self._refine_ambiguous(task_text, classification)
         created = self.store.create(
             message_id=message.message_id,
             event_id=message.event_id or message.message_id,
@@ -142,16 +173,100 @@ class FeishuBridge:
             LOGGER.info("忽略重复飞书消息 message_id=%s", message.message_id)
             return
         LOGGER.info(
-            "收到飞书任务「%s」message_id=%s risk=%s",
+            "收到飞书消息「%s」message_id=%s intent=%s risk=%s",
             task_text,
             message.message_id,
+            classification.intent.value,
             classification.risk.value,
         )
 
+        if classification.intent is Intent.CHAT:
+            await self._answer_chat(message, task_text)
+            return
         if classification.requires_confirmation:
             await self._request_confirmation(message)
         else:
             await self._submit(message.message_id, reply_to=message.message_id)
+
+    async def _refine_ambiguous(self, task_text: str, classification):
+        if not needs_llm_route(classification) or self.router is None:
+            return classification
+        try:
+            label = await self.router.route(task_text)
+        except Exception as exc:
+            LOGGER.warning("飞书 LLM 分流失败，按任务处理「%s」：%s", task_text, exc)
+            return classification
+        refined = refine_with_llm(classification, label, task_text)
+        if refined.intent is not classification.intent:
+            LOGGER.info(
+                "飞书 LLM 分流「%s」%s → %s",
+                task_text,
+                classification.intent.value,
+                refined.intent.value,
+            )
+        return refined
+
+    async def _answer_chat(self, message: IncomingMessage, task_text: str) -> None:
+        try:
+            answer = await self.chat.reply(task_text)
+        except Exception as exc:
+            LOGGER.exception("飞书通用问答失败 message_id=%s", message.message_id)
+            await self._finish_local_answer(
+                message,
+                failed=True,
+                answer=f"暂时无法回答：{exc}"[:1000],
+                source="chat",
+                send_card=False,
+            )
+            return
+        await self._finish_local_answer(
+            message, failed=False, answer=answer, source="chat", send_card=False
+        )
+
+    async def _answer_observe(self, message: IncomingMessage, task_text: str) -> None:
+        try:
+            answer = await self.scene.describe(task_text)
+        except Exception as exc:
+            LOGGER.exception("飞书现场问答失败 message_id=%s", message.message_id)
+            answer = f"读不到现场物体：{exc}"[:1000]
+            await self._finish_local_answer(
+                message, failed=True, answer=answer, source="observe", send_card=True
+            )
+            return
+        failed = answer.startswith("读不到现场物体")
+        await self._finish_local_answer(
+            message, failed=failed, answer=answer, source="observe", send_card=True
+        )
+
+    async def _finish_local_answer(
+        self,
+        message: IncomingMessage,
+        *,
+        failed: bool,
+        answer: str,
+        source: str,
+        send_card: bool,
+    ) -> None:
+        state = "failed" if failed else "succeeded"
+        self.store.transition(
+            message.message_id,
+            from_states={"received"},
+            to_state=state,
+            completed_at=int(time.time()),
+            last_error=answer[:1000] if failed else "",
+            last_status={
+                "answer": answer,
+                "source": source,
+                "intent": source,
+            },
+        )
+        await self.messenger.send_text(
+            message.chat_id, answer, reply_to=message.message_id
+        )
+        if send_card:
+            record = self.store.get(message.message_id)
+            if record:
+                await self._ensure_task_card(record, reply_to=message.message_id)
 
     def _parse_message(self, message: IncomingMessage) -> Optional[tuple[str, str]]:
         text = (message.text or "").strip()
@@ -660,10 +775,12 @@ class FeishuBridge:
     @staticmethod
     def _help_text() -> str:
         return (
-            "飞书任务桥接用法：\n"
-            "• 私聊：直接发送自然语言任务，或 /task <任务>\n"
-            "• 群聊：@机器人 /task <任务>\n"
+            "飞书助手用法：\n"
+            "• 私聊：直接发送问题或任务，或 /task <内容>\n"
+            "• 群聊：@机器人 /task <内容>\n"
+            "• 通用问答：天气、地点、百科等会直接文字回复，不会开动机器人\n"
+            "• 公司任务：「开始接待」「整理可乐」「桌上有什么」「前面有什么」交给大脑；看现场由大脑拍照看图\n"
             "• /status：查看当前大脑任务\n"
             "• /help：查看帮助\n"
-            "查询任务会直接提交；运动或模糊任务需要原发送者确认。"
+            "运动或无法判定的任务需要原发送者确认。"
         )

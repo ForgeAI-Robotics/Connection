@@ -108,11 +108,17 @@
             <div id="record-info" style="text-align:center;font-size:12px;color:#64748b;margin-top:6px"></div>
         </div>
 
-        <!-- 四宫格相机(head+左右腕+overhead)时间线回放 -->
+        <!-- 四宫格：直播仿真 + 发任务后逐步截图回放 -->
         <div class="card">
-            <h2>四宫格相机时间线
-                <span style="font-size:12px;color:#64748b;font-weight:normal">(Top + Front + Wrist + Agent，任务每步做完各截一帧)</span>
-                <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;float:right" onclick="loadTimeline()">刷新时间线</button>
+            <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span>四宫格相机
+                    <span style="font-size:12px;color:#64748b;font-weight:normal">（Top + Front + Wrist + Agent）</span>
+                </span>
+                <span style="margin-left:auto;display:flex;gap:6px">
+                    <button class="btn btn-outline btn-sm" id="btn-quad-live" style="font-size:11px;padding:3px 8px" onclick="startLiveQuad()">直播</button>
+                    <button class="btn btn-outline btn-sm" id="btn-quad-replay" style="font-size:11px;padding:3px 8px" onclick="startReplayQuad()">回放</button>
+                    <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px" onclick="loadTimeline()">刷新</button>
+                </span>
             </h2>
             <div id="quad-meta" style="text-align:center;font-size:12px;color:#64748b;margin-bottom:6px"></div>
             <div style="text-align:center">
@@ -185,7 +191,8 @@
         // 状态检测
         async function checkStatus() {
             try {
-                await fetch('http://127.0.0.1:5000/system_status');
+                const resp = await fetch('/api/task_status');
+                if (!resp.ok) throw new Error('offline');
                 document.getElementById('status').innerHTML = '<span><span class="dot ok"></span>Master 在线</span>';
             } catch {
                 document.getElementById('status').innerHTML = '<span><span class="dot err"></span>Master 离线</span>';
@@ -411,16 +418,19 @@
         }
         setInterval(autoDetectNewTask, 3000);
 
-        // 任务执行期间定时刷新时间线(后端在为该任务采集 → 时间线随即变成该任务,显示最新帧像直播)
-        let timelineRefreshTimer = null;
+        // 任务执行期间跟时间线：每步做完截一帧，四宫格切到回放看最新截图
+        let timelineRefreshTimer = null, timelineEndTimer = null;
         function startTimelineRefresh() {
-            stopTimelineRefresh();
+            if (timelineRefreshTimer) { clearInterval(timelineRefreshTimer); timelineRefreshTimer = null; }
+            if (timelineEndTimer) { clearTimeout(timelineEndTimer); timelineEndTimer = null; }
+            followTimeline = true;
             loadTimeline(true);
             timelineRefreshTimer = setInterval(() => loadTimeline(true), 5000);
         }
         function stopTimelineRefresh() {
             if (timelineRefreshTimer) { clearInterval(timelineRefreshTimer); timelineRefreshTimer = null; }
-            setTimeout(() => loadTimeline(true), 4000);  // 任务结束后补拉一次,带上"完成"帧
+            if (timelineEndTimer) clearTimeout(timelineEndTimer);
+            timelineEndTimer = setTimeout(() => loadTimeline(true), 4000);  // 任务结束后补拉一次,带上"完成"帧
         }
 
         // 经验教训改由机器人任务后自行总结,前端不再手动录入(已移除失败/成功经验弹窗)。
@@ -621,8 +631,57 @@
             }, 1000);
         }
 
-        // ── 四宫格相机时间线回放(实时渲染已移除,只回放任务每步做完时截的帧) ──
-        let tlFrames = [], tlPlayTimer = null;
+        // ── 四宫格：直播仿真；本页/飞书发任务后逐步截图，可回放 ──
+        let tlFrames = [], tlPlayTimer = null, liveTimer = null, liveMode = true, followTimeline = false;
+
+        function markQuadMode(mode) {
+            const liveBtn = document.getElementById('btn-quad-live');
+            const replayBtn = document.getElementById('btn-quad-replay');
+            if (liveBtn) {
+                liveBtn.style.borderColor = mode === 'live' ? '#38bdf8' : '#334155';
+                liveBtn.style.color = mode === 'live' ? '#38bdf8' : '#94a3b8';
+            }
+            if (replayBtn) {
+                replayBtn.style.borderColor = mode === 'replay' ? '#38bdf8' : '#334155';
+                replayBtn.style.color = mode === 'replay' ? '#38bdf8' : '#94a3b8';
+                replayBtn.disabled = !tlFrames.length;
+            }
+        }
+
+        function stopLiveQuad() {
+            liveMode = false;
+            if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+        }
+
+        function startLiveQuad() {
+            stopPlay();
+            followTimeline = false;
+            liveMode = true;
+            markQuadMode('live');
+            const img = document.getElementById('quad-img');
+            const empty = document.getElementById('timeline-empty');
+            if (empty) {
+                empty.textContent = tlFrames.length
+                    ? '正在直播。点「回放」可拖进度条看每步做完的截图。'
+                    : '正在直播。在本页或飞书发任务后，每步做完会截一帧，这里就能回放。';
+            }
+            function tick() {
+                if (!liveMode) return;
+                img.src = '/api/quad_latest?t=' + Date.now();
+            }
+            if (liveTimer) clearInterval(liveTimer);
+            liveTimer = setInterval(tick, 800);
+            tick();
+        }
+
+        function startReplayQuad() {
+            followTimeline = true;
+            if (!tlFrames.length) {
+                loadTimeline(true);
+                return;
+            }
+            showFrame(tlFrames.length - 1);
+        }
 
         function stopPlay() {
             if (tlPlayTimer) { clearInterval(tlPlayTimer); tlPlayTimer = null; }
@@ -635,35 +694,49 @@
                 const resp = await fetch('/api/timeline');
                 const data = await resp.json();
                 if (!data.exists || !(data.frames || []).length) {
-                    empty.textContent = '暂无时间线。在上方发布一个任务,结束后这里会显示该任务的四宫格回放。';
                     document.getElementById('timeline-controls').style.display = 'none';
+                    document.getElementById('quad-meta').innerHTML = '';
+                    tlFrames = [];
+                    if (!liveMode) startLiveQuad();
+                    else markQuadMode('live');
                     return;
                 }
                 tlFrames = data.frames;
-                empty.textContent = '';
                 document.getElementById('timeline-controls').style.display = 'block';
                 const slider = document.getElementById('timeline-slider');
                 slider.max = tlFrames.length - 1;
-                // MuJoCo:won===true 才标"落点已验证";won===false 是非持续模式默认值,不当失败
                 const wonTag = data.won === true ? ' · <span style="color:#4ade80">✓落点已验证</span>' : '';
                 document.getElementById('quad-meta').innerHTML =
                     `任务: <b>${data.task || '?'}</b>${wonTag}` +
-                    `<br><span style="font-size:11px">采集于 ${data.created || ''} · 宫格: ${(data.cameras || []).join(' / ')}</span>`;
-                // 任务进行中自动刷新看最新帧(像直播);手动点刷新看第一帧
-                showFrame(showLast ? tlFrames.length - 1 : 0);
+                    `<br><span style="font-size:11px">采集于 ${data.created || ''} · ${tlFrames.length} 帧 · ${(data.cameras || []).join(' / ')}</span>`;
+                if (showLast && followTimeline) {
+                    showFrame(tlFrames.length - 1);
+                } else if (liveMode) {
+                    markQuadMode('live');
+                    if (empty) empty.textContent = '正在直播。点「回放」可拖进度条看每步做完的截图。';
+                } else {
+                    const cur = parseInt(slider.value, 10) || 0;
+                    showFrame(Math.min(cur, tlFrames.length - 1));
+                }
             } catch (e) {
-                empty.textContent = '加载时间线失败: ' + e.message;
+                if (!liveMode) startLiveQuad();
+                empty.textContent = '时间线不可用，已显示实时画面。';
             }
         }
 
         function showFrame(i) {
             if (!tlFrames.length) return;
+            stopLiveQuad();
+            followTimeline = true;
+            markQuadMode('replay');
             i = Math.max(0, Math.min(tlFrames.length - 1, parseInt(i)));
             const f = tlFrames[i];
             document.getElementById('quad-img').src = '/task_timeline/' + f.file + '?t=' + Date.now();
             document.getElementById('timeline-slider').value = i;
             document.getElementById('frame-label').textContent =
                 `时间点 ${i + 1}/${tlFrames.length} · ${f.label} · t=${f.t}s`;
+            const empty = document.getElementById('timeline-empty');
+            if (empty) empty.textContent = '回放：每个子任务做完截的一帧。点「直播」回到当前画面。';
         }
 
         function stepFrame(d) {
@@ -685,6 +758,7 @@
             }, 900);
         }
 
+        startLiveQuad();
         loadTimeline();
     </script>
 </body>

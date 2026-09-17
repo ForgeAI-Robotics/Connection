@@ -20,6 +20,7 @@ secrets*
 
 # Local environments and tooling
 .git-credentials
+.deps/
 .venv*/
 venv/
 node_modules/

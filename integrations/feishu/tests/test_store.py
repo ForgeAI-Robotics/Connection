@@ -114,6 +114,19 @@ class StoreTests(unittest.TestCase):
         )
         self.assertEqual(migrated.get("migrated").tracking_timeout_sec, 6000)
 
+    def test_transition_can_store_last_status_answer(self):
+        self.create("answer1")
+        self.assertTrue(
+            self.store.transition(
+                "answer1",
+                from_states={"received"},
+                to_state="succeeded",
+                last_status={"answer": "桌上有可乐", "source": "observe"},
+            )
+        )
+        record = self.store.get("answer1")
+        self.assertEqual(record.last_status["answer"], "桌上有可乐")
+
 
 if __name__ == "__main__":
     unittest.main()

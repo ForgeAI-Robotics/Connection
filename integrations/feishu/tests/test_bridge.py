@@ -72,6 +72,42 @@ def message(message_id, text, **overrides):
     return IncomingMessage(**values)
 
 
+class FakeChat:
+    def __init__(self, text="今天估计多云，这不是实时天气。"):
+        self.text = text
+        self.queries = []
+        self.fail_with = None
+
+    async def reply(self, text):
+        self.queries.append(text)
+        if self.fail_with:
+            raise RuntimeError(self.fail_with)
+        return self.text
+
+
+class FakeRouter:
+    def __init__(self, label="chat"):
+        self.label = label
+        self.queries = []
+        self.fail_with = None
+
+    async def route(self, text):
+        self.queries.append(text)
+        if self.fail_with:
+            raise RuntimeError(self.fail_with)
+        return self.label
+
+
+class FakeScene:
+    def __init__(self, text="当前桌面/场景里有：\n• 可乐（cola_1）"):
+        self.text = text
+        self.queries = []
+
+    async def describe(self, text):
+        self.queries.append(text)
+        return self.text
+
+
 class BridgeTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
@@ -98,10 +134,18 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             await bridge.shutdown()
         self.tempdir.cleanup()
 
-    def make_bridge(self, brain, settings=None):
-        bridge = FeishuBridge(
-            settings or self.settings, self.store, brain, self.messenger
+    def make_bridge(self, brain, settings=None, chat=None, scene=None, router=None):
+        kwargs = dict(
+            settings=settings or self.settings,
+            store=self.store,
+            brain=brain,
+            messenger=self.messenger,
+            chat=chat or FakeChat(),
+            scene=scene or FakeScene(),
         )
+        if router is not None:
+            kwargs["router"] = router
+        bridge = FeishuBridge(**kwargs)
         self.bridges.append(bridge)
         return bridge
 
@@ -329,6 +373,77 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         bridge = self.make_bridge(brain)
         await bridge.handle_message(message("mismatch1", "查看机器人状态"))
         self.assertEqual(self.store.get("mismatch1").state, "superseded")
+
+    async def test_chat_question_replies_without_publishing(self):
+        chat = FakeChat("北京烤鸭值得一试。")
+        brain = FakeBrain()
+        bridge = self.make_bridge(brain, chat=chat)
+        await bridge.handle_message(message("chat1", "北京有什么好吃的"))
+        self.assertEqual(self.store.get("chat1").state, "succeeded")
+        self.assertEqual(brain.published, [])
+        self.assertEqual(chat.queries, ["北京有什么好吃的"])
+        self.assertEqual(self.messenger.texts[0][1], "北京烤鸭值得一试。")
+        self.assertEqual(self.messenger.cards, [])
+
+    async def test_look_question_submits_to_brain(self):
+        expected_id = FeishuBridge._brain_task_id("look1")
+        brain = FakeBrain(
+            [
+                {"active": False},
+                {
+                    "active": True,
+                    "task_id": expected_id,
+                    "task": "桌上有什么",
+                    "all_done": True,
+                    "failed": False,
+                    "completed": 1,
+                    "total": 1,
+                    "reasoning": "现场观察任务：拍照看图后描述视野里有什么，不移动、不抓取。",
+                    "subtask_list": [
+                        {
+                            "subtask": "拍照查看：桌上有什么",
+                            "done": True,
+                            "status": "success",
+                            "result": "视野描述（overhead_cam）：桌上有几个小球。",
+                        }
+                    ],
+                },
+            ]
+        )
+        bridge = self.make_bridge(brain)
+        await bridge.handle_message(message("look1", "桌上有什么"))
+        await self.wait_for_state("look1", "succeeded")
+        self.assertEqual(brain.published[0], ("桌上有什么", expected_id))
+        self.assertEqual(len(self.messenger.cards), 1)
+
+    async def test_llm_routes_knowledge_question_to_chat(self):
+        chat = FakeChat("北京市东城区天安门广场。")
+        router = FakeRouter("chat")
+        brain = FakeBrain()
+        bridge = self.make_bridge(brain, chat=chat, router=router)
+        await bridge.handle_message(message("where1", "天安门在哪里"))
+        self.assertEqual(router.queries, ["天安门在哪里"])
+        self.assertEqual(chat.queries, ["天安门在哪里"])
+        self.assertEqual(self.store.get("where1").state, "succeeded")
+        self.assertEqual(brain.published, [])
+        self.assertEqual(self.messenger.cards, [])
+
+    async def test_llm_route_failure_keeps_ambiguous_task(self):
+        router = FakeRouter("chat")
+        router.fail_with = "timeout"
+        brain = FakeBrain()
+        bridge = self.make_bridge(brain, router=router)
+        await bridge.handle_message(message("where2", "天安门在哪里"))
+        self.assertEqual(self.store.get("where2").state, "pending_confirmation")
+        self.assertEqual(brain.published, [])
+
+    async def test_motion_does_not_call_llm_router(self):
+        router = FakeRouter("chat")
+        brain = FakeBrain()
+        bridge = self.make_bridge(brain, router=router)
+        await bridge.handle_message(message("recv1", "开始接待"))
+        self.assertEqual(router.queries, [])
+        self.assertEqual(self.store.get("recv1").state, "pending_confirmation")
 
 
 if __name__ == "__main__":

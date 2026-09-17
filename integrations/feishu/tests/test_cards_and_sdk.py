@@ -94,6 +94,77 @@ class CardsAndSdkTests(unittest.TestCase):
         second = FeishuBridge._status_signature(status)
         self.assertNotEqual(first, second)
 
+    def test_task_card_shows_local_answer(self):
+        record = TaskRecord(
+            message_id="m3",
+            event_id="e3",
+            chat_id="c1",
+            chat_type="p2p",
+            sender_open_id="ou_1",
+            task_text="桌上有什么",
+            risk_level="read_only",
+            state="succeeded",
+            brain_task_id=None,
+            card_message_id="card_2",
+            created_at=1,
+            updated_at=2,
+            expires_at=None,
+            tracking_timeout_sec=None,
+            confirmed_at=None,
+            completed_at=2,
+            last_error=None,
+            status_signature=None,
+            last_status_json=None,
+        )
+        rendered = str(
+            task_card(
+                record,
+                {"answer": "当前桌面/场景里有：\n• 可乐（cola_1）", "source": "observe"},
+            )
+        )
+        self.assertIn("可乐（cola_1）", rendered)
+        self.assertIn("回答：", rendered)
+
+    def test_task_card_shows_look_result(self):
+        record = TaskRecord(
+            message_id="m4",
+            event_id="e4",
+            chat_id="c1",
+            chat_type="p2p",
+            sender_open_id="ou_1",
+            task_text="桌上有什么",
+            risk_level="read_only",
+            state="succeeded",
+            brain_task_id="feishu0123456789abcdef01234567",
+            card_message_id="card_3",
+            created_at=1,
+            updated_at=2,
+            expires_at=None,
+            tracking_timeout_sec=None,
+            confirmed_at=None,
+            completed_at=2,
+            last_error=None,
+            status_signature=None,
+            last_status_json=None,
+        )
+        rendered = str(
+            task_card(
+                record,
+                {
+                    "subtask_list": [
+                        {
+                            "subtask": "拍照查看：桌上有什么",
+                            "done": True,
+                            "status": "success",
+                            "result": "视野描述（overhead_cam）：桌上有几个小球。",
+                        }
+                    ]
+                },
+            )
+        )
+        self.assertIn("视野描述", rendered)
+        self.assertIn("回答：", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

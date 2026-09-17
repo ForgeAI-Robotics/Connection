@@ -18,13 +18,45 @@ from termcolor import colored
 SERVE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SERVE_DIR)
 
-from utils.utils import create_scene
 from service.server import (
     start_server,
     process_commands,
     try_record_frame,
     get_lock,
 )
+
+
+def _robocasa_assets_ready():
+    """Full kitchen needs textures + at least one stove mesh from RoboCasa assets."""
+    try:
+        import robocasa
+        import robocasa.models as models
+    except Exception:
+        return False
+    root = getattr(models, "assets_root", "")
+    textures = os.path.join(root, "textures")
+    stove = os.path.join(root, "fixtures", "stoves", "Stove074")
+    if not os.path.isdir(textures) or not os.path.isdir(stove):
+        return False
+    for _dirpath, _dirnames, filenames in os.walk(textures):
+        if any(name.lower().endswith((".png", ".jpg", ".jpeg")) for name in filenames):
+            return True
+    return False
+
+
+def _create_env(scene_dir, seed=42):
+    if _robocasa_assets_ready():
+        from utils.utils import create_scene
+
+        print(colored("正在从 scene/ 加载 robosuite PandaOmron 厨房场景...", "yellow"))
+        return create_scene(scene_dir=scene_dir, seed=seed)
+    from backend.lite_kitchen import LiteKitchenEnv
+
+    print(colored(
+        "RoboCasa 厨房资产未就绪，先启动轻量 MuJoCo 台面场景（相机可看图）。",
+        "yellow",
+    ))
+    return LiteKitchenEnv(scene_dir=scene_dir, seed=seed)
 
 
 # 方案A:显式把 demo 物体钉到"已知可达"的台面坐标,绕开 robocasa layout 7 随机 placement
@@ -97,10 +129,10 @@ if __name__ == "__main__":
                              "mjpython main.py --viewer(普通 python 会报错)")
     args = parser.parse_args()
 
-    print(colored("正在从 scene/ 加载 robosuite PandaOmron 厨房场景...", "yellow"))
-    env = create_scene(scene_dir=os.path.join(SERVE_DIR, "scene"), seed=42)
+    env = _create_env(scene_dir=os.path.join(SERVE_DIR, "scene"), seed=42)
     env.reset()
-    _place_demo_objects(env)   # 方案A:显式摆到可达台面(必须在建 belief 前,belief 按物体位置分配工作点)
+    if _robocasa_assets_ready():
+        _place_demo_objects(env)   # 方案A:显式摆到可达台面(必须在建 belief 前,belief 按物体位置分配工作点)
     _init_belief(env)
 
     # 调试信息

@@ -277,6 +277,7 @@ class TaskStore:
             "expires_at",
             "tracking_timeout_sec",
             "confirmed_at",
+            "last_status",
             "completed_at",
             "last_error",
             "status_signature",
@@ -285,6 +286,9 @@ class TaskStore:
         unknown = set(fields) - allowed_fields
         if unknown:
             raise ValueError(f"unsupported transition fields: {sorted(unknown)}")
+        if "last_status" in fields:
+            status = fields.pop("last_status")
+            fields["last_status_json"] = json.dumps(status, ensure_ascii=False)
         states = tuple(from_states)
         if not states:
             raise ValueError("from_states cannot be empty")

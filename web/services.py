@@ -256,6 +256,26 @@ def catalog() -> list[Service]:
             health=_health_alive,
         ),
         Service(
+            id="desk",
+            name="Desk 仿真",
+            layer="brain",
+            controllable=True,
+            window="desk",
+            port=5008,
+            match="serve_desk/main.py",
+            health=_health_http("http://127.0.0.1:5008/health"),
+        ),
+        Service(
+            id="mujoco",
+            name="MuJoCo 仿真",
+            layer="brain",
+            controllable=True,
+            window="mujoco",
+            port=5001,
+            match="serve/main.py",
+            health=_health_http("http://127.0.0.1:5001/camera/status"),
+        ),
+        Service(
             id="dream",
             name="导航 DREAM",
             layer="robot",
@@ -310,6 +330,13 @@ def start_shell(service: Service) -> str:
         return f"exec {_shell_quote(str(_feishu_python()))} integrations/feishu/run.py"
     if service.id == "slaver":
         return f"exec {_shell_quote(str(python))} slaver/run.py"
+    if service.id == "desk":
+        return f"exec {_shell_quote(str(python))} serve_desk/main.py"
+    if service.id == "mujoco":
+        return (
+            "export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl; "
+            f"exec {_shell_quote(str(python))} serve/main.py --no-viewer"
+        )
     raise ValueError(f"{service.id} 不能由面板启动")
 
 

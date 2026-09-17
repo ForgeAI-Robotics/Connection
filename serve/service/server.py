@@ -1217,28 +1217,45 @@ def api_scene():
         return jsonify({"error": "仿真器未初始化"}), 503
 
     with _env_lock:
-        # 物体
         objects = {}
-        for name in env.objects:
-            pos = get_obj_pos(env, name)
-            objects[name] = {"pos": pos.tolist(), "grasped": is_grasped(env, name)}
+        for name in list(getattr(env, "objects", []) or []):
+            try:
+                if hasattr(env, "get_object_pos"):
+                    pos = np.asarray(env.get_object_pos(name), dtype=float)
+                else:
+                    pos = np.asarray(get_obj_pos(env, name), dtype=float)
+                try:
+                    grasped = bool(is_grasped(env, name))
+                except Exception:
+                    grasped = getattr(env, "grasped_object", None) == name
+                objects[name] = {"pos": pos.tolist(), "grasped": grasped}
+            except Exception:
+                continue
 
-        # 家具
         fixtures = {}
-        for name in env.fixtures:
-            fxtr = env.fixtures[name]
+        for name, fxtr in (getattr(env, "fixtures", {}) or {}).items():
+            pos = np.asarray(getattr(fxtr, "pos", [0.0, 0.0, 0.0]), dtype=float).reshape(-1)
+            size = np.asarray(getattr(fxtr, "size", [0.0, 0.0, 0.0]), dtype=float).reshape(-1)
             fixtures[name] = {
-                "pos": np.asarray(fxtr.pos, dtype=float).tolist(),
-                "size": np.asarray(fxtr.size, dtype=float).tolist(),
+                "pos": pos.tolist()[:3],
+                "size": (size.tolist() + [0.0, 0.0, 0.0])[:3],
                 "type": type(fxtr).__name__,
             }
 
-        # 机器人
-        arm_info = get_arm_info(env)
-        base_info = get_base_info(env)
+        try:
+            ee_pos = get_arm_info(env)["ee_pos"]
+        except Exception:
+            ee_pos = np.asarray(env.get_body_pos("robot0_right_hand"), dtype=float).tolist()
+        try:
+            base_info = get_base_info(env)
+        except Exception:
+            base_info = {
+                "pos": np.asarray(env.get_body_pos("mobilebase0_base"), dtype=float).tolist(),
+                "yaw_deg": 0,
+            }
         robot = {
             "base_pos": base_info["pos"],
-            "ee_pos": arm_info["ee_pos"],
+            "ee_pos": ee_pos,
             "yaw": base_info.get("yaw_deg", 0),
         }
 

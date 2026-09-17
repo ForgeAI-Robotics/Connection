@@ -6,37 +6,32 @@ locations:
     - plate
     - ketchup
   nav_001:
-    fixture: island
-    objects:
-    - sponge
-  nav_008:
-    fixture: counter
-    objects:
-    - bowl
-  nav_011:
-    fixture: counter
-    objects:
-    - bread
-  nav_014:
-    fixture: counter
-    objects:
-    - cheese
-  nav_017:
-    fixture: counter
-    objects:
-    - cup
-  nav_020:
-    fixture: counter
-    objects:
-    - pot
-  nav_022:
     fixture: counter
     objects:
     - apple
+    - cup
+    - bowl
+  nav_008:
+    fixture: null
+    objects: []
+  nav_011:
+    fixture: null
+    objects: []
+  nav_014:
+    fixture: null
+    objects: []
+  nav_017:
+    fixture: null
+    objects: []
+  nav_020:
+    fixture: null
+    objects: []
+  nav_022:
+    fixture: null
+    objects: []
   nav_066:
-    fixture: counter
-    objects:
-    - mug
+    fixture: null
+    objects: []
   robot_hand:
     fixture: null
     objects: []

@@ -341,6 +341,31 @@ class GlobalAgent:
         except (TypeError, KeyError):
             return False
 
+    def _is_look_task(self, task) -> bool:
+        from robot_api.look import is_look_task
+
+        return is_look_task(task)
+
+    def _plan_look_task(self, task) -> Dict:
+        text = task if isinstance(task, str) else (task[0] if task else "")
+        robot_name = "FQrobot"
+        try:
+            names = list(self.collaborator.read_all_agents_name() or [])
+            if names:
+                robot_name = names[0]
+        except Exception:
+            pass
+        return {
+            "reasoning_explanation": "现场观察任务：拍照看图后描述视野里有什么，不移动、不抓取。",
+            "subtask_list": [
+                {
+                    "robot_name": robot_name,
+                    "subtask": f"拍照查看：{text}",
+                    "subtask_order": 1,
+                }
+            ],
+        }
+
     def _is_desk_tidy_task(self, task) -> bool:
         """demo「整理桌面」任务识别 → 走关系判断规划分支(不经通用 planner)。"""
         t = task if isinstance(task, str) else (task[0] if task else "")
@@ -490,7 +515,11 @@ class GlobalAgent:
             # 会议接待:走接待 skill(自带 SOP+经验,内部自跑补货闭环),不经通用 planner
             return self._run_reception_skill(task, task_id, refresh)
 
-        if self._is_desk_tidy_task(task):
+        if self._is_look_task(task):
+            reasoning_and_subtasks = self._plan_look_task(task)
+            response = json.dumps(reasoning_and_subtasks, ensure_ascii=False)
+            self.logger.info(f"[look] 现场观察规划: {reasoning_and_subtasks}")
+        elif self._is_desk_tidy_task(task):
             # demo「整理桌面」:关系判断→技能规划,不经通用 planner(ALFWorld 骨架)
             reasoning_and_subtasks = self._plan_desk_tidy(task)
             response = json.dumps(reasoning_and_subtasks, ensure_ascii=False)
@@ -854,6 +883,17 @@ class GlobalAgent:
         self.collaborator.wait_agents_free([robot_name])
         self.logger.info(f"[Camera] 拍照完成，状态: {self._last_subtask_status}")
 
+    @staticmethod
+    def _stringify_subtask_result(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value[:2000]
+        try:
+            return json.dumps(value, ensure_ascii=False)[:2000]
+        except TypeError:
+            return str(value)[:2000]
+
     def get_task_status(self) -> Dict:
         """返回当前任务的执行状态，供前端查询。"""
         if not self.current_task_queue:
@@ -869,6 +909,7 @@ class GlobalAgent:
                 "done": t["done"],
                 "status": t.get("status"),  # None | "success" | "failure" | "exception" | "timeout"
                 "inserted": t.get("inserted", False),
+                "result": self._stringify_subtask_result(t.get("result")),
             })
 
         failed = any(

@@ -11,6 +11,7 @@ from typing import Any
 from .config import BackendConfig, load_robot_api_config
 
 
+NO_RENDER_BACKENDS = {"desk"}
 STATE_ENDPOINTS = {
     "scene": ("GET", "/scene"),
     "scene_state": ("GET", "/scene_state"),  # slaver 的 belief/搜索需要;robocasa 后端有,motrixsim 后端暂返 503
@@ -62,8 +63,10 @@ class RobotRuntime:
     def get_state(self, name: str, params: dict[str, Any] | None = None):
         if name not in STATE_ENDPOINTS:
             return {"success": False, "result": f"未知状态接口: {name}"}
-        method, endpoint = STATE_ENDPOINTS[name]
         params = params or {}
+        if name == "image":
+            return self._capture_image(params)
+        method, endpoint = STATE_ENDPOINTS[name]
         failures = []
         for backend in self.config.state_backends():
             payload_endpoint = endpoint
@@ -79,6 +82,68 @@ class RobotRuntime:
             if backend.required:
                 return result
         return self._last_failure_or_disabled("state", failures)
+
+    def _vision_backends(self) -> list[BackendConfig]:
+        enabled = [
+            backend
+            for backend in self.config.backends
+            if backend.enabled
+            and backend.url
+            and backend.name not in NO_RENDER_BACKENDS
+        ]
+        rank = {"mujoco": 0, "mujoco_3dgs": 1}
+        enabled.sort(key=lambda backend: rank.get(backend.name, 10))
+        return enabled
+
+    def _capture_image(self, params: dict[str, Any]):
+        failures = []
+        camera_name = str(params.get("camera_name") or "").strip()
+        payload = self._state_payload("image", params)
+        payload.setdefault("width", 640)
+        payload.setdefault("height", 480)
+        for backend in self._vision_backends():
+            result = self._http(backend, "POST", "/screenshot", payload)
+            if result.get("success") is not False and result.get("image"):
+                result["_backend"] = backend.name
+                return result
+            failures.append(result)
+            latest = self._latest_frame(backend, camera_name)
+            if latest.get("success") is not False and latest.get("image"):
+                latest["_backend"] = backend.name
+                return latest
+            failures.append(latest)
+        if failures:
+            return failures[-1]
+        return {"success": False, "result": "没有可用的渲染后端，无法截图"}
+
+    def _latest_frame(self, backend: BackendConfig, camera_name: str) -> dict[str, Any]:
+        endpoint = "/camera/latest"
+        if camera_name:
+            endpoint += f"?camera={urllib.parse.quote(camera_name)}"
+        url = f"{backend.url}{endpoint}"
+        try:
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=min(20.0, backend.timeout)) as resp:
+                content_type = (resp.headers.get("Content-Type") or "").split(";", 1)[0].lower()
+                body = resp.read()
+            if not body:
+                return {"success": False, "result": f"{backend.name} 无画面"}
+            if "json" in content_type:
+                payload = json.loads(body.decode("utf-8"))
+                if isinstance(payload, dict) and payload.get("image"):
+                    payload["success"] = True
+                    return payload
+                return {"success": False, "result": f"{backend.name} latest 无图像"}
+            if content_type.startswith("image/") or body[:2] == b"\xff\xd8":
+                import base64
+
+                return {
+                    "success": True,
+                    "image": base64.b64encode(body).decode("ascii"),
+                }
+            return {"success": False, "result": f"{backend.name} 不支持的画面格式"}
+        except Exception as exc:
+            return {"success": False, "result": f"{backend.name} 取帧失败: {exc}"}
 
     def execute(self, action: str, args: dict[str, Any]):
         if action not in ACTION_ENDPOINTS:
@@ -131,7 +196,7 @@ class RobotRuntime:
 
     def _state_payload(self, name: str, params: dict[str, Any]):
         if name == "image":
-            payload = {}
+            payload = {"width": 640, "height": 480}
             if params.get("camera_name"):
                 payload["camera_name"] = params["camera_name"]
             return payload

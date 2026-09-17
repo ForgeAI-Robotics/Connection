@@ -134,6 +134,8 @@ class RobotManager:
         """根据子任务动词关键词匹配工具，返回工具名或 None。
         导航类子任务里经常会出现"为抓取/放置做准备"，这时动词目标仍然是导航。
         """
+        from robot_api.look import is_look_task
+
         # ALFWorld 操作子任务：格式为 执行raw_action: <命令> （精确匹配，避免误伤搜索子任务）
         if '执行raw_action:' in task:
             return "raw_action"
@@ -148,8 +150,10 @@ class RobotManager:
         if any(kw in task for kw in navigation_keywords):
             return "navigate_to_target"
 
+        if is_look_task(task) or any(kw in task for kw in ("拍照", "截图", "拍张", "拍照查看")):
+            return "capture_image"
+
         rules = [
-            (["拍照", "截图", "拍张"], "capture_image"),
             (["放置", "放到", "搁到"], "place_on_top"),
             (["抓取", "拿起", "取走", "拾起", "捡起"], "grasp_object"),
         ]

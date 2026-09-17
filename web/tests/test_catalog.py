@@ -9,7 +9,7 @@ class CatalogTests(unittest.TestCase):
         items = catalog()
         self.assertEqual(
             [item.id for item in items if item.layer == "brain"],
-            ["redis", "master", "deploy", "feishu", "slaver"],
+            ["redis", "master", "deploy", "feishu", "slaver", "desk", "mujoco"],
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "robot"],
@@ -37,7 +37,22 @@ class CatalogTests(unittest.TestCase):
         idle = format_http_health_detail(True, "HTTP 200", '{"active": false}')
         self.assertEqual(idle, "HTTP 200 空闲")
 
-    def test_master_restart_requires_confirm(self):
+    def test_desk_tmux_command(self):
+        desk = next(item for item in catalog() if item.id == "desk")
+        self.assertEqual(desk.port, 5008)
+        self.assertTrue(desk.controllable)
+        command = start_shell(desk)
+        self.assertIn("serve_desk/main.py", command)
+        self.assertIn("exec", command)
+
+    def test_mujoco_tmux_command(self):
+        mujoco = next(item for item in catalog() if item.id == "mujoco")
+        self.assertEqual(mujoco.port, 5001)
+        self.assertTrue(mujoco.controllable)
+        command = start_shell(mujoco)
+        self.assertIn("serve/main.py", command)
+        self.assertIn("--no-viewer", command)
+        self.assertIn("MUJOCO_GL=egl", command)
         master = next(item for item in catalog() if item.id == "master")
         self.assertTrue(master.confirm_restart)
 

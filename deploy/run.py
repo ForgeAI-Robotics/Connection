@@ -35,7 +35,36 @@ app.jinja_env.auto_reload = True
 
 MASTER_URL = os.getenv("MASTER_URL", "http://127.0.0.1:5000")
 SIM_URL = os.getenv("ROBOT_API_URL", load_robot_api_config().server_url)
+VISION_CANDIDATES = (
+    "http://127.0.0.1:5001",
+    "http://127.0.0.1:5002",
+)
 REDIS_CFG = {"host": "127.0.0.1", "port": 6379, "db": 0, "password": None}
+_vision_cache = {"url": "", "at": 0.0}
+
+
+def _http_up(url, path="/camera/status", timeout=0.8):
+    try:
+        resp = requests.get(url.rstrip("/") + path, timeout=timeout)
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _vision_url():
+    """Camera/pose for the control page: MuJoCo/3DGS if up, else the active robot_api backend.
+
+    Execution may still be desk; the 8888 page should show the rendered sim when it exists.
+    """
+    now = time.time()
+    cached = _vision_cache["url"]
+    if cached and now - _vision_cache["at"] < 5:
+        return cached
+    for url in VISION_CANDIDATES:
+        if _http_up(url):
+            _vision_cache.update(url=url, at=now)
+            return url
+    return SIM_URL
 
 # 四宫格任务时间线:capture_quad_timeline.py 把每个时间点的四宫格拼图(overhead+head+左右腕)
 # 和 timeline.json 存到这里,网站按时间点回放。
@@ -97,7 +126,7 @@ def _capture_task_timeline(task_text, task_id, poll=2.0, timeout=600.0):
 
         def snap(label):
             try:
-                r = requests.get(f"{SIM_URL}/camera/latest", timeout=90)
+                r = requests.get(f"{_vision_url()}/camera/latest", timeout=90)
                 if r.status_code == 200 and r.content:
                     fn = f"frame_{len(frames):02d}.jpg"
                     with open(os.path.join(TIMELINE_DIR, fn), "wb") as fp:
@@ -627,12 +656,18 @@ def get_tool_config():
 
 @app.route("/api/robot_status", methods=["GET"])
 def robot_status():
-    """代理仿真后端的场景信息（机器人坐标、物体、家具）"""
+    """代理有画面的仿真后端场景信息（机器人坐标、物体、家具）"""
+    url = _vision_url()
     try:
-        resp = requests.get(f"{SIM_URL}/scene", timeout=5)
+        resp = requests.get(f"{url}/scene", timeout=5)
+        content_type = (resp.headers.get("content-type") or "").lower()
+        if "json" not in content_type:
+            return jsonify({"error": f"{url} 没有场景坐标接口"}), 502
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.ConnectionError:
         return jsonify({"error": "仿真服务未启动"}), 503
+    except ValueError:
+        return jsonify({"error": f"{url} 返回的不是 JSON"}), 502
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -641,7 +676,7 @@ def robot_status():
 def record_start():
     """代理仿真后端：开始录制"""
     try:
-        resp = requests.post(f"{SIM_URL}/record/start", json=request.json or {}, timeout=5)
+        resp = requests.post(f"{_vision_url()}/record/start", json=request.json or {}, timeout=5)
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.ConnectionError:
         return jsonify({"success": False, "message": "仿真服务未启动"}), 503
@@ -651,7 +686,7 @@ def record_start():
 def record_stop():
     """代理仿真后端：停止录制"""
     try:
-        resp = requests.post(f"{SIM_URL}/record/stop", timeout=30)
+        resp = requests.post(f"{_vision_url()}/record/stop", timeout=30)
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.ConnectionError:
         return jsonify({"success": False, "message": "仿真服务未启动"}), 503
@@ -661,7 +696,7 @@ def record_stop():
 def record_status():
     """代理仿真后端：录制状态"""
     try:
-        resp = requests.get(f"{SIM_URL}/record/status", timeout=5)
+        resp = requests.get(f"{_vision_url()}/record/status", timeout=5)
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.ConnectionError:
         return jsonify({"active": False}), 503
@@ -671,7 +706,7 @@ def record_status():
 def record_download(filename):
     """代理仿真后端：下载视频"""
     try:
-        resp = requests.get(f"{SIM_URL}/record/download/{filename}", timeout=30, stream=True)
+        resp = requests.get(f"{_vision_url()}/record/download/{filename}", timeout=30, stream=True)
         if resp.status_code == 200:
             return send_file(io.BytesIO(resp.content), mimetype="video/mp4", as_attachment=True, download_name=filename)
         return jsonify({"error": "下载失败"}), resp.status_code
@@ -687,7 +722,7 @@ def record_download(filename):
 def quad_latest():
     """实时四宫格:代理仿真后端 /camera/latest(2x2 拼图 overhead+head+右腕+左腕,带标签)。"""
     try:
-        resp = requests.get(f"{SIM_URL}/camera/latest", timeout=30, stream=True)
+        resp = requests.get(f"{_vision_url()}/camera/latest", timeout=30, stream=True)
         if resp.status_code == 200:
             return send_file(io.BytesIO(resp.content), mimetype="image/jpeg")
         return jsonify({"error": "渲染失败"}), resp.status_code

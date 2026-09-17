@@ -34,7 +34,7 @@ app = Flask(
     static_folder=str(WEB_DIR / "static"),
 )
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-_STATUS_POOL = ThreadPoolExecutor(max_workers=8)
+_STATUS_POOL = ThreadPoolExecutor(max_workers=12)
 
 
 def _tmux_name(service) -> str:
