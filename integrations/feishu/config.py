@@ -49,7 +49,6 @@ class Settings:
     task_timeout: int
     poll_interval: float
     db_path: Path
-    log_path: Path
     retention_days: int
     http_timeout: float = 8.0
 
@@ -88,9 +87,6 @@ def load_settings(*, require_credentials: bool = True) -> Settings:
         task_timeout=_positive_int("LARK_TASK_TIMEOUT", 1800),
         poll_interval=_positive_float("LARK_POLL_INTERVAL", 2.0),
         db_path=_path_from_env("LARK_DB_PATH", "integrations/feishu/runtime/feishu.db"),
-        log_path=_path_from_env(
-            "LARK_LOG_PATH", "integrations/feishu/runtime/feishu.log"
-        ),
         retention_days=_positive_int("LARK_RETENTION_DAYS", 30),
         http_timeout=_positive_float("LARK_HTTP_TIMEOUT", 8.0),
     )

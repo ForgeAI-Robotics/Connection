@@ -155,3 +155,28 @@ def attach_process_log(service: str) -> Path:
     if service == "master":
         print(f"[log] reception archive -> {os.environ[RECEPTION_RUNTIME_ENV]}", flush=True)
     return path
+
+
+def monitor_log_path(service: str, *, now: datetime | None = None) -> Path:
+    """Daily append-only monitor file: ``log/<date>/<service>/monitor.log``."""
+
+    name = str(service or "").strip().lower()
+    if not name or any(sep in name for sep in ("/", "\\", "..")):
+        raise ValueError(f"invalid log service name: {service!r}")
+    stamp = now or datetime.now().astimezone()
+    day_dir = log_root() / stamp.strftime("%Y-%m-%d") / name
+    day_dir.mkdir(parents=True, exist_ok=True)
+    return day_dir / "monitor.log"
+
+
+def append_monitor_log(service: str, line: str, *, stamped: bool = False) -> Path:
+    """Append one line to today's monitor log for a panel card."""
+
+    path = monitor_log_path(service)
+    text = str(line).rstrip("\n")
+    if not stamped:
+        stamp = datetime.now().astimezone().strftime("%H:%M:%S")
+        text = f"[{stamp}] {text}"
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(text + "\n")
+    return path

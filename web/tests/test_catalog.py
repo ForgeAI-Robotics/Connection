@@ -17,6 +17,19 @@ class CatalogTests(unittest.TestCase):
         )
         robot = [item for item in items if item.layer == "robot"]
         self.assertTrue(all(not item.controllable for item in robot))
+        dream = next(item for item in robot if item.id == "dream")
+        vla = next(item for item in robot if item.id == "vla")
+        self.assertEqual(dream.remote_control, "ssh_dream")
+        self.assertEqual(
+            dream.remote_actions, ("start", "stand-enter", "stop")
+        )
+        self.assertTrue(dream.confirm_start)
+        self.assertFalse(dream.disabled_action)
+        self.assertIn("9882", dream.confirm_start_message)
+        self.assertIn("肩带", dict(dream.action_confirms)["stand-enter"])
+        self.assertEqual(vla.remote_control, "ssh_vla")
+        self.assertEqual(vla.remote_actions, ("start", "stop"))
+        self.assertTrue(vla.confirm_start)
 
     def test_task_status_health_does_not_dump_json(self):
         body = json.dumps(
@@ -64,6 +77,77 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("exec", command)
         self.assertIn("tee -a", command)
         self.assertIn("'--logfile' ''", command)
+
+    def test_every_card_has_a_log_service(self):
+        items = catalog()
+        self.assertTrue(all(item.log_service for item in items))
+        self.assertEqual(
+            {item.id: item.log_service for item in items}["feishu"],
+            "feishu",
+        )
+        self.assertEqual(
+            {item.id: item.log_service for item in items}["desk"],
+            "desk",
+        )
+        self.assertEqual(
+            {item.id: item.log_service for item in items}["mujoco"],
+            "mujoco",
+        )
+        self.assertEqual(
+            {item.id: item.log_service for item in items}["dream"],
+            "dream",
+        )
+        self.assertEqual(
+            {item.id: item.log_service for item in items}["vla"],
+            "vla",
+        )
+
+    def test_latest_log_file_reads_day_service_folder(self):
+        import os
+        from datetime import datetime
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from web.services import by_id, latest_log_file
+        import log_setup
+
+        with TemporaryDirectory() as raw:
+            os.environ[log_setup.LOG_ROOT_ENV] = raw
+            self.addCleanup(os.environ.pop, log_setup.LOG_ROOT_ENV, None)
+            day = Path(raw) / datetime.now().strftime("%Y-%m-%d") / "master"
+            day.mkdir(parents=True)
+            older = day / "10-00-00.log"
+            newer = day / "11-00-00.log"
+            older.write_text("old\n", encoding="utf-8")
+            newer.write_text("new\n", encoding="utf-8")
+            os.utime(older, (1, 1))
+            os.utime(newer, (2, 2))
+            self.assertEqual(newer, latest_log_file(by_id("master")))
+
+    def test_remote_probe_rate_limits_monitor_file(self):
+        import os
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+
+        from web import services
+        import log_setup
+
+        services.PROBE_HISTORY.clear()
+        services._LAST_MONITOR.clear()
+        with TemporaryDirectory() as raw:
+            os.environ[log_setup.LOG_ROOT_ENV] = raw
+            self.addCleanup(os.environ.pop, log_setup.LOG_ROOT_ENV, None)
+            self.addCleanup(services.PROBE_HISTORY.clear)
+            self.addCleanup(services._LAST_MONITOR.clear)
+            services._record_probe("vla", "down", ok=False)
+            services._record_probe("vla", "still down", ok=False)
+            services._record_probe("vla", "up", ok=True)
+            files = list(Path(raw).glob("*/vla/monitor.log"))
+            self.assertEqual(1, len(files))
+            text = files[0].read_text(encoding="utf-8")
+        self.assertIn("down", text)
+        self.assertNotIn("still down", text)
+        self.assertIn("up", text)
 
     def test_tail_file_reads_from_the_end(self):
         from pathlib import Path

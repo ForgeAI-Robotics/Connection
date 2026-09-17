@@ -69,6 +69,18 @@ class ProcessLogLayoutTest(unittest.TestCase):
             self.assertTrue((Path(raw) / "archive" / "current_task.json").exists())
             self.assertTrue((Path(raw) / "archive" / "events.jsonl").exists())
 
+    def test_monitor_log_is_under_the_day_service_folder(self):
+        with tempfile.TemporaryDirectory() as raw:
+            os.environ[log_setup.LOG_ROOT_ENV] = raw
+            self.addCleanup(os.environ.pop, log_setup.LOG_ROOT_ENV, None)
+            stamp = datetime(2026, 9, 17, 14, 40, 0)
+            path = log_setup.monitor_log_path("vla", now=stamp)
+            self.assertEqual(Path(raw) / "2026-09-17" / "vla" / "monitor.log", path)
+            written = log_setup.append_monitor_log("vla", "probe ok")
+            self.assertEqual("monitor.log", written.name)
+            self.assertEqual("vla", written.parent.name)
+            self.assertIn("probe ok", written.read_text(encoding="utf-8"))
+
     def test_inbound_task_request_prints_task_text(self):
         captured = StringIO()
         with mock.patch("sys.stdout", captured):

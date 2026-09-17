@@ -14,12 +14,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from log_setup import compact_log_text
+from log_setup import append_monitor_log, compact_log_text, log_root
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE_HISTORY: dict[str, deque[str]] = {}
 _MAX_PROBES = 80
+_LAST_MONITOR: dict[str, tuple[object, float]] = {}
+_MONITOR_HEARTBEAT_SEC = 60.0
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,16 @@ class Service:
     match: str = ""
     log_service: Optional[str] = None
     extra_log: Optional[Path] = None
+    remote_control: str = ""
+    remote_actions: tuple[str, ...] = ()
+    confirm_start: bool = False
+    confirm_start_message: str = ""
+    confirm_stop: bool = False
+    confirm_stop_message: str = ""
+    action_confirms: tuple[tuple[str, str], ...] = ()
+    disabled_action: str = ""
+    disabled_reason: str = ""
+    note: str = ""
     health: Optional[Callable[["Service"], dict[str, Any]]] = field(
         default=None, hash=False, compare=False
     )
@@ -124,10 +136,21 @@ def _tcp_open(port: int, host: str = "127.0.0.1") -> bool:
         sock.close()
 
 
-def _record_probe(service_id: str, line: str) -> None:
-    bucket = PROBE_HISTORY.setdefault(service_id, deque(maxlen=_MAX_PROBES))
+def _record_probe(service_id: str, line: str, *, ok: Optional[bool] = None) -> None:
     stamp = datetime.now().astimezone().strftime("%H:%M:%S")
-    bucket.append(f"[{stamp}] {line}")
+    formatted = f"[{stamp}] {line}"
+    bucket = PROBE_HISTORY.setdefault(service_id, deque(maxlen=_MAX_PROBES))
+    bucket.append(formatted)
+    previous, last_write = _LAST_MONITOR.get(service_id, (object(), 0.0))
+    changed = previous is not ok
+    heartbeat = (time.monotonic() - last_write) >= _MONITOR_HEARTBEAT_SEC
+    if not changed and not heartbeat:
+        return
+    try:
+        append_monitor_log(service_id, formatted, stamped=True)
+    except OSError:
+        return
+    _LAST_MONITOR[service_id] = (ok, time.monotonic())
 
 
 def probe_history(service_id: str) -> str:
@@ -179,7 +202,7 @@ def _health_remote(service_id: str, env_name: str, default: str):
         url = f"{base}/health"
         ok, status, ms, body = _http_get(url)
         detail = format_http_health_detail(ok, status, body)
-        _record_probe(service_id, f"{'通' if ok else '不通'} {url} {ms}ms {detail}")
+        _record_probe(service_id, f"{'通' if ok else '不通'} {url} {ms}ms {detail}", ok=ok)
         return {
             "ok": ok,
             "detail": detail,
@@ -190,10 +213,8 @@ def _health_remote(service_id: str, env_name: str, default: str):
     return check
 
 
-def feishu_log_path() -> Path:
-    raw = os.getenv("LARK_LOG_PATH", "integrations/feishu/runtime/feishu.log").strip()
-    path = Path(raw)
-    return path if path.is_absolute() else ROOT / path
+def feishu_ready_from_text(text: str) -> bool:
+    return "飞书长连接已就绪" in text
 
 
 def catalog() -> list[Service]:
@@ -242,7 +263,7 @@ def catalog() -> list[Service]:
             controllable=True,
             window="feishu",
             match="integrations/feishu/run.py",
-            extra_log=feishu_log_path(),
+            log_service="feishu",
             health=_health_alive,
         ),
         Service(
@@ -263,6 +284,7 @@ def catalog() -> list[Service]:
             window="desk",
             port=5008,
             match="serve_desk/main.py",
+            log_service="desk",
             health=_health_http("http://127.0.0.1:5008/health"),
         ),
         Service(
@@ -273,6 +295,7 @@ def catalog() -> list[Service]:
             window="mujoco",
             port=5001,
             match="serve/main.py",
+            log_service="mujoco",
             health=_health_http("http://127.0.0.1:5001/camera/status"),
         ),
         Service(
@@ -280,7 +303,34 @@ def catalog() -> list[Service]:
             name="导航 DREAM",
             layer="robot",
             controllable=False,
-            extra_log=None,
+            log_service="dream",
+            remote_control="ssh_dream",
+            remote_actions=("start", "stand-enter", "stop"),
+            action_confirms=(
+                (
+                    "stand-enter",
+                    "只向导航机 adapter 窗口发 1 个 Enter。"
+                    "第一次点是接管（等同手柄 A+X+B+Y），此时肩带必须还挂着；"
+                    "等 adapter 报 stage 1 稳定后再点第二次，那一次才进 POSE 站立。"
+                    "面板不会代解肩带、不会点 9882。"
+                    "确认现场有人扶住、急停在手？",
+                ),
+            ),
+            confirm_start=True,
+            confirm_start_message=(
+                "将按导航组一键脚本在 192.168.5.18 启动："
+                "g1_three_party_oneclick.sh。"
+                "会准备 NX SONIC、DREAM 8001/9882，以及 4090 上的 VLA HTTP/relay。"
+                "面板只代填 READY，不会代按站立 Enter，也不会点 9882。"
+                "之后仍需在 http://192.168.5.18:9882 点初始位置/朝向并 Approve。"
+                "确认现场已支撑、肩带连接、急停人员就位？"
+            ),
+            confirm_stop=True,
+            confirm_stop_message=(
+                "停止只关 DREAM 与 VLA HTTP/relay，保留 NX SONIC、相机和灵巧手。"
+                "确定继续？"
+            ),
+            note="一键脚本拉 SONIC+导航+VLA HTTP；9882 需人工 Approve",
             health=_health_remote("dream", "DREAM_BASE_URL", dream),
         ),
         Service(
@@ -288,6 +338,22 @@ def catalog() -> list[Service]:
             name="VLA",
             layer="robot",
             controllable=False,
+            log_service="vla",
+            remote_control="ssh_vla",
+            remote_actions=("start", "stop"),
+            confirm_start=True,
+            confirm_start_message=(
+                "将按文档在 4090 上启动完整 VLA 运行时："
+                "check 全部脚本/hook → 检查 SONIC/相机/灵巧手 → "
+                "启动 8091 HTTP 和导航 relay。"
+                "不启动 SONIC，也不提前启动抓取 RTC。确认现场急停可用？"
+            ),
+            confirm_stop=True,
+            confirm_stop_message=(
+                "停止只关 Brain HTTP 和受管 relay，不停 SONIC、相机或灵巧手。"
+                "若任务正在执行，远端会拒绝停止。确定继续？"
+            ),
+            note="按文档启动 8091 HTTP + 导航 relay",
             health=_health_remote("vla", "VLA_BASE_URL", vla),
         ),
     ]
@@ -393,16 +459,43 @@ def descendants(pid: int) -> list[int]:
 
 
 def latest_log_file(service: Service) -> Optional[Path]:
-    if service.extra_log and service.extra_log.exists():
-        return service.extra_log
+    files: list[Path] = []
     name = service.log_service
-    if not name:
+    root = log_root()
+    if name and root.exists():
+        try:
+            days = sorted(
+                (path for path in root.iterdir() if path.is_dir()),
+                key=lambda path: path.name,
+                reverse=True,
+            )
+        except OSError:
+            days = []
+        for day in days:
+            folder = day / name
+            if not folder.is_dir():
+                continue
+            files.extend(folder.glob("*.log"))
+            if files:
+                break
+    if service.extra_log and service.extra_log.exists():
+        files.append(service.extra_log)
+    timed: list[tuple[float, Path]] = []
+    for path in files:
+        try:
+            timed.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    if not timed:
         return None
-    day = ROOT / "log" / datetime.now().strftime("%Y-%m-%d") / name
-    if not day.is_dir():
-        return None
-    files = sorted(day.glob("*.log"), key=lambda path: path.stat().st_mtime, reverse=True)
-    return files[0] if files else None
+    return max(timed)[1]
+
+
+def display_log_path(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(ROOT.resolve()))
+    except ValueError:
+        return str(path)
 
 
 def tail_file(path: Path, lines: int = 200) -> str:
@@ -430,7 +523,3 @@ def port_open(service: Service) -> bool:
     if service.port is None:
         return False
     return _tcp_open(service.port)
-
-
-def feishu_ready_from_text(text: str) -> bool:
-    return "飞书长连接已就绪" in text

@@ -18,14 +18,16 @@ if str(ROOT) not in sys.path:
 from web.services import (  # noqa: E402
     by_id,
     catalog,
+    display_log_path,
     feishu_ready_from_text,
     latest_log_file,
     port_open,
-    probe_history,
     start_shell,
     tail_file,
 )
+from web import dream_remote  # noqa: E402
 from web import tmuxctl  # noqa: E402
+from web import vla_remote  # noqa: E402
 
 
 app = Flask(
@@ -74,12 +76,33 @@ def _service_status(service) -> dict:
         "layer": service.layer,
         "controllable": service.controllable,
         "confirm_restart": service.confirm_restart,
+        "confirm_start": service.confirm_start,
+        "confirm_start_message": service.confirm_start_message,
+        "confirm_stop": service.confirm_stop,
+        "confirm_stop_message": service.confirm_stop_message,
+        "action_confirms": dict(service.action_confirms),
+        **_review_page(service),
+        "remote_control": service.remote_control,
+        "remote_actions": list(service.remote_actions),
+        "disabled_action": service.disabled_action,
+        "disabled_reason": service.disabled_reason,
+        "note": service.note,
         "port": service.port,
         "state": state if service.controllable else ("up" if health.get("ok") else "down"),
         "health": health,
         "pids": pids,
         "tmux": _tmux_name(service) if service.controllable else None,
         "attach": f"tmux attach -t {_tmux_name(service)}" if service.controllable else None,
+    }
+
+
+def _review_page(service) -> dict:
+    if service.remote_control != "ssh_dream":
+        return {}
+    dream_remote.ensure_log_follower()
+    return {
+        "review_url": dream_remote.review_url_for_panel(),
+        "review_ok": dream_remote.review_ready(),
     }
 
 
@@ -97,25 +120,21 @@ def _feishu_health(service, state: str) -> dict:
     return {"ok": False, "detail": "未运行"}
 
 
-def _logs(service, lines: int) -> str:
-    if not service.controllable:
-        history = probe_history(service.id)
-        return history or "尚无探测记录，等待下一次健康检查。"
-    chunks = []
-    name = _tmux_name(service)
-    if tmuxctl.session_exists(name):
-        pane = tmuxctl.capture_pane(name, lines)
-        if pane.strip():
-            chunks.append(f"----- tmux attach -t {name} -----\n{pane}")
+def _logs(service, lines: int) -> tuple[str, str | None]:
     log_path = latest_log_file(service)
-    if log_path:
-        chunks.append(f"----- {log_path} -----\n{tail_file(log_path, lines)}")
-    if not chunks:
-        return "暂无日志。服务未在 tmux 中运行，或尚未写出日志文件。"
-    return "\n\n".join(chunks)
+    if not log_path:
+        name = service.log_service or service.id
+        return f"暂无日志。尚未写出 log/<日期>/{name}/ 文件。", None
+    return tail_file(log_path, lines), display_log_path(log_path)
 
 
 def _start(service) -> None:
+    if service.remote_control == "ssh_vla":
+        vla_remote.run("start")
+        return
+    if service.remote_control == "ssh_dream":
+        dream_remote.run("start")
+        return
     if not service.controllable:
         raise RuntimeError(f"{service.name} 只能监控，不能由面板启动")
     tmuxctl.stop_unmanaged(service)
@@ -124,10 +143,23 @@ def _start(service) -> None:
 
 
 def _stop(service) -> None:
+    if service.remote_control == "ssh_vla":
+        vla_remote.run("stop")
+        return
+    if service.remote_control == "ssh_dream":
+        dream_remote.run("stop")
+        return
     if not service.controllable:
         raise RuntimeError(f"{service.name} 只能监控，不能由面板停止")
     tmuxctl.stop_session(service)
     tmuxctl.stop_unmanaged(service)
+
+
+def _remote_extra(service, action: str) -> None:
+    if service.remote_control == "ssh_dream":
+        dream_remote.run(action)
+        return
+    raise RuntimeError(f"{service.name} 不支持 {action}")
 
 
 @app.get("/")
@@ -155,26 +187,35 @@ def api_logs(service_id: str):
         service = by_id(service_id)
     except KeyError:
         return jsonify({"error": "未知服务"}), 404
-    lines = max(20, min(int(request.args.get("lines") or 200), 1000))
-    return jsonify({"id": service.id, "text": _logs(service, lines)})
+    raw_lines = request.args.get("lines") or 3000
+    try:
+        wanted = int(raw_lines)
+    except (TypeError, ValueError):
+        wanted = 3000
+    lines = max(20, min(wanted, 8000))
+    text, path = _logs(service, lines)
+    return jsonify({"id": service.id, "text": text, "path": path})
 
 
 @app.post("/api/services/<service_id>/<action>")
 def api_action(service_id: str, action: str):
-    if action not in {"start", "stop", "restart"}:
-        return jsonify({"error": "不支持的操作"}), 400
     try:
         service = by_id(service_id)
     except KeyError:
         return jsonify({"error": "未知服务"}), 404
+    allowed = {"start", "stop", "restart"} | set(service.remote_actions)
+    if action not in allowed:
+        return jsonify({"error": "不支持的操作"}), 400
     try:
         if action == "start":
             _start(service)
         elif action == "stop":
             _stop(service)
-        else:
+        elif action == "restart":
             _stop(service)
             _start(service)
+        else:
+            _remote_extra(service, action)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "service": _service_status(service)})
@@ -182,6 +223,9 @@ def api_action(service_id: str, action: str):
 
 def main() -> None:
     os.chdir(ROOT)
+    from log_setup import attach_process_log
+
+    attach_process_log("panel")
     app.run(host="0.0.0.0", port=5678, debug=False, threaded=True)
 
 

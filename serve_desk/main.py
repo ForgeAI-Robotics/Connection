@@ -159,6 +159,15 @@ def base_status():
 
 
 if __name__ == "__main__":
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from log_setup import attach_process_log
+
+    attach_process_log("desk")
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=5008)
     args = parser.parse_args()

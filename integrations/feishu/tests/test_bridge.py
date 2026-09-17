@@ -121,7 +121,6 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
             task_timeout=5,
             poll_interval=0.01,
             db_path=root / "feishu.db",
-            log_path=root / "feishu.log",
             retention_days=30,
             http_timeout=1,
         )

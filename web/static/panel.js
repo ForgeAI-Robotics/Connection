@@ -6,6 +6,12 @@ const STATE_LABEL = {
   down: "不通",
 };
 
+const REMOTE_ACTION_LABEL = {
+  start: "启动",
+  stop: "停止",
+  "stand-enter": "站立 Enter",
+};
+
 let selectedLayer = "brain";
 let selected = "master";
 let busy = false;
@@ -13,6 +19,9 @@ let snapshot = { brain: [], robot: [] };
 let logToken = 0;
 let logAbort = null;
 let statusInFlight = false;
+let logPath = "";
+let reviewWasReady = null;
+let reviewOpened = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -32,6 +41,7 @@ function selectLayer(layer) {
   if (!items.some((item) => item.id === selected)) {
     selected = items[0] ? items[0].id : "";
   }
+  logPath = "";
   document.querySelectorAll(".layer").forEach((button) => {
     button.classList.toggle("active", button.dataset.layer === layer);
   });
@@ -46,6 +56,7 @@ function selectService(id) {
     return;
   }
   selected = id;
+  logPath = "";
   markActive();
   showLogPlaceholder();
   loadLogs(true);
@@ -76,6 +87,24 @@ function healthLine(item) {
   return [health.detail, latency].filter(Boolean).join(" · ");
 }
 
+// 9882 从不通变通时自动弹一次；浏览器拦弹窗就用卡片上的按钮。
+function popReviewPage(robot) {
+  const dream = robot.find((item) => item.id === "dream");
+  if (!dream || !dream.review_url) return;
+  const ready = Boolean(dream.review_ok);
+  const known = reviewWasReady;
+  reviewWasReady = ready;
+  if (!ready || known === null || known === true || reviewOpened) return;
+  reviewOpened = true;
+  const opened = window.open(dream.review_url, "dream-review");
+  const log = $("log");
+  if (!opened) {
+    log.textContent =
+      `9882 审核页已就绪：${dream.review_url}\n` +
+      "浏览器拦住了自动弹窗，点卡片上的「打开 9882」。";
+  }
+}
+
 function card(item) {
   const el = document.createElement("article");
   el.className = "card" + (item.id === selected ? " active" : "");
@@ -90,20 +119,47 @@ function card(item) {
     </div>
     <div class="meta">
       <div>${escapeHtml(port)}</div>
-      ${item.attach ? `<div class="detail"><code>${escapeHtml(item.attach)}</code></div>` : ""}
       ${item.health && item.health.url ? `<div class="detail">${escapeHtml(item.health.url)}</div>` : ""}
+      ${item.note ? `<div class="detail">${escapeHtml(item.note)}</div>` : ""}
       <div class="health">${escapeHtml(line)}</div>
     </div>
   `;
+  const actions = document.createElement("div");
+  actions.className = "actions";
+  let hasActions = false;
   if (item.controllable) {
-    const actions = document.createElement("div");
-    actions.className = "actions";
     actions.append(
       actionButton("重启", () => act(item, "restart"), item.confirm_restart),
       actionButton("停止", () => act(item, "stop"), true)
     );
-    el.appendChild(actions);
+    hasActions = true;
   }
+  (item.remote_actions || []).forEach((action) => {
+    const label = REMOTE_ACTION_LABEL[action] || action;
+    actions.append(actionButton(label, () => act(item, action), action !== "start"));
+    hasActions = true;
+  });
+  if (item.review_url) {
+    const button = actionButton("打开 9882", () => {
+      window.open(item.review_url, "dream-review");
+    }, false);
+    button.disabled = !item.review_ok;
+    button.title = item.review_ok
+      ? item.review_url
+      : "9882 还没起来（要等两次 Enter 进 POSE 站立之后）";
+    if (!item.review_ok) button.classList.add("disabled");
+    actions.append(button);
+    hasActions = true;
+  }
+  if (item.disabled_action) {
+    const button = actionButton(item.disabled_action, () => {}, false);
+    button.disabled = true;
+    button.title = item.disabled_reason || "";
+    button.classList.add("disabled");
+    actions.append(button);
+    hasActions = true;
+  }
+  if (hasActions) el.appendChild(actions);
   return el;
 }
 
@@ -119,6 +175,7 @@ function tab(item) {
 
 function actionButton(label, fn, danger) {
   const button = document.createElement("button");
+  button.type = "button";
   button.textContent = label;
   if (danger) button.className = "danger";
   button.onclick = (event) => {
@@ -137,7 +194,7 @@ function markActive() {
   });
   const current = currentItem();
   $("log-title").textContent = current ? `${current.name} 运行日志` : "运行日志";
-  $("log-meta").textContent = current && current.attach ? current.attach : "";
+  $("log-meta").textContent = logPath;
 }
 
 function showLogPlaceholder() {
@@ -198,26 +255,60 @@ function stickToBottom(node) {
 }
 
 async function act(item, action) {
-  if (busy) return;
+  if (busy) {
+    $("log").textContent = "上一次真机操作还在进行，请稍候。";
+    $("log").classList.remove("loading");
+    return;
+  }
   if (action === "restart" && item.confirm_restart) {
     const ok = window.confirm(
       "重启 Master 会清空 Redis 协作库（collaborator.clear=true）。确定继续？"
     );
     if (!ok) return;
   }
+  if (action === "start" && item.confirm_start) {
+    const ok = window.confirm(
+      item.confirm_start_message || "确定启动该真机服务？"
+    );
+    if (!ok) return;
+  }
+  if (action === "stop" && item.confirm_stop) {
+    const ok = window.confirm(
+      item.confirm_stop_message || "确定停止该真机服务？"
+    );
+    if (!ok) return;
+  }
+  const extraConfirm = (item.action_confirms || {})[action];
+  if (extraConfirm) {
+    if (!window.confirm(extraConfirm)) return;
+  }
   busy = true;
+  selected = item.id;
+  markActive();
+  const log = $("log");
+  log.classList.remove("error", "loading");
+  log.textContent =
+    item.id === "dream" && action === "start"
+      ? "已收到启动。脚本会跑在导航机 tmux g1_panel_oneclick 里：preflight → READY → SONIC / DREAM / VLA HTTP。出现两次 Enter 提示后必须 10 分钟内按完，否则脚本会锁定导航退出。"
+      : item.id === "dream" && action === "stand-enter"
+        ? "已向导航机 adapter 窗口发 1 个 Enter，等它回显 …"
+      : item.id === "dream" && action === "stop"
+        ? "已收到停止。正在关闭 DREAM 与 VLA HTTP/relay，保留 NX SONIC …"
+        : action === "start"
+          ? "已收到启动。正在按文档连接 4090：check → 依赖检查 → HTTP 8091 + 导航 relay …"
+          : action === "stop"
+            ? "已收到停止。正在 SSH 4090 关闭 HTTP 与导航 relay …"
+            : `正在执行 ${action} …`;
   try {
     const response = await fetch(`/api/services/${item.id}/${action}`, { method: "POST" });
     const payload = await response.json();
-    if (!response.ok && selected === item.id) {
-      $("log").textContent = payload.error || "操作失败";
-      $("log").classList.add("error");
+    if (!response.ok) {
+      log.textContent = payload.error || "操作失败";
+      log.classList.add("error");
     }
   } catch (error) {
-    if (selected === item.id) {
-      $("log").textContent = String(error);
-      $("log").classList.add("error");
-    }
+    log.textContent = String(error);
+    log.classList.add("error");
   } finally {
     busy = false;
     refresh(true);
@@ -225,6 +316,7 @@ async function act(item, action) {
 }
 
 async function loadLogs(reset) {
+  if (busy) return;
   const current = currentItem();
   if (!current) return;
   const token = ++logToken;
@@ -233,16 +325,18 @@ async function loadLogs(reset) {
   const log = $("log");
   const pin = !reset && stickToBottom(log);
   try {
-    const logs = await fetch(`/api/services/${encodeURIComponent(current.id)}/logs?lines=250`, {
+    const logs = await fetch(`/api/services/${encodeURIComponent(current.id)}/logs?lines=3000`, {
       signal: logAbort.signal,
     });
     const body = await logs.json();
-    if (token !== logToken || body.id !== selected) return;
+    if (busy || token !== logToken || body.id !== selected) return;
     log.classList.remove("error", "loading");
     log.textContent = body.text || "暂无日志";
+    logPath = body.path || "";
+    $("log-meta").textContent = logPath;
     if (reset || pin) log.scrollTop = log.scrollHeight;
   } catch (error) {
-    if (error.name === "AbortError" || token !== logToken) return;
+    if (error.name === "AbortError" || token !== logToken || busy) return;
     log.classList.remove("loading");
     log.textContent = String(error);
     log.classList.add("error");
@@ -256,6 +350,7 @@ async function refresh(forceCards) {
     const response = await fetch("/api/status");
     const data = await response.json();
     snapshot = data;
+    popReviewPage(data.robot || []);
     $("attach").textContent = data.attach || "tmux ls";
     if (!layerItems().some((item) => item.id === selected)) {
       selected = layerItems()[0] ? layerItems()[0].id : "";

@@ -121,6 +121,12 @@ def _init_belief(env):
 
 
 if __name__ == "__main__":
+    root = os.path.dirname(SERVE_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from log_setup import attach_process_log
+
+    attach_process_log("mujoco")
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-viewer", action="store_true",
                         help="headless(默认就是无 viewer;此 flag 保留兼容旧启动命令)")

@@ -9,7 +9,6 @@ import logging
 import os
 import re
 import sys
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
@@ -79,21 +78,13 @@ class SingleInstanceLock:
             self.handle = None
 
 
-def _configure_logging(settings: Settings) -> None:
-    settings.log_path.parent.mkdir(parents=True, exist_ok=True)
+def _configure_logging() -> None:
     formatter = logging.Formatter(
         "%(asctime)s %(levelname)s %(name)s %(message)s", "%Y-%m-%d %H:%M:%S"
     )
-    file_handler = RotatingFileHandler(
-        settings.log_path,
-        maxBytes=5 * 1024 * 1024,
-        backupCount=3,
-        encoding="utf-8",
-    )
-    file_handler.setFormatter(formatter)
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
-    logging.basicConfig(level=logging.INFO, handlers=[file_handler, console_handler])
+    logging.basicConfig(level=logging.INFO, handlers=[console_handler])
 
 
 def _safe_error(error: object) -> str:
@@ -187,8 +178,11 @@ async def _run(settings: Settings) -> None:
 
 def main() -> int:
     try:
+        from log_setup import attach_process_log
+
+        attach_process_log("feishu")
         settings = load_settings(require_credentials=True)
-        _configure_logging(settings)
+        _configure_logging()
         _preload_lark_sdk()
         lock_path = settings.db_path.parent / "feishu.lock"
         with SingleInstanceLock(lock_path):
