@@ -299,6 +299,14 @@ class GlobalAgent:
             daemon=True,
         ).start()
         self.logger.info("Started listening for robot registrations...")
+        self._adopt_registered_robots()
+
+    def _adopt_registered_robots(self):
+        """Master 重启会错过 Slaver 一次性 AGENT_REGISTRATION，从 AGENT_INFO 补听回程频道。"""
+        names = self.collaborator.read_all_agents_name() or []
+        for name in names:
+            self.logger.info(f"Adopting already-registered robot: {name}")
+            self._handle_register(name)
 
     def _start_scene_change_listener(self):
         """监听场景变化频道，实时接收 SceneDetector 推送的变化。"""

@@ -57,6 +57,7 @@ class RobotManager:
         self.threads = []
         self.loop = asyncio.get_event_loop()
         self.robot_name = None
+        self._register_payload = None
         
         # Initialize tool matcher with configuration
         self.tool_matcher = ToolMatcher(
@@ -279,14 +280,28 @@ class RobotManager:
             "terminated": terminated,
             "status": status,  # success/failure/none/exception/timeout
         }
-        self.collaborator.send(channel, json.dumps(payload))
+        sent = self.collaborator.send(channel, json.dumps(payload))
+        if not sent:
+            print(
+                f"[slaver] result publish to {channel} had 0 subscribers "
+                f"(task_id={task_id}); Master 可能未监听回程频道",
+                file=sys.stderr,
+            )
 
     def _heartbeat_loop(self, robot_name) -> None:
         """Continuous heartbeat signal emitter"""
         key = robot_name
         while not self._shutdown_event.is_set():
             try:
-                self.collaborator.agent_heartbeat(key, seconds=60)
+                ok = self.collaborator.agent_heartbeat(key, seconds=60)
+                if not ok and self._register_payload:
+                    print(
+                        f"[slaver] AGENT_INFO 丢失，重新注册 {key}",
+                        file=sys.stderr,
+                    )
+                    self.collaborator.register_agent(
+                        key, json.dumps(self._register_payload), expire_second=60
+                    )
                 time.sleep(30)
             except Exception as e:
                 if not self._shutdown_event.is_set():
@@ -383,6 +398,7 @@ class RobotManager:
         }
         with self.lock:
             # Registration thread
+            self._register_payload = register
             self.collaborator.register_agent(
                 robot_name, json.dumps(register), expire_second=60
             )

@@ -91,7 +91,7 @@ class RobotRuntime:
             and backend.url
             and backend.name not in NO_RENDER_BACKENDS
         ]
-        rank = {"mujoco": 0, "mujoco_3dgs": 1}
+        rank = {"mujoco_3dgs": 0, "mujoco": 1}
         enabled.sort(key=lambda backend: rank.get(backend.name, 10))
         return enabled
 

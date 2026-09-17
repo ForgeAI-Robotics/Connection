@@ -6,11 +6,31 @@ import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-_PROJECT_CUDA_HOME = Path(__file__).resolve().parents[2] / ".cuda" / "v12.4"
-_CUDA_HOME = os.environ.get(
-    "CUDA_HOME",
-    str(_PROJECT_CUDA_HOME) if _PROJECT_CUDA_HOME.is_dir() else "/usr/local/cuda-12.4",
-)
+
+def _detect_cuda_home() -> str:
+    env = os.environ.get("CUDA_HOME")
+    if env and os.path.isdir(env):
+        return env
+    project_root = Path(__file__).resolve().parents[2]
+    candidates = (
+        project_root / ".cuda" / "v12.8" / "usr" / "local" / "cuda-12.8",
+        project_root / ".cuda" / "v12.8",
+        project_root / ".cuda" / "v12.4" / "usr" / "local" / "cuda-12.4",
+        project_root / ".cuda" / "v12.4",
+        Path("/usr/local/cuda-12.8"),
+        Path("/usr/local/cuda-12.4"),
+        Path("/usr/local/cuda"),
+    )
+    for path in candidates:
+        if (path / "bin" / "nvcc").is_file():
+            return str(path)
+    for path in candidates:
+        if path.is_dir():
+            return str(path)
+    return "/usr/local/cuda-12.8"
+
+
+_CUDA_HOME = _detect_cuda_home()
 _NVCC = os.path.join(_CUDA_HOME, "bin", "nvcc.exe" if os.name == "nt" else "nvcc")
 if os.path.isfile(_NVCC):
     os.environ["CUDA_HOME"] = _CUDA_HOME

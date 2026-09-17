@@ -112,7 +112,7 @@
         <div class="card">
             <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                 <span>四宫格相机
-                    <span style="font-size:12px;color:#64748b;font-weight:normal">（Top + Front + Wrist + Agent）</span>
+                    <span style="font-size:12px;color:#64748b;font-weight:normal">（同一仿真的四路相机；3DGS 为俯视 / 头 / 右腕 / 左腕）</span>
                 </span>
                 <span style="margin-left:auto;display:flex;gap:6px">
                     <button class="btn btn-outline btn-sm" id="btn-quad-live" style="font-size:11px;padding:3px 8px" onclick="startLiveQuad()">直播</button>
@@ -231,7 +231,8 @@
         }
 
         // 发布任务
-        async function sendTask() {
+        async function sendTask(options) {
+            options = options || {};
             const task = document.getElementById('task').value.trim();
             if (!task) return;
             const btn = document.getElementById('btn-send');
@@ -241,6 +242,23 @@
             result.style.display = 'block';
             result.textContent = '等待响应...';
             try {
+                const intentResp = await fetch('/api/task_intent', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task: task})
+                });
+                const intent = await intentResp.json();
+                if (intent.intent === 'chat') {
+                    result.textContent = '识别为闲聊，未发送给大脑。机器人任务请说「开始接待」「桌上有什么」等。';
+                    return;
+                }
+                if (intent.requires_confirmation && !options.skipConfirm) {
+                    const kind = intent.risk === 'motion' ? '运动任务' : '机器人任务';
+                    if (!window.confirm('将作为' + kind + '发给大脑：\n' + task)) {
+                        result.textContent = '已取消';
+                        return;
+                    }
+                }
                 const preflightResp = await fetch('/api/task_preflight', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -273,7 +291,7 @@
         // 会议接待:一键触发(填"开始接待"→ master 命中接待 skill → 复用 task_status 显示 🧠+子任务✓)
         function startReception() {
             document.getElementById('task').value = '开始接待';
-            sendTask();
+            sendTask({skipConfirm: true});
         }
         document.getElementById('task').addEventListener('keydown', e => { if (e.key === 'Enter') sendTask(); });
 

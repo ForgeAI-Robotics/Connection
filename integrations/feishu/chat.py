@@ -8,6 +8,8 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+from robot_api.intent import ROUTE_SYSTEM
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env", override=False)
@@ -17,13 +19,6 @@ CHAT_SYSTEM = """你是 FQPlanner 飞书助手，只回答通用知识、闲聊�
 如果用户其实是在下机器人任务（接待、抓取、导航、整理桌面、看桌上/前面有什么），请让他们改口发送具体任务，例如「开始接待」或「桌上有什么」。
 天气、路况等实时信息若没有实时数据，必须明确说这是模型估计，不是当天实况。
 用简体中文，简洁直接。"""
-
-ROUTE_SYSTEM = """你是飞书消息分流器。只根据用户这句话判断意图，只输出一个英文词：chat 或 task。
-
-chat：通用知识、闲聊、地点、公司介绍、百科、天气、美食等，不需要看机器人现场，也不需要机器人动手。
-task：公司任务。包括让机器人执行动作，以及看现场/桌上/镜头/前面现在有什么。
-
-拿不准、可能动手或看现场 → task。不要解释，不要标点。"""
 
 
 class DeepSeekChat:

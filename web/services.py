@@ -60,6 +60,11 @@ def _feishu_python() -> Path:
     return candidate if candidate.exists() else _venv_python()
 
 
+def _3dgs_python() -> Path:
+    candidate = ROOT / ".venv_3dgs" / "bin" / "python"
+    return candidate if candidate.exists() else _venv_python()
+
+
 def _load_dotenv() -> None:
     path = ROOT / ".env"
     if not path.exists():
@@ -299,6 +304,17 @@ def catalog() -> list[Service]:
             health=_health_http("http://127.0.0.1:5001/camera/status"),
         ),
         Service(
+            id="gs",
+            name="3DGS 仿真",
+            layer="brain",
+            controllable=True,
+            window="gs",
+            port=5002,
+            match="serve_3dgs/main.py",
+            log_service="gs",
+            health=_health_http("http://127.0.0.1:5002/camera/status"),
+        ),
+        Service(
             id="dream",
             name="导航 DREAM",
             layer="robot",
@@ -402,6 +418,12 @@ def start_shell(service: Service) -> str:
         return (
             "export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl; "
             f"exec {_shell_quote(str(python))} serve/main.py --no-viewer"
+        )
+    if service.id == "gs":
+        return (
+            "export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl; "
+            f"exec {_shell_quote(str(_3dgs_python()))} serve_3dgs/main.py "
+            "--no-viewer --no-composite --robot xlerobot"
         )
     raise ValueError(f"{service.id} 不能由面板启动")
 

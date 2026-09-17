@@ -11,11 +11,32 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_LOCAL_CUDA_HOME = os.path.join(_PROJECT_ROOT, ".cuda", "v12.4")
-CUDA_HOME = os.environ.get(
-    "CUDA_HOME",
-    _LOCAL_CUDA_HOME if os.path.isdir(_LOCAL_CUDA_HOME) else "/usr/local/cuda-12.4",
-)
+
+
+def _detect_cuda_home(project_root: str) -> str:
+    env = os.environ.get("CUDA_HOME")
+    if env and os.path.isdir(env):
+        return env
+    candidates = (
+        os.path.join(project_root, ".cuda", "v12.8", "usr", "local", "cuda-12.8"),
+        os.path.join(project_root, ".cuda", "v12.8"),
+        os.path.join(project_root, ".cuda", "v12.4", "usr", "local", "cuda-12.4"),
+        os.path.join(project_root, ".cuda", "v12.4"),
+        "/usr/local/cuda-12.8",
+        "/usr/local/cuda-12.4",
+        "/usr/local/cuda",
+    )
+    for path in candidates:
+        if os.path.isfile(os.path.join(path, "bin", "nvcc")):
+            return path
+    for path in candidates:
+        if os.path.isdir(path):
+            return path
+    return "/usr/local/cuda-12.8"
+
+
+_LOCAL_CUDA_HOME = _detect_cuda_home(_PROJECT_ROOT)
+CUDA_HOME = _LOCAL_CUDA_HOME
 if os.path.isdir(CUDA_HOME):
     os.environ.setdefault("CUDA_HOME", CUDA_HOME)
     _cuda_bin = os.path.join(CUDA_HOME, "bin")
@@ -73,6 +94,12 @@ LOOP_SLEEP_SEC = 0.01
 
 
 def main():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from log_setup import attach_process_log
+
+    attach_process_log("gs")
     parser = argparse.ArgumentParser(description="serve_3dgs - MotrixSim + 3DGS backend")
     parser.add_argument("--port", type=int,
                         default=int(os.environ.get("SERVE_3DGS_PORT", 5002)))

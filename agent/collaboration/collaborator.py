@@ -102,7 +102,10 @@ class Collaborator:
         """
         try:
             redis_client = self._get_conn()
-            return redis_client.publish(channel, message) > 0
+            subscribers = redis_client.publish(channel, message)
+            if subscribers <= 0:
+                print(f"Warning: published to {channel} but 0 subscribers")
+            return subscribers > 0
         except (ConnectionError, TimeoutError, RedisError) as e:
             print(f"Error while publishing to Redis: {e}")
         finally:

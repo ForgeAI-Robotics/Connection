@@ -203,8 +203,8 @@ def default_vision_targets() -> list[tuple[str, str]]:
             add(backend.name, backend.url)
     except Exception:
         pass
-    add("mujoco", "http://127.0.0.1:5001")
     add("mujoco_3dgs", "http://127.0.0.1:5002")
+    add("mujoco", "http://127.0.0.1:5001")
     for name, url in _master_camera_urls():
         add(name, url)
     return found

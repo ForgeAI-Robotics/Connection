@@ -16,6 +16,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from log_setup import note_task_request
+from robot_api.intent import Intent, classify_task
 
 # The documented entry point is ``python master/run.py`` from the repository
 # root, while the master configuration contains paths relative to this module.
@@ -236,6 +237,18 @@ def publish_task():
             if not isinstance(task, str):
                 return jsonify({"error": "Invalid task format - must be a string"}), 400
             task = task.strip()
+            entry = classify_task(task)
+            if entry.intent is Intent.CHAT:
+                note_task_request("intent", task, intent="chat", risk=entry.risk.value)
+                return jsonify(
+                    {
+                        "status": "rejected",
+                        "accepted": False,
+                        "intent": "chat",
+                        "error": "闲聊不会发给大脑",
+                        "task": task,
+                    }
+                ), 200
             report = master_agent.get_task_preflight(task)
             note_task_request(
                 "preflight",

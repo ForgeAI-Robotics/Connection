@@ -27,6 +27,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from log_setup import note_task_request
 from robot_api.config import load_robot_api_config
+from robot_api.intent import classify_entry, route_ambiguous_with_llm
 
 app = Flask(__name__)
 # 每次请求都重新读模板:改了 index.html 不用重启 deploy 也不会拿到旧缓存页面(debug=False 默认会缓存)。
@@ -36,8 +37,8 @@ app.jinja_env.auto_reload = True
 MASTER_URL = os.getenv("MASTER_URL", "http://127.0.0.1:5000")
 SIM_URL = os.getenv("ROBOT_API_URL", load_robot_api_config().server_url)
 VISION_CANDIDATES = (
-    "http://127.0.0.1:5001",
     "http://127.0.0.1:5002",
+    "http://127.0.0.1:5001",
 )
 REDIS_CFG = {"host": "127.0.0.1", "port": 6379, "db": 0, "password": None}
 _vision_cache = {"url": "", "at": 0.0}
@@ -263,6 +264,32 @@ def task_status():
         return jsonify({"active": False, "error": "Master 服务未启动"}), 503
     except Exception as e:
         return jsonify({"active": False, "error": str(e)}), 500
+
+
+@app.route("/api/task_intent", methods=["POST"])
+def task_intent():
+    """入口粗分流：闲聊拦下，公司任务才继续预检/发布。"""
+    data = request.get_json() or {}
+    task = data.get("task")
+    if not isinstance(task, str) or not task.strip():
+        return jsonify({"error": "缺少有效 task 字段", "intent": "chat"}), 400
+    task = task.strip()
+    report = classify_entry(task)
+    if report.get("needs_llm_route"):
+        try:
+            label = route_ambiguous_with_llm(task)
+            report = classify_entry(task, llm_label=label)
+            report["llm_route"] = label
+        except Exception as exc:
+            report["llm_route_error"] = str(exc)
+    note_task_request(
+        "intent",
+        task,
+        intent=report.get("intent"),
+        risk=report.get("risk"),
+        confirm=report.get("requires_confirmation"),
+    )
+    return jsonify(report), 200
 
 
 @app.route("/api/task_preflight", methods=["POST"])

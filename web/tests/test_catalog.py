@@ -9,7 +9,7 @@ class CatalogTests(unittest.TestCase):
         items = catalog()
         self.assertEqual(
             [item.id for item in items if item.layer == "brain"],
-            ["redis", "master", "deploy", "feishu", "slaver", "desk", "mujoco"],
+            ["redis", "master", "deploy", "feishu", "slaver", "desk", "mujoco", "gs"],
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "robot"],
@@ -69,6 +69,16 @@ class CatalogTests(unittest.TestCase):
         master = next(item for item in catalog() if item.id == "master")
         self.assertTrue(master.confirm_restart)
 
+    def test_gs_tmux_command(self):
+        gs = next(item for item in catalog() if item.id == "gs")
+        self.assertEqual(gs.port, 5002)
+        self.assertTrue(gs.controllable)
+        command = start_shell(gs)
+        self.assertIn("serve_3dgs/main.py", command)
+        self.assertIn("--no-viewer", command)
+        self.assertIn("--robot xlerobot", command)
+        self.assertIn("exec", command)
+
     def test_redis_tmux_command_is_foreground(self):
         redis = next(item for item in catalog() if item.id == "redis")
         command = start_shell(redis)
@@ -92,6 +102,10 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(
             {item.id: item.log_service for item in items}["mujoco"],
             "mujoco",
+        )
+        self.assertEqual(
+            {item.id: item.log_service for item in items}["gs"],
+            "gs",
         )
         self.assertEqual(
             {item.id: item.log_service for item in items}["dream"],
