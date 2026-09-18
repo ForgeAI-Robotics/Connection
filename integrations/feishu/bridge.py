@@ -464,7 +464,9 @@ class FeishuBridge:
         LOGGER.info("飞书提交任务「%s」message_id=%s", record.task_text, message_id)
         if record.risk_level != "read_only":
             try:
-                preflight = await self.brain.task_preflight(record.task_text)
+                preflight = await self.brain.task_preflight(
+                    record.task_text, operator=record.sender_open_id
+                )
             except BrainOffline as exc:
                 await self._finish_unsubmitted(
                     record, "brain_offline", f"任务预检失败：{exc}", reply_to
@@ -492,7 +494,9 @@ class FeishuBridge:
             LOGGER.info(
                 "飞书发布任务「%s」task_id=%s", record.task_text, brain_task_id
             )
-            await self.brain.publish_task(record.task_text, brain_task_id)
+            await self.brain.publish_task(
+                record.task_text, brain_task_id, operator=record.sender_open_id
+            )
         except BrainBusy as exc:
             await self._finish_unsubmitted(record, "brain_busy", str(exc), reply_to)
             return

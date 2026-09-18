@@ -21,6 +21,7 @@ from web.services import (  # noqa: E402
     display_log_path,
     feishu_ready_from_text,
     latest_log_file,
+    master_pin_text,
     port_open,
     start_shell,
     tail_file,
@@ -120,12 +121,23 @@ def _feishu_health(service, state: str) -> dict:
     return {"ok": False, "detail": "未运行"}
 
 
-def _logs(service, lines: int) -> tuple[str, str | None]:
-    log_path = latest_log_file(service)
+def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None, str | None]:
+    selected = str(kind or "auto").strip().lower()
+    log_path = latest_log_file(service, selected)
+    pin = master_pin_text() if service.id == "master" and selected in {"auto", "brain"} else None
     if not log_path:
         name = service.log_service or service.id
-        return f"暂无日志。尚未写出 log/<日期>/{name}/ 文件。", None
-    return tail_file(log_path, lines), display_log_path(log_path)
+        if service.id == "master" and selected == "brain":
+            return (
+                "暂无指挥日志。重启 Master 后写入 log/<日期>/master/brain.log。"
+                "可先切到「原始」看当前进程输出。",
+                None,
+                pin,
+            )
+        if service.id == "master" and selected == "http":
+            return "暂无 HTTP 访问日志。", None, None
+        return f"暂无日志。尚未写出 log/<日期>/{name}/ 文件。", None, None
+    return tail_file(log_path, lines), display_log_path(log_path), pin
 
 
 def _start(service) -> None:
@@ -193,8 +205,17 @@ def api_logs(service_id: str):
     except (TypeError, ValueError):
         wanted = 3000
     lines = max(20, min(wanted, 8000))
-    text, path = _logs(service, lines)
-    return jsonify({"id": service.id, "text": text, "path": path})
+    kind = request.args.get("kind") or "auto"
+    text, path, pin = _logs(service, lines, kind)
+    return jsonify(
+        {
+            "id": service.id,
+            "kind": kind,
+            "text": text,
+            "path": path,
+            "pin": pin,
+        }
+    )
 
 
 @app.post("/api/services/<service_id>/<action>")

@@ -295,7 +295,11 @@ class Collaborator:
             return None
 
     def wait_agents_free(
-        self, agents_name: list[str], check_interval: float = 0.5, timeout: float | None = None
+        self,
+        agents_name: list[str],
+        check_interval: float = 0.5,
+        timeout: float | None = None,
+        abort: Callable[[], bool] | None = None,
     ) -> bool:
         """Wait until all specified agents become free (busy=False).
 
@@ -303,17 +307,14 @@ class Collaborator:
             agents_name: List of agent names to monitor
             check_interval: Seconds between status checks (default: 0.5)
             timeout: Maximum wait time in seconds (None = no timeout)
+            abort: Optional callback; if it returns True, stop waiting and
+                return False. Used so a superseded dispatch can exit without
+                waiting for the full timeout.
 
         Returns:
             bool:
                 - True if all agents became free
-                - False if timeout occurred
-
-        Example:
-            >>> # Wait for agent_1 and agent_2 to become free
-            >>> success = coll.wait_agent_free(["agent_1", "agent_2"])
-            >>> if success:
-            >>>     print("All agents are now available")
+                - False if timeout occurred, abort fired, or Redis failed
         """
         start_time = time.time()
 
@@ -321,7 +322,8 @@ class Collaborator:
             redis_client = self._get_conn()
 
             while True:
-                # Check timeout
+                if abort is not None and abort():
+                    return False
                 if timeout is not None and (time.time() - start_time) > timeout:
                     return False
 
@@ -338,7 +340,6 @@ class Collaborator:
                 if all_free:
                     return True
 
-                # Wait before next check
                 time.sleep(check_interval)
 
         except (ConnectionError, TimeoutError, RedisError) as e:

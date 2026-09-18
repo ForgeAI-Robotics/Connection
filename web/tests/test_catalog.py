@@ -49,6 +49,20 @@ class CatalogTests(unittest.TestCase):
         self.assertNotIn("subtask_list", detail)
         idle = format_http_health_detail(True, "HTTP 200", '{"active": false}')
         self.assertEqual(idle, "HTTP 200 空闲")
+        recovery = format_http_health_detail(
+            True,
+            "HTTP 200",
+            json.dumps(
+                {
+                    "active": True,
+                    "all_done": False,
+                    "state": "RECOVERY_REQUIRED",
+                    "task": "开始接待",
+                },
+                ensure_ascii=False,
+            ),
+        )
+        self.assertEqual(recovery, "HTTP 200 待恢复 开始接待")
 
     def test_desk_tmux_command(self):
         desk = next(item for item in catalog() if item.id == "desk")

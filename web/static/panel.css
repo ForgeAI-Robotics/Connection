@@ -187,6 +187,34 @@ button.disabled:hover {
   margin-bottom: 6px;
 }
 .log-head h3 { margin: 0; font-size: 13px; color: var(--muted); }
+.log-kinds { display: flex; gap: 6px; }
+.log-kinds[hidden] { display: none; }
+.log-kinds button {
+  background: #0b1220;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.log-kinds button.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: #182338;
+}
+.log-pin {
+  flex: 0 0 auto;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--bad);
+  background: #2a1216;
+  color: #ffd0d4;
+  border-radius: 8px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.log-pin[hidden] { display: none; }
 #log-meta { color: var(--accent); font-size: 12px; }
 #log {
   flex: 1;

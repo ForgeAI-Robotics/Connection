@@ -105,18 +105,25 @@ class BrainClient:
             raise BrainRejected("状态接口返回格式无效")
         return BrainStatus(payload)
 
-    async def publish_task(self, task: str, task_id: str) -> dict[str, Any]:
-        return await asyncio.to_thread(self._publish_task, task, task_id)
+    def _source_headers(self, operator=None):
+        headers = {"X-FQ-Source": "feishu"}
+        if operator:
+            headers["X-FQ-Operator"] = str(operator)
+        return headers
 
-    async def task_preflight(self, task: str) -> BrainPreflight:
-        return await asyncio.to_thread(self._task_preflight, task)
+    async def publish_task(self, task: str, task_id: str, *, operator: str | None = None) -> dict[str, Any]:
+        return await asyncio.to_thread(self._publish_task, task, task_id, operator)
 
-    def _task_preflight(self, task: str) -> BrainPreflight:
+    async def task_preflight(self, task: str, *, operator: str | None = None) -> BrainPreflight:
+        return await asyncio.to_thread(self._task_preflight, task, operator)
+
+    def _task_preflight(self, task: str, operator=None) -> BrainPreflight:
         try:
             response = self.session.post(
                 f"{self.base_url}/api/task_preflight",
                 json={"task": task},
                 timeout=max(self.timeout, 45.0),
+                headers=self._source_headers(operator),
             )
         except requests.RequestException as exc:
             raise BrainOffline(f"大脑预检接口不可达：{exc}") from exc
@@ -132,12 +139,13 @@ class BrainClient:
             raise BrainRejected("预检接口返回格式无效")
         return BrainPreflight(payload)
 
-    def _publish_task(self, task: str, task_id: str) -> dict[str, Any]:
+    def _publish_task(self, task: str, task_id: str, operator=None) -> dict[str, Any]:
         try:
             response = self.session.post(
                 f"{self.base_url}/publish_task",
                 json={"task": task, "task_id": task_id, "refresh": True},
                 timeout=max(self.timeout, 120.0),
+                headers=self._source_headers(operator),
             )
         except requests.RequestException as exc:
             raise BrainOffline(f"大脑任务接口不可达：{exc}") from exc

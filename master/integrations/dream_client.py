@@ -7,6 +7,14 @@ import urllib.parse
 
 from .http_client import HttpClient, HttpContractError
 
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+from brain_journal import CallBook, OutboundCall, summarize_nav_request
+
 
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
 
@@ -26,6 +34,7 @@ class DreamClient:
             contract_version=contract_version,
         )
         self.contract_version = contract_version
+        self.calls = CallBook("dream")
 
     def health(self):
         return self.http.request_json("GET", "/health")[0]
@@ -47,6 +56,12 @@ class DreamClient:
     def submit_navigation(
         self, payload, *, recovery_attempts=3, recovery_interval_sec=0.5
     ):
+        call = self.calls.start(
+            "navigate",
+            command_id=payload.get("command_id"),
+            task_id=payload.get("task_id"),
+            **summarize_nav_request(payload),
+        )
         try:
             body, _status, _headers = self.http.request_json(
                 "POST",
@@ -54,15 +69,22 @@ class DreamClient:
                 payload,
                 accepted_statuses=(200, 202),
             )
+            call.accepted(body)
             return body
         except HttpContractError as exc:
             # A definite HTTP error response is not ambiguous.  Connection-level
             # failure may have happened after DREAM accepted the command, so only
             # query the original command_id; never create or submit a new one.
             if exc.status_code is not None:
+                self.calls.complete(
+                    payload.get("command_id"), False, payload=exc.payload, error=exc
+                )
                 raise
             command_id = payload.get("command_id")
             if not command_id:
+                self.calls.complete(
+                    payload.get("command_id"), False, payload=exc.payload, error=exc
+                )
                 raise DreamRecoveryRequired(
                     "导航POST连接异常且请求缺少command_id，禁止自动重发",
                     payload={"cause": str(exc)},
@@ -73,6 +95,7 @@ class DreamClient:
                 interval_sec=recovery_interval_sec,
             )
             if recovered is not None:
+                call.accepted(recovered)
                 return {
                     "accepted": True,
                     "command_id": command_id,
@@ -80,32 +103,62 @@ class DreamClient:
                     "recovered_after_post_error": True,
                     "detail": recovered,
                 }
+            self.calls.complete(command_id, False, payload=exc.payload, error=exc)
             raise DreamRecoveryRequired(
                 f"导航POST结果不确定，原command_id有界重查仍无法确认: {command_id}",
                 payload={"command_id": command_id, "cause": str(exc)},
             ) from exc
 
     def submit_inspection(self, payload):
-        return self.http.request_json(
-            "POST", "/v1/inspection", payload,
-            accepted_statuses=(200, 202),
-        )[0]
+        call = self.calls.start(
+            "inspect",
+            command_id=payload.get("command_id"),
+            task_id=payload.get("task_id"),
+            method="POST",
+            path="/v1/inspection",
+            target=payload.get("target_object_id"),
+        )
+        try:
+            body = self.http.request_json(
+                "POST", "/v1/inspection", payload,
+                accepted_statuses=(200, 202),
+            )[0]
+            call.accepted(body)
+            return body
+        except Exception as exc:
+            self.calls.complete(
+                payload.get("command_id"), False,
+                payload=getattr(exc, "payload", None), error=exc,
+            )
+            raise
 
     def wait_camera_owner(
         self, owner, *, timeout_sec=60.0, poll_interval_sec=0.5
     ):
+        call = OutboundCall("dream", "camera_handoff", note=owner)
         deadline = time.monotonic() + float(timeout_sec)
         last = None
         while time.monotonic() < deadline:
             last = self.camera_status()
-            if (
+            ready = (
                 last.get("driver_enabled") is False
                 and str(last.get("external_owner") or "").lower() == str(owner).lower()
-            ):
+            )
+            call.update({
+                "state": "ready" if ready else "waiting",
+                "wait_reason": (
+                    f"owner={last.get('external_owner')}"
+                    f" driver={last.get('driver_enabled')}"
+                ),
+            })
+            if ready:
+                call.end(True, payload=last)
                 return last
             time.sleep(float(poll_interval_sec))
-        raise HttpContractError(
+        error = HttpContractError(
             f"DREAM相机未在限定时间内交给{owner}", payload=last)
+        call.end(False, payload=last, error=error)
+        raise error
 
     def command(self, command_id):
         quoted = urllib.parse.quote(str(command_id), safe="")
@@ -131,6 +184,7 @@ class DreamClient:
         last = None
         uncertain_count = 0
         last_uncertain_error = None
+        call = self.calls.ensure("wait", command_id)
         while time.monotonic() < deadline:
             try:
                 last = self.command(command_id)
@@ -138,10 +192,16 @@ class DreamClient:
                 last_uncertain_error = None
             except HttpContractError as exc:
                 if exc.status_code not in {None, 404}:
+                    self.calls.complete(
+                        command_id, False, payload=exc.payload, error=exc
+                    )
                     raise
                 uncertain_count += 1
                 last_uncertain_error = exc
                 if uncertain_count >= max(1, int(uncertain_attempts)):
+                    self.calls.complete(
+                        command_id, False, payload=last, error=exc
+                    )
                     raise DreamRecoveryRequired(
                         f"DREAM原命令连续无法确认，禁止补发动作: {command_id}",
                         payload={
@@ -155,27 +215,41 @@ class DreamClient:
                 continue
             if on_update:
                 on_update(last)
+            call.update(last)
             state = str(last.get("state") or "").lower()
             if state in TERMINAL_STATES:
+                if state != "succeeded":
+                    self.calls.complete(command_id, False, payload=last)
                 return last
             time.sleep(float(poll_interval_sec))
-        raise HttpContractError(
+        error = HttpContractError(
             f"DREAM命令等待终态超时: {command_id}",
             payload=last,
         )
+        self.calls.complete(command_id, False, payload=last, error=error)
+        raise error
 
     def wait_navigation_transport(
         self, *, timeout_sec=30.0, poll_interval_sec=0.5, on_update=None
     ):
+        call = OutboundCall("dream", "wait_transport")
         deadline = time.monotonic() + float(timeout_sec)
         last = None
         while time.monotonic() < deadline:
             last = self.status()
             if on_update:
                 on_update(last)
-            if last.get("navigation_transport_ready") is True:
+            blockers = last.get("motion_blockers") or []
+            ready = last.get("navigation_transport_ready") is True
+            call.update({
+                "state": "ready" if ready else "waiting",
+                "wait_reason": "；".join(str(item) for item in blockers),
+            })
+            if ready:
+                call.end(True, payload=last)
                 return last
             time.sleep(float(poll_interval_sec))
+        call.end(False, payload=last)
         raise HttpContractError(
             "DREAM导航通路在限定时间内未归还",
             payload=last,
@@ -193,8 +267,7 @@ class DreamClient:
             accepted_statuses=(200, 202),
         )[0]
 
-    @staticmethod
-    def require_success(terminal, command_id):
+    def require_success(self, terminal, command_id):
         state = str(terminal.get("state") or "").lower()
         result = terminal.get("result") or {}
         if not (
@@ -203,8 +276,11 @@ class DreamClient:
             and result.get("reached") is True
             and result.get("navigation_stopped") is True
         ):
-            raise HttpContractError(
+            error = HttpContractError(
                 f"DREAM导航成功证据不完整: {command_id}, state={state}",
                 payload=terminal,
             )
+            self.calls.complete(command_id, False, payload=terminal, error=error)
+            raise error
+        self.calls.complete(command_id, True, payload=terminal)
         return terminal

@@ -9,8 +9,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 MASTER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if MASTER_DIR not in sys.path:
-    sys.path.insert(0, MASTER_DIR)
+ROOT = os.path.abspath(os.path.join(MASTER_DIR, ".."))
+for _path in (ROOT, MASTER_DIR):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from integrations.dream_client import DreamClient
 from integrations.http_client import HttpContractError
@@ -441,9 +443,17 @@ class ReceptionRealPipelineTest(unittest.TestCase):
         ], semantic_events)
 
     def test_complete_pipeline_without_photo_verification(self):
+        import log_setup
+        from brain_journal import BrainJournal, reset_journal_for_tests
+
         dream_url = f"http://127.0.0.1:{self.dream_server.server_port}"
         vla_url = f"http://127.0.0.1:{self.vla_server.server_port}"
         with tempfile.TemporaryDirectory() as runtime_dir:
+            os.environ[log_setup.LOG_ROOT_ENV] = runtime_dir
+            self.addCleanup(os.environ.pop, log_setup.LOG_ROOT_ENV, None)
+            journal = BrainJournal(service="master")
+            reset_journal_for_tests(journal)
+            self.addCleanup(reset_journal_for_tests)
             runner = ReceptionRealRunner(
                 {
                     "contract_version": "fq/reception-lan/v1",
@@ -471,6 +481,15 @@ class ReceptionRealPipelineTest(unittest.TestCase):
             self.assertFalse(os.path.exists(
                 os.path.join(runtime_dir, "images", "pick_after.jpg")))
             self.assertFalse(any(event[0] in {"snapshot", "verify"} for event in EVENTS))
+            text = journal.paths()["brain"].read_text(encoding="utf-8")
+            self.assertIn("TASK      start", text)
+            self.assertIn("TASK      ok", text)
+            self.assertIn("STEP      success", text)
+            self.assertIn("order=2", text)
+            self.assertIn("peer=dream", text)
+            self.assertIn("peer=vla", text)
+            self.assertGreaterEqual(text.count("CALL      start"), 4)
+            self.assertGreaterEqual(text.count("CALL      end"), 4)
 
     def test_vla_uncertain_post_never_creates_a_new_command(self):
         class UncertainHttp:
@@ -491,6 +510,93 @@ class ReceptionRealPipelineTest(unittest.TestCase):
                 payload, recovery_attempts=2, recovery_interval_sec=0.0)
         self.assertEqual(
             "vla-pick-fixed-id", raised.exception.payload["command_id"])
+
+    def _isolated_runner(self, runtime_dir):
+        return ReceptionRealRunner(
+            {"runtime_dir": runtime_dir},
+            dream=object(),
+            vla=object(),
+            verifier=object(),
+            store=ReceptionStore(runtime_dir),
+        )
+
+    def test_recovery_required_is_not_a_terminal_state(self):
+        from sop.reception_real import BUSINESS_TERMINAL_STATES, TERMINAL_TASK_STATES
+        self.assertNotIn("RECOVERY_REQUIRED", BUSINESS_TERMINAL_STATES)
+        self.assertNotIn("RECOVERY_REQUIRED", TERMINAL_TASK_STATES)
+
+    def test_start_state_does_not_overwrite_recovery_required(self):
+        from sop.reception_real import ReceptionPipelineError
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            store = ReceptionStore(runtime_dir)
+            store.save_state({
+                "task_id": "old-task",
+                "state": "RECOVERY_REQUIRED",
+                "holding": "cola_can_1",
+                "commands": {"pick": "keep-me"},
+                "failure_reason": "nav_relay2 failed",
+            })
+            runner = self._isolated_runner(runtime_dir)
+            with self.assertRaises(ReceptionPipelineError) as raised:
+                runner._start_state("new-task")
+            self.assertIn("force_new_task", str(raised.exception))
+            saved = store.load_state()
+            self.assertEqual("old-task", saved["task_id"])
+            self.assertEqual("cola_can_1", saved["holding"])
+            self.assertEqual({"pick": "keep-me"}, saved["commands"])
+            self.assertEqual("RECOVERY_REQUIRED", saved["state"])
+
+    def test_run_keeps_recovery_required_instead_of_starting(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            store = ReceptionStore(runtime_dir)
+            store.save_state({
+                "task_id": "old-task",
+                "state": "RECOVERY_REQUIRED",
+                "holding": "cola_can_1",
+                "commands": {"pick": "keep-me"},
+            })
+            runner = self._isolated_runner(runtime_dir)
+            result = runner.run("new-task")
+            self.assertEqual("RECOVERY_REQUIRED", result["state"])
+            self.assertEqual("old-task", result["task_id"])
+            self.assertEqual("cola_can_1", result["holding"])
+            saved = store.load_state()
+            self.assertEqual("old-task", saved["task_id"])
+
+    def test_orphaned_running_task_is_promoted_not_overwritten(self):
+        from sop.reception_real import ReceptionPipelineError
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            store = ReceptionStore(runtime_dir)
+            store.save_state({
+                "task_id": "old-task",
+                "state": "RUNNING",
+                "holding": "cola_can_1",
+                "commands": {"nav_table2": "keep-me"},
+            })
+            runner = self._isolated_runner(runtime_dir)
+            with self.assertRaises(ReceptionPipelineError):
+                runner._start_state("new-task")
+            saved = store.load_state()
+            self.assertEqual("old-task", saved["task_id"])
+            self.assertEqual("RECOVERY_REQUIRED", saved["state"])
+            self.assertEqual("cola_can_1", saved["holding"])
+            self.assertEqual({"nav_table2": "keep-me"}, saved["commands"])
+
+    def test_force_new_task_replaces_recovery_required(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            store = ReceptionStore(runtime_dir)
+            store.save_state({
+                "task_id": "old-task",
+                "state": "RECOVERY_REQUIRED",
+                "holding": "cola_can_1",
+                "commands": {"pick": "keep-me"},
+            })
+            runner = self._isolated_runner(runtime_dir)
+            runner._start_state("new-task", force_new_task=True)
+            self.assertEqual("new-task", runner.state["task_id"])
+            self.assertEqual("RUNNING", runner.state["state"])
+            self.assertIsNone(runner.state["holding"])
+            self.assertEqual({}, runner.state["commands"])
 
 
 if __name__ == "__main__":

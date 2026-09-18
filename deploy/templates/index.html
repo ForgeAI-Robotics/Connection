@@ -55,6 +55,8 @@
         .task-progress-header .status-ok  { color: #4ade80; }
         .task-progress-header .status-fail { color: #f87171; }
         .task-progress-header .status-run  { color: #94a3b8; }
+        .task-progress-header .status-recovery { color: #fbbf24; }
+        .task-bar-fill.recovery { background: #f59e0b; }
         .subtask-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: #0f172a; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
         .subtask-item.done { opacity: 0.7; }
         .subtask-item .check { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #475569; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; font-weight: bold; line-height: 1; }
@@ -259,6 +261,30 @@
                         return;
                     }
                 }
+                if (!options.forceNewTask) {
+                    try {
+                        const st = await (await fetch('/api/task_status')).json();
+                        if (st && st.execution_active) {
+                            result.textContent = '当前任务仍在执行，请等待结束后再发。';
+                            return;
+                        }
+                        if (st && st.blocks_new_motion && st.state === 'RECOVERY_REQUIRED') {
+                            const ok = window.confirm(
+                                '上一轮真机任务仍待恢复（机器人可能还在动）。\n' +
+                                '请确认现场已停、手上状态清楚后，再开始新任务。\n\n' +
+                                '确定开始新任务？'
+                            );
+                            if (!ok) {
+                                result.textContent = '已取消（保留待恢复任务）';
+                                return;
+                            }
+                            options.forceNewTask = true;
+                        } else if (st && st.blocks_new_motion && !st.all_done) {
+                            result.textContent = st.reasoning || '存在未完成任务，禁止覆盖。';
+                            return;
+                        }
+                    } catch (e) {}
+                }
                 const preflightResp = await fetch('/api/task_preflight', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
@@ -269,24 +295,29 @@
                     result.textContent = '预检未通过:\n' + JSON.stringify(preflight, null, 2);
                     return;
                 }
+                const payload = {task: task};
+                if (options.forceNewTask) payload.force_new_task = true;
                 const resp = await fetch('/publish_task', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({task: task})
+                    body: JSON.stringify(payload)
                 });
                 const data = await resp.json();
                 result.textContent = JSON.stringify(data, null, 2);
-                // 发送成功后立即开始轮询任务进度
+                if (data.accepted === false) {
+                    return;
+                }
                 if (data.status === 'success') {
-                    _prevAllDone = false;   // 新任务:重置"任务完成"belief 快照标志
+                    _prevAllDone = false;
                     startTaskPolling();
                 }
             } catch (e) {
                 result.textContent = '请求失败: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '发送';
+                document.getElementById('task').value = '';
             }
-            btn.disabled = false;
-            btn.textContent = '发送';
-            document.getElementById('task').value = '';
         }
         // 会议接待:一键触发(填"开始接待"→ master 命中接待 skill → 复用 task_status 显示 🧠+子任务✓)
         function startReception() {
@@ -306,14 +337,19 @@
             }
             const pct = data.total > 0 ? Math.round(data.completed / data.total * 100) : 0;
             const taskName = Array.isArray(data.task) ? data.task[0] : (data.task || '');
-            const anyFailed = data.failed || data.subtask_list.some(
-                t => t.done && t.status && t.status !== 'success'
-            );
+            const recovery = data.state === 'RECOVERY_REQUIRED';
+            const anyFailed = !recovery && (data.failed || (data.subtask_list || []).some(
+                t => t.done && t.status && t.status !== 'success' && t.status !== 'blocked'
+            ));
             // MuJoCo 判定:任务成功 = 所有子任务都成功(不再用 ALFWorld 的 won 覆盖)。
             // won===true 时额外标"落点已验证"徽章;won===false 是 MuJoCo 非持续模式默认值,不代表失败,忽略。
             const wonSignal = data.hasOwnProperty('won') ? data.won : null;
             let statusLabel, statusCls;
-            if (data.all_done) {
+            if (recovery) {
+                const reason = (data.reception_state && data.reception_state.failure_reason) || data.reasoning || '';
+                statusLabel = reason ? ('待恢复：' + reason) : '待恢复（未确认远端已停）';
+                statusCls = 'status-recovery';
+            } else if (data.all_done) {
                 if (anyFailed) {
                     statusLabel = '✕ 任务失败(有子任务失败)';
                     statusCls = 'status-fail';
@@ -325,7 +361,7 @@
                 statusLabel = '执行中...';
                 statusCls = 'status-run';
             }
-            const barCls = anyFailed ? 'task-bar-fill fail' : 'task-bar-fill';
+            const barCls = recovery ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');
             let html = `<div class="task-progress-header">
                 <span>${taskName} (${data.completed}/${data.total})</span>
                 <span class="${statusCls}">${statusLabel}</span>
@@ -337,11 +373,15 @@
                       + `<b style="color:#818cf8">🧠 Master 思考:</b> ${data.reasoning}</div>`;
             }
 
-            for (const t of data.subtask_list) {
-                const failed = t.done && t.status && t.status !== 'success';
-                const cls = t.done ? (failed ? 'done fail' : 'done ok') : '';
+            for (const t of (data.subtask_list || [])) {
+                const blocked = t.done && t.status === 'blocked';
+                const failed = t.done && t.status && t.status !== 'success' && t.status !== 'blocked';
+                const cls = t.done ? (failed ? 'done fail' : (blocked ? 'done' : 'done ok')) : '';
                 const insertedTag = t.inserted
                     ? ' <span style="font-size:10px;color:#fbbf24;border:1px solid #fbbf24;border-radius:4px;padding:1px 5px">↻ 失败重插</span>'
+                    : '';
+                const blockedTag = blocked
+                    ? ' <span style="font-size:10px;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:1px 5px">未执行</span>'
                     : '';
                 let checkStyle = 'border-color:#475569;';
                 let checkIcon = '';
@@ -349,6 +389,9 @@
                     if (failed) {
                         checkStyle = 'background:#ef4444;border-color:#ef4444;color:#fff;';
                         checkIcon = '✕';
+                    } else if (blocked) {
+                        checkStyle = 'background:#334155;border-color:#475569;color:#cbd5e1;';
+                        checkIcon = '⊘';
                     } else {
                         checkStyle = 'background:#22c55e;border-color:#22c55e;color:#fff;';
                         checkIcon = '✓';
@@ -356,7 +399,7 @@
                 }
                 html += `<div class="subtask-item ${cls}">
                     <div class="check" style="${checkStyle}">${checkIcon}</div>
-                    <span class="subtask-text">${t.subtask}${insertedTag}</span>
+                    <span class="subtask-text">${t.subtask}${insertedTag}${blockedTag}</span>
                     <span class="subtask-robot">${t.robot_name}</span>
                 </div>`;
             }
@@ -370,11 +413,13 @@
                 const data = await resp.json();
                 renderTaskProgress(data);
                 // 任务从「进行中」→「完成」的那一刻:belief 快照 + 拉接待完成确认报告
-                if (data.active && data.all_done && !_prevAllDone) {
+                const finished = data.active && data.all_done && data.terminal !== false
+                    && data.state !== 'RECOVERY_REQUIRED';
+                if (finished && !_prevAllDone) {
                     loadBelief('任务结束');
                     loadReceptionReport();
                 }
-                _prevAllDone = !!(data.active && data.all_done);
+                _prevAllDone = !!finished;
                 if (data.active && !data.all_done) {
                     // 只在没启动轮询时才启动（手动刷新按钮触发时需要）
                     if (!taskPollingTimer) startTaskPolling();
@@ -426,7 +471,13 @@
             try {
                 const d = await (await fetch('/api/task_status')).json();
                 const tid = d.task_id || '';
-                if (_autoSeenTaskId === null) { _autoSeenTaskId = tid; return; }  // 首次:记住残留,不显示
+                if (_autoSeenTaskId === null) {
+                    _autoSeenTaskId = tid;
+                    if (d.state === 'RECOVERY_REQUIRED' || (d.blocks_new_motion && d.active && !d.all_done)) {
+                        startTaskPolling();
+                    }
+                    return;
+                }
                 if (tid && tid !== _autoSeenTaskId && d.active) {                 // 新 task_id = 刚被外部触发
                     _autoSeenTaskId = tid;
                     _prevAllDone = false;

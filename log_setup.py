@@ -154,6 +154,9 @@ def attach_process_log(service: str) -> Path:
     print(f"[log] {service} -> {path}", flush=True)
     if service == "master":
         print(f"[log] reception archive -> {os.environ[RECEPTION_RUNTIME_ENV]}", flush=True)
+        from brain_journal import attach_master_journal
+
+        attach_master_journal()
     return path
 
 

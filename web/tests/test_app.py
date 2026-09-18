@@ -102,3 +102,31 @@ class PanelAppTests(unittest.TestCase):
         self.assertTrue(payload["path"].endswith("master/12-00-00.log"))
         self.assertNotIn("tmux attach", payload["text"])
         self.assertNotIn("HTTP 探测", payload["text"])
+
+    def test_master_logs_default_to_brain_journal(self):
+        day = Path(self.logdir.name) / datetime.now().strftime("%Y-%m-%d") / "master"
+        day.mkdir(parents=True)
+        (day / "12-00-00.log").write_text("werkzeug noise\n", encoding="utf-8")
+        (day / "brain.log").write_text("INBOUND publish text=开始接待\n", encoding="utf-8")
+        response = self.client.get("/api/services/master/logs")
+        payload = response.get_json()
+        self.assertIn("开始接待", payload["text"])
+        self.assertNotIn("werkzeug noise", payload["text"])
+        self.assertTrue(payload["path"].endswith("master/brain.log"))
+
+    def test_master_http_kind_reads_access_log(self):
+        day = Path(self.logdir.name) / datetime.now().strftime("%Y-%m-%d") / "master"
+        day.mkdir(parents=True)
+        (day / "http-access.log").write_text("GET /api/task_status 200\n", encoding="utf-8")
+        response = self.client.get("/api/services/master/logs?kind=http")
+        payload = response.get_json()
+        self.assertIn("task_status", payload["text"])
+        self.assertTrue(payload["path"].endswith("master/http-access.log"))
+
+    def test_master_brain_kind_returns_pin(self):
+        day = Path(self.logdir.name) / datetime.now().strftime("%Y-%m-%d") / "master"
+        day.mkdir(parents=True)
+        (day / "brain.log").write_text("TASK fail error=timeout\n", encoding="utf-8")
+        (day / "brain.pin").write_text("TASK fail error=timeout\n", encoding="utf-8")
+        payload = self.client.get("/api/services/master/logs?kind=brain").get_json()
+        self.assertEqual("TASK fail error=timeout", payload["pin"])

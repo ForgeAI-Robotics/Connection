@@ -16,6 +16,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
 from log_setup import note_task_request
+from brain_journal import emit as journal_emit, inbound_from_flask
 from robot_api.intent import Intent, classify_task
 
 # The documented entry point is ``python master/run.py`` from the repository
@@ -43,6 +44,10 @@ def _validated_task_id(value):
             "仅允许字母、数字、点、下划线、冒号和连字符"
         )
     return value
+
+
+def _inbound():
+    return inbound_from_flask(request)
 
 
 def send_text_to_forntend(text):
@@ -110,6 +115,20 @@ def task_preflight():
             return jsonify({"ready": False, "error": "缺少有效 task 字段"}), 400
         task = task.strip()
         report = master_agent.get_task_preflight(task)
+        journal_emit(
+            "INBOUND",
+            event="preflight",
+            text=task,
+            **_inbound(),
+        )
+        journal_emit(
+            "PREFLIGHT",
+            event="http",
+            text=task,
+            ready=report.get("ready"),
+            required=report.get("required"),
+            blockers=report.get("blockers"),
+        )
         note_task_request(
             "preflight",
             task,
@@ -239,6 +258,21 @@ def publish_task():
             task = task.strip()
             entry = classify_task(task)
             if entry.intent is Intent.CHAT:
+                journal_emit(
+                    "INBOUND",
+                    event="chat",
+                    text=task,
+                    intent="chat",
+                    risk=entry.risk.value,
+                    **_inbound(),
+                )
+                journal_emit(
+                    "REJECTED",
+                    event="chat",
+                    text=task,
+                    error="闲聊不会发给大脑",
+                    ok=False,
+                )
                 note_task_request("intent", task, intent="chat", risk=entry.risk.value)
                 return jsonify(
                     {
@@ -250,6 +284,24 @@ def publish_task():
                     }
                 ), 200
             report = master_agent.get_task_preflight(task)
+            journal_emit(
+                "INBOUND",
+                event="publish",
+                text=task,
+                intent=entry.intent.value,
+                risk=entry.risk.value,
+                force_new=bool(data.get("force_new_task")),
+                id=task_id,
+                **_inbound(),
+            )
+            journal_emit(
+                "PREFLIGHT",
+                event="http",
+                text=task,
+                ready=report.get("ready"),
+                required=report.get("required"),
+                blockers=report.get("blockers"),
+            )
             note_task_request(
                 "preflight",
                 task,
@@ -259,6 +311,14 @@ def publish_task():
             )
             if report.get("required") and not report.get("ready"):
                 blockers = report.get("blockers") or []
+                journal_emit(
+                    "REJECTED",
+                    event="preflight",
+                    text=task,
+                    blockers=blockers,
+                    error="；".join(str(item) for item in blockers) or "下游服务未就绪",
+                    ok=False,
+                )
                 return jsonify(
                     {
                         "status": "rejected",
@@ -273,13 +333,18 @@ def publish_task():
                 ), 200
             note_task_request("publish", task, task_id=task_id)
             subtask_list = master_agent.publish_global_task(
-                task, data["refresh"], task_id
+                task, data["refresh"], task_id,
+                force_new_task=bool(data.get("force_new_task")),
             )
 
         accepted = not (
             isinstance(subtask_list, dict) and subtask_list.get("ignored") is True
         )
         actual_task_id = master_agent.current_task_id
+        error = (
+            subtask_list.get("error") or subtask_list.get("reasoning_explanation")
+            if isinstance(subtask_list, dict) else None
+        )
 
         return (
             jsonify(
@@ -290,7 +355,13 @@ def publish_task():
                     "requested_task_id": task_id,
                     "message": (
                         "Task published successfully"
-                        if accepted else "Task was not accepted"
+                        if accepted
+                        else (error or "Task was not accepted")
+                    ),
+                    "error": None if accepted else error,
+                    "blocks_new_motion": bool(
+                        isinstance(subtask_list, dict)
+                        and subtask_list.get("blocks_new_motion")
                     ),
                     "data": subtask_list,
                 }

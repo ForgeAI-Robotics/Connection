@@ -26,13 +26,26 @@ except ModuleNotFoundError as exc:
     from master.integrations.vla_client import VlaClient, VlaRecoveryRequired
 from .reception_store import ReceptionStore, now_iso
 
+try:
+    from brain_journal import emit as journal_emit
+    from brain_journal import get_journal
+except ModuleNotFoundError:
+    import sys
+
+    root = Path(__file__).resolve().parents[2]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from brain_journal import emit as journal_emit
+    from brain_journal import get_journal
+
 
 CONTRACT_VERSION = "fq/reception-lan/v1"
 OBJECT_ID = "cola_can_1"
-TERMINAL_TASK_STATES = {
+# 业务终态：允许开始新任务。RECOVERY_REQUIRED 不是终态，不能被新任务覆盖。
+BUSINESS_TERMINAL_STATES = {
     "SUCCEEDED", "COMPLETED_HAND_STATE_ONLY", "FAILED", "CANCELLED",
-    "RECOVERY_REQUIRED",
 }
+TERMINAL_TASK_STATES = BUSINESS_TERMINAL_STATES
 
 NAVIGATION_LEGS = {
     "table2": {
@@ -128,6 +141,10 @@ class ReceptionRealRunner:
         self.store = store or ReceptionStore(runtime_dir)
         self.state = {}
 
+    def _journal(self, kind, *, event=None, **fields):
+        fields.setdefault("task_id", (self.state or {}).get("task_id"))
+        journal_emit(kind, event=event, **fields)
+
     def _publish_state(self):
         self.state = self.store.save_state(self.state)
         if self.on_state:
@@ -143,6 +160,14 @@ class ReceptionRealRunner:
         self.store.append_event(event, **payload)
 
     def _step(self, order, phase, detail, status="success"):
+        self._journal(
+            "STEP",
+            event=status,
+            order=order,
+            phase=phase,
+            detail=detail,
+            ok=status == "success",
+        )
         if self.on_step:
             self.on_step(order, phase, detail, status)
 
@@ -436,7 +461,17 @@ class ReceptionRealRunner:
         }
 
     def _preflight(self):
-        snapshot = self._collect_preflight()
+        try:
+            snapshot = self._collect_preflight()
+        except Exception as exc:
+            self._journal(
+                "PREFLIGHT",
+                event="pipeline",
+                ready=False,
+                error=str(exc),
+                ok=False,
+            )
+            raise
         self._set_state(
             navigation_contract=snapshot["navigation_contract"])
         self._event(
@@ -446,6 +481,14 @@ class ReceptionRealRunner:
             vla_camera=snapshot["camera"],
             grasp_photo_verification_enabled=self.grasp_photo_verification_enabled,
             place_photo_verification_enabled=self.place_photo_verification_enabled,
+        )
+        dream = snapshot.get("dream") or {}
+        self._journal(
+            "PREFLIGHT",
+            event="pipeline",
+            ready=True,
+            blockers=dream.get("motion_blockers") or [],
+            note="DREAM/VLA/关系图就绪",
         )
         return snapshot
 
@@ -557,6 +600,7 @@ class ReceptionRealRunner:
         if str(terminal.get("state") or "").lower() != "succeeded":
             raise ReceptionPipelineError(
                 f"DREAM table2细检未成功: {terminal.get('state')}")
+        self.dream.calls.complete(command_id, True, payload=terminal)
         world = self.dream.world()
         graph = self.dream.relation_graph(world)
         contract_snapshot = self._validate_graph_contract(graph)
@@ -624,18 +668,37 @@ class ReceptionRealRunner:
             raise ReceptionPipelineError(f"{operation}的VLM+LLM判真未通过")
         return verification
 
-    def _start_state(self, task_id):
+    def _start_state(self, task_id, force_new_task=False):
         existing = self.store.load_state()
-        if existing and str(existing.get("state")) not in TERMINAL_TASK_STATES:
-            existing.update({
-                "state": "RECOVERY_REQUIRED",
-                "runtime_phase": "RECOVERY_REQUIRED",
-                "failure_reason": "Master重启后发现未完成真机任务，禁止自动补发动作",
-            })
-            self.state = existing
-            self._publish_state()
+        existing_state = str((existing or {}).get("state") or "")
+        unresolved = bool(existing) and existing_state not in BUSINESS_TERMINAL_STATES
+        if unresolved and not force_new_task:
+            if existing_state != "RECOVERY_REQUIRED":
+                existing.update({
+                    "state": "RECOVERY_REQUIRED",
+                    "runtime_phase": "RECOVERY_REQUIRED",
+                    "failure_reason": existing.get("failure_reason")
+                    or "发现未完成真机任务，禁止自动补发动作",
+                })
+                self.state = existing
+                self._publish_state()
+            else:
+                self.state = existing
+                if self.on_state:
+                    self.on_state(copy.deepcopy(self.state))
             raise ReceptionPipelineError(
-                "存在未完成真机任务，已标记RECOVERY_REQUIRED")
+                "存在未完成真机任务"
+                f"（{existing.get('state')}，task_id={existing.get('task_id')}）。"
+                "确认机器人已停止后，发布时带 force_new_task 才能开始新任务"
+            )
+        if unresolved and force_new_task:
+            self.state = existing or {}
+            self._event(
+                "PREVIOUS_TASK_SUPERSEDED_BY_FORCE_NEW",
+                previous_task_id=(existing or {}).get("task_id"),
+                previous_state=existing_state,
+                new_task_id=task_id,
+            )
         self.state = {
             "contract_version": self.contract_version,
             "task_id": task_id,
@@ -654,11 +717,13 @@ class ReceptionRealRunner:
         }
         self._publish_state()
         self._event("TASK_STARTED")
+        get_journal().set_current_task(task_id)
+        self._journal("TASK", event="start", type="reception", id=task_id)
 
-    def run(self, task_id):
+    def run(self, task_id, force_new_task=False):
         failed_phase = "INITIALIZING"
         try:
-            self._start_state(task_id)
+            self._start_state(task_id, force_new_task=force_new_task)
             failed_phase = "FETCHING_WORLD"
             self._preflight()
             preflight_detail = "DREAM、VLA和关系图均已就绪"
@@ -792,6 +857,7 @@ class ReceptionRealRunner:
             self._step(10, "放置结果确认", place_detail)
             self._step(11, "接待任务完成", "单罐取放全链路完成")
             self._event("TASK_SUCCEEDED")
+            self._journal("TASK", event="ok")
             return copy.deepcopy(self.state)
         except Exception as exc:
             if isinstance(exc, (DreamRecoveryRequired, VlaRecoveryRequired)):
@@ -816,6 +882,10 @@ class ReceptionRealRunner:
                     error_payload=getattr(exc, "payload", None),
                 )
                 self._step(99, "任务进入人工恢复", str(exc), "failure")
+                self._journal(
+                    "TASK", event="fail", phase=failed_phase,
+                    error=str(exc), ok=False, note="recovery_required",
+                )
                 return copy.deepcopy(self.state)
             if self.state.get("state") == "RECOVERY_REQUIRED":
                 self._event(
@@ -824,6 +894,10 @@ class ReceptionRealRunner:
                     error=str(exc),
                 )
                 self._step(99, "任务需要人工恢复", str(exc), "failure")
+                self._journal(
+                    "TASK", event="fail", phase="RECOVERY_REQUIRED",
+                    error=str(exc), ok=False, note="recovery_blocked",
+                )
                 return copy.deepcopy(self.state)
             if not self.state:
                 self.state = {
@@ -846,17 +920,24 @@ class ReceptionRealRunner:
                 error_payload=getattr(exc, "payload", None),
             )
             self._step(99, f"任务失败：{failed_phase}", str(exc), "failure")
+            self._journal(
+                "TASK", event="fail", phase=failed_phase,
+                error=str(exc), ok=False,
+            )
             return copy.deepcopy(self.state)
 
 
-def run_reception_real(task_id, config, *, on_step=None, on_state=None, **dependencies):
+def run_reception_real(
+    task_id, config, *, on_step=None, on_state=None, force_new_task=False,
+    **dependencies,
+):
     runner = ReceptionRealRunner(
         config,
         on_step=on_step,
         on_state=on_state,
         **dependencies,
     )
-    return runner.run(task_id)
+    return runner.run(task_id, force_new_task=force_new_task)
 
 
 def check_reception_real_preflight(config, **dependencies):

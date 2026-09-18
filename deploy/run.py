@@ -36,6 +36,20 @@ app.jinja_env.auto_reload = True
 
 MASTER_URL = os.getenv("MASTER_URL", "http://127.0.0.1:5000")
 SIM_URL = os.getenv("ROBOT_API_URL", load_robot_api_config().server_url)
+
+
+def _master_forward_headers():
+    source = request.headers.get("X-FQ-Source") or "deploy"
+    client = request.headers.get("X-FQ-Client") or request.remote_addr
+    operator = request.headers.get("X-FQ-Operator")
+    headers = {
+        "X-FQ-Source": str(source),
+        "X-FQ-Client": str(client or ""),
+        "X-FQ-Via": "deploy",
+    }
+    if operator:
+        headers["X-FQ-Operator"] = str(operator)
+    return headers
 VISION_CANDIDATES = (
     "http://127.0.0.1:5002",
     "http://127.0.0.1:5001",
@@ -191,7 +205,12 @@ def publish_task():
         data.setdefault("refresh", True)
         task_text = data["task"]
         note_task_request("publish", task_text, task_id=task_id)
-        resp = requests.post(f"{MASTER_URL}/publish_task", json=data, timeout=120)
+        resp = requests.post(
+            f"{MASTER_URL}/publish_task",
+            json=data,
+            timeout=120,
+            headers=_master_forward_headers(),
+        )
         result = resp.json()
         if (
             resp.status_code == 200
@@ -301,7 +320,10 @@ def task_preflight():
             return jsonify({"ready": False, "error": "缺少有效 task 字段"}), 400
         note_task_request("preflight", data["task"].strip())
         resp = requests.post(
-            f"{MASTER_URL}/api/task_preflight", json=data, timeout=45
+            f"{MASTER_URL}/api/task_preflight",
+            json=data,
+            timeout=45,
+            headers=_master_forward_headers(),
         )
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.ConnectionError:

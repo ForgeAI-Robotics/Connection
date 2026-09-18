@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import threading
 from datetime import datetime
 import uuid
@@ -15,7 +16,11 @@ from agent.collaboration import Collaborator
 
 # Load .env from project root
 _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
 load_dotenv(os.path.join(_project_root, '.env'))
+
+from brain_journal import OutboundCall, emit as journal_emit, get_journal
 
 # Bypass system proxy for API calls
 os.environ['NO_PROXY'] = '*'
@@ -78,6 +83,14 @@ class TaskQueue:
         return all(t["done"] for t in self.tasks)
 
 
+# 业务终态才允许覆盖；RECOVERY_REQUIRED 必须人工确认后才能 force_new_task。
+_BUSINESS_TERMINAL_STATES = {
+    "SUCCEEDED", "COMPLETED_HAND_STATE_ONLY", "FAILED", "CANCELLED",
+}
+_EXECUTED_FAILURE_STATUSES = {"failure", "exception", "timeout", "unknown"}
+_BLOCK_REMAINING_STATUSES = {"failure", "exception", "timeout", "unknown"}
+
+
 class GlobalAgent:
     def __init__(self, config_path="config.yaml"):
         """Initialize GlobalAgent"""
@@ -114,6 +127,9 @@ class GlobalAgent:
         self._pending_failure = None   # 等待人工录入的失败信息
         self._pending_success = None   # 等待人工决定是否录入的成功信息
         self._dispatch_token = 0       # 每次新任务自增，旧 dispatch thread 检测到变化后退出
+        self._dispatch_running = False
+        self._result_lock = threading.Lock()
+        self._inflight_by_robot = {}
 
         self.logger.info(f"Configuration loaded from {config_path} ...")
         self.logger.info(f"Master Configuration:\n{self.config}")
@@ -129,6 +145,157 @@ class GlobalAgent:
             return (load_robot_api_config().active_backend or "").lower() == "dream"
         except Exception:
             return False
+
+    def _subtask_wait_timeout_sec(self, *, camera: bool = False) -> float:
+        execution = self.config.get("execution") or {}
+        key = "camera_wait_timeout_sec" if camera else "subtask_wait_timeout_sec"
+        default = 120.0 if camera else 1800.0
+        try:
+            value = float(execution.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        return max(1.0, value)
+
+    def _reception_runtime_dir(self) -> str:
+        real_config = dict(self.config.get("reception_real") or {})
+        env_dir = os.environ.get("FQPLANNER_RECEPTION_RUNTIME")
+        if env_dir:
+            return env_dir
+        if real_config.get("runtime_dir"):
+            return str(real_config["runtime_dir"])
+        from pathlib import Path
+        return str(
+            Path(__file__).resolve().parent.parent / "sop" / "runtime" / "reception"
+        )
+
+    def _load_reception_snapshot(self):
+        if isinstance(self._reception_state, dict) and self._reception_state.get("state"):
+            snapshot = dict(self._reception_state)
+        else:
+            snapshot = None
+            try:
+                from sop.reception_store import ReceptionStore
+                snapshot = ReceptionStore(self._reception_runtime_dir()).load_state()
+            except Exception:
+                snapshot = None
+        if not snapshot:
+            return None
+        state = str(snapshot.get("state") or "")
+        if state == "RUNNING" and not getattr(self, "_reception_running", False):
+            snapshot = dict(snapshot)
+            snapshot["state"] = "RECOVERY_REQUIRED"
+            snapshot["runtime_phase"] = "RECOVERY_REQUIRED"
+            if not snapshot.get("failure_reason"):
+                snapshot["failure_reason"] = (
+                    "Master发现未完成真机任务且执行线程已不在，禁止自动补发动作"
+                )
+            try:
+                from sop.reception_store import ReceptionStore
+                ReceptionStore(self._reception_runtime_dir()).save_state(snapshot)
+            except Exception:
+                pass
+            self._reception_state = snapshot
+        return snapshot
+
+    def _journal(self, kind: str, *, event: str | None = None, **fields):
+        fields.setdefault("task_id", getattr(self, "current_task_id", None))
+        journal_emit(kind, event=event, **fields)
+
+    def _unresolved_persisted_reason(self):
+        snapshot = self._load_reception_snapshot()
+        if not snapshot:
+            return None
+        state = str(snapshot.get("state") or "")
+        if not state or state in _BUSINESS_TERMINAL_STATES:
+            return None
+        tid = snapshot.get("task_id") or ""
+        return (
+            f"存在未完成真机任务{(' ' + tid) if tid else ''}（状态 {state}）。"
+            "确认机器人已停止后，发布时带 force_new_task 才能开始新任务。"
+        )
+
+    def _reject_unresolved_task(self, reason: str) -> Dict:
+        self.logger.warning(f"[publish] 拒绝新任务: {reason}")
+        self._journal("REJECTED", event="blocked", error=reason, ok=False)
+        return {
+            "reasoning_explanation": reason,
+            "subtask_list": [],
+            "ignored": True,
+            "error": reason,
+            "blocks_new_motion": True,
+        }
+
+    def _begin_inflight(self, robot_name: str, task_id: str) -> dict:
+        slot = {
+            "task_id": str(task_id or ""),
+            "got_result": False,
+            "status": None,
+            "result": None,
+        }
+        with self._result_lock:
+            self._inflight_by_robot[robot_name] = slot
+        return slot
+
+    def _consume_inflight(self, robot_name: str, slot: dict) -> dict:
+        with self._result_lock:
+            if self._inflight_by_robot.get(robot_name) is slot:
+                self._inflight_by_robot.pop(robot_name, None)
+        return {
+            "got_result": bool(slot.get("got_result")),
+            "status": slot.get("status"),
+            "result": slot.get("result"),
+        }
+
+    def _wait_for_subtask_result(
+        self,
+        robot_name: str,
+        task_id: str,
+        *,
+        timeout: float,
+        abort=None,
+    ):
+        """Wait for the matching Slaver result. Never default missing evidence to success."""
+        slot = self._begin_inflight(robot_name, task_id)
+        got_free = self.collaborator.wait_agents_free(
+            [robot_name],
+            timeout=timeout,
+            abort=abort,
+        )
+        consumed = self._consume_inflight(robot_name, slot)
+        if abort is not None and abort():
+            return None
+        status = consumed["status"]
+        result = consumed["result"]
+        if consumed["got_result"]:
+            if status == "navigated":
+                status = "success"
+            if not status or status == "none":
+                status = "unknown"
+                result = result or "Slaver结果缺少有效status字段"
+            self._last_subtask_status = status
+            self._last_subtask_result = result
+            return status, result or ""
+        if not got_free:
+            status, result = "timeout", "等待Slaver结果超时，未得到终态证据"
+        else:
+            status, result = "unknown", "占用已释放但没有匹配的子任务结果"
+        self._last_subtask_status = status
+        self._last_subtask_result = result
+        self.logger.warning(
+            f"[Dispatch] 子任务无终态证据: status={status}, robot={robot_name}, task_id={task_id}"
+        )
+        return status, result
+
+    def _block_remaining_tasks(self, task_queue: "TaskQueue", reason: str) -> None:
+        remaining = task_queue.get_remaining()
+        for pending in remaining:
+            task_queue.mark_done(pending, status="blocked", result=reason)
+        if remaining:
+            self.logger.warning(
+                "[Dispatch] 已阻止后续 %d 个子任务: %s",
+                len(remaining),
+                reason,
+            )
 
     def _init_logger(self, logger_config):
         self.logger = logging.getLogger(logger_config["master_logger_name"])
@@ -207,47 +374,45 @@ class GlobalAgent:
         terminated = data.get("terminated", False)
         task_id = data.get("task_id")
         status = data.get("status")  # success/failure/none/exception/timeout
+        complete = bool(robot_name and subtask_handle and subtask_result)
 
-        if robot_name and subtask_handle and subtask_result:
-            self.logger.info(
-                f"================ Received result from {robot_name} ================"
-            )
-            self.logger.info(f"Subtask: {subtask_handle}\nResult: {subtask_result}\nStatus: {status}")
-            if (
-                task_id
-                and self.current_task_id
-                and str(task_id) != str(self.current_task_id)
-            ):
+        self.logger.info(
+            f"================ Received result from {robot_name} ================"
+        )
+        self.logger.info(f"Subtask: {subtask_handle}\nResult: {subtask_result}\nStatus: {status}")
+
+        with self._result_lock:
+            slot = self._inflight_by_robot.get(robot_name) if robot_name else None
+            if not slot or not task_id or str(task_id) != str(slot.get("task_id")):
                 self.logger.warning(
-                    "[STALE_RESULT] 忽略旧任务结果: "
-                    f"result_task_id={task_id}, current_task_id={self.current_task_id}"
+                    "[STALE_RESULT] 忽略不匹配的结果，不释放当前占用: "
+                    f"result_task_id={task_id}, waiting={None if not slot else slot.get('task_id')}"
                 )
-                self.collaborator.update_agent_busy(robot_name, False)
+                self.logger.info(
+                    "===================================================================="
+                )
+                return
+            if not complete:
+                self.logger.warning(
+                    "[WARNING] Received incomplete result data，保持当前等待，不当作成功"
+                )
+                self.logger.info(
+                    "===================================================================="
+                )
                 return
             if terminated:
                 self.logger.warning(f"[TERMINATE] Task {task_id} terminated by judge")
                 if task_id:
                     self.terminated_tasks.add(task_id)
-            # 存储最后一次子任务状态和结果，供 _dispath_subtasks_async 使用
+            slot["status"] = status
+            slot["result"] = subtask_result
+            slot["got_result"] = True
             self._last_subtask_status = status
             self._last_subtask_result = subtask_result
-            self.logger.info(
-                "===================================================================="
-            )
-            self.collaborator.update_agent_busy(robot_name, False)
-
-        else:
-            self.logger.warning("[WARNING] Received incomplete result data")
-            self.logger.info(
-                f"================ Received result from {robot_name} ================"
-            )
-            self.logger.info(f"Subtask: {subtask_handle}\nResult: {subtask_result}")
-            self.logger.info(
-                "===================================================================="
-            )
-            # 即使结果不完整也要释放 busy，否则 wait_agents_free 永远不返回
-            if robot_name:
-                self.collaborator.update_agent_busy(robot_name, False)
+        self.logger.info(
+            "===================================================================="
+        )
+        self.collaborator.update_agent_busy(robot_name, False)
 
     def _extract_json(self, input_string):
         if not isinstance(input_string, str):
@@ -436,7 +601,9 @@ class GlobalAgent:
 
         return check_reception_real_preflight(real_config)
 
-    def _run_reception_skill(self, task, task_id, refresh) -> Dict:
+    def _run_reception_skill(
+        self, task, task_id, refresh, force_new_task: bool = False
+    ) -> Dict:
         """接待 skill:master 不拆子任务,整体调用它自跑补货闭环(每步重新确认、失败按现状恢复、
         事后反思)。on_step 把每个子任务动态 append 进 current_task_queue → 前端 task_status
         复用显示(🧠思考 + 子任务✓)。补几罐运行时才知道,所以队列空起、边跑边填。"""
@@ -449,7 +616,7 @@ class GlobalAgent:
         if self._reception_running:
             msg = "已有一次接待正在进行,忽略这次重复触发(等它跑完,再说“开始接待”才会开新的一次)"
             self.logger.info(f"[reception] 忽略重复触发(上一次接待未结束): {self.current_task_desc}")
-            return {"reasoning_explanation": msg, "subtask_list": [], "ignored": True}
+            return self._reject_unresolved_task(msg)
 
         task_id = task_id or str(_uuid.uuid4()).replace("-", "")
         card = skill_card()
@@ -478,6 +645,22 @@ class GlobalAgent:
         self._pending_failure = None
         self._pending_success = None
         self.logger.info(f"[reception] 走接待 skill: {self.current_task_desc}")
+        self._journal(
+            "CLASSIFY",
+            event="reception",
+            text=self.current_task_desc,
+            type="reception",
+            id=task_id,
+        )
+        self._journal(
+            "PLAN",
+            event="ready",
+            type="reception",
+            id=task_id,
+            mode=reception_mode,
+            detail=reasoning,
+        )
+        get_journal().set_current_task(task_id)
 
         def _on_step(no, phase, detail, status):
             q = self.current_task_queue
@@ -502,52 +685,80 @@ class GlobalAgent:
                     real_config=real_config,
                     on_step=_on_step,
                     on_state=_on_state,
+                    force_new_task=force_new_task,
                 )
             except Exception as exc:
                 self.logger.error(f"[reception] skill 执行异常: {exc}")
                 _on_step(99, "接待任务异常", str(exc), "exception")
+                self._journal("TASK", event="fail", error=str(exc), ok=False)
             finally:
                 self._reception_running = False
 
         threading.Thread(target=_worker, daemon=True, name="reception_skill").start()
         return {"reasoning_explanation": reasoning, "subtask_list": []}
 
-    def publish_global_task(self, task: str, refresh: bool, task_id: str) -> Dict:
+    def publish_global_task(
+        self, task: str, refresh: bool, task_id: str, force_new_task: bool = False
+    ) -> Dict:
         """Publish a global task to all Agents"""
         self.logger.info(f"Publishing global task: {task}")
+
+        if self._reception_running:
+            return self._reject_unresolved_task(
+                "已有一次接待正在执行，禁止覆盖未完成动作"
+            )
+        if self._dispatch_running and not force_new_task:
+            return self._reject_unresolved_task(
+                "已有通用任务正在调度，禁止覆盖未完成动作"
+            )
+        if not force_new_task:
+            persisted = self._unresolved_persisted_reason()
+            if persisted:
+                return self._reject_unresolved_task(persisted)
 
         # 每条新顶层任务独立规划，清空历史避免旧任务计划干扰 LLM
         self.conversation_history = []
 
         if self._is_reception_task(task):
             # 会议接待:走接待 skill(自带 SOP+经验,内部自跑补货闭环),不经通用 planner
-            return self._run_reception_skill(task, task_id, refresh)
+            return self._run_reception_skill(
+                task, task_id, refresh, force_new_task=force_new_task
+            )
 
         if self._is_look_task(task):
+            task_type = "look"
             reasoning_and_subtasks = self._plan_look_task(task)
             response = json.dumps(reasoning_and_subtasks, ensure_ascii=False)
             self.logger.info(f"[look] 现场观察规划: {reasoning_and_subtasks}")
         elif self._is_desk_tidy_task(task):
+            task_type = "tidy"
             # demo「整理桌面」:关系判断→技能规划,不经通用 planner(ALFWorld 骨架)
             reasoning_and_subtasks = self._plan_desk_tidy(task)
             response = json.dumps(reasoning_and_subtasks, ensure_ascii=False)
             self.logger.info(f"[demo] 桌面整理规划: {reasoning_and_subtasks}")
         else:
-            experiences = self._load_experiences(task=task)
-            response = self.planner.forward(task, self.conversation_history, experiences)
-            self.logger.info(f"Raw response from planner: {response}")
-            reasoning_and_subtasks = self._extract_json(response)
-
-            attempt = 0
-            while (not self.reasoning_and_subtasks_is_right(reasoning_and_subtasks)) and (
-                attempt < self.config["model"]["model_retry_planning"]
-            ):
-                self.logger.warning(
-                    f"Attempt {attempt + 1} to extract JSON failed. Retrying..."
-                )
-                response = self.planner.forward(task, history=None, experiences=experiences)
+            task_type = "generic"
+            plan_call = OutboundCall("llm", "plan", task_id=task_id, text=task)
+            try:
+                experiences = self._load_experiences(task=task)
+                response = self.planner.forward(task, self.conversation_history, experiences)
+                self.logger.info(f"Raw response from planner: {response}")
                 reasoning_and_subtasks = self._extract_json(response)
-                attempt += 1
+
+                attempt = 0
+                while (not self.reasoning_and_subtasks_is_right(reasoning_and_subtasks)) and (
+                    attempt < self.config["model"]["model_retry_planning"]
+                ):
+                    self.logger.warning(
+                        f"Attempt {attempt + 1} to extract JSON failed. Retrying..."
+                    )
+                    response = self.planner.forward(task, history=None, experiences=experiences)
+                    reasoning_and_subtasks = self._extract_json(response)
+                    attempt += 1
+                plan_call.end(True)
+            except Exception as exc:
+                plan_call.end(False, error=exc)
+                raise
 
         if self._is_dream_backend() and isinstance(reasoning_and_subtasks, dict):
             from agents.dream_route_policy import enforce_dream_route_plan
@@ -582,14 +793,28 @@ class GlobalAgent:
         self.current_task_id = task_id
         self.current_task_desc = task if isinstance(task, str) else (task[0] if task else "")
         self.current_reasoning = reasoning_and_subtasks.get("reasoning_explanation", "")
+        labels = [
+            item.get("subtask")
+            for item in subtask_list
+            if isinstance(item, dict) and item.get("subtask")
+        ]
+        self._journal("CLASSIFY", event=task_type, text=task, type=task_type, id=task_id)
+        self._journal(
+            "PLAN",
+            event="ready",
+            type=task_type,
+            id=task_id,
+            detail=" → ".join(str(item) for item in labels),
+        )
+        get_journal().set_current_task(task_id)
+        self._journal("TASK", event="start", type=task_type, id=task_id)
 
-        # 使旧 dispatch thread 失效，并重置共享状态
+        # 使旧 dispatch thread 失效。不清全体 busy：本地停调度不能证明远端已停。
         self._dispatch_token += 1
         my_token = self._dispatch_token
+        self._dispatch_running = True
         self._pending_failure = None
         self._pending_success = None
-        for agent_name in self.collaborator.read_all_agents_name():
-            self.collaborator.update_agent_busy(agent_name, False)
 
         threading.Thread(
             target=asyncio.run,
@@ -608,12 +833,29 @@ class GlobalAgent:
         dispatch_token: int = 0,
     ):
         """逐个发送子任务，每个完成后检查场景变化并增量规划。"""
-        robot_name = None
-        task_had_failure = False  # 任一非拍照子任务失败则置 True
 
         def _superseded():
             """检查是否被新任务取代。"""
             return self._dispatch_token != dispatch_token
+
+        try:
+            await self._dispath_subtasks_body(
+                task, task_id, task_queue, refresh, _superseded
+            )
+        finally:
+            if self._dispatch_token == dispatch_token:
+                self._dispatch_running = False
+
+    async def _dispath_subtasks_body(
+        self,
+        task: str,
+        task_id: str,
+        task_queue: TaskQueue,
+        refresh: bool,
+        _superseded,
+    ):
+        robot_name = None
+        task_had_failure = False
 
         while not task_queue.all_done():
             if _superseded():
@@ -642,46 +884,48 @@ class GlobalAgent:
             self._last_subtask_result = None
 
             self.logger.info(f"Sending: {current['subtask']}")
+            call = OutboundCall(
+                "slaver",
+                "subtask",
+                command_id=f"{task_id}-{current.get('subtask_order') or current.get('order') or ''}",
+                task_id=task_id,
+                detail=current["subtask"],
+            )
             # 先标 busy 再发消息，防止机器人响应过快导致 busy flag 竞争
             self.collaborator.update_agent_busy(robot_name, True)
             self.collaborator.send(
                 f"fqplanner_to_{robot_name}", json.dumps(subtask_data)
             )
-            self.collaborator.wait_agents_free([robot_name])
-
-            if _superseded():
+            waited = self._wait_for_subtask_result(
+                robot_name,
+                task_id,
+                timeout=self._subtask_wait_timeout_sec(),
+                abort=_superseded,
+            )
+            if waited is None or _superseded():
+                call.end(False, error="等待期间被新任务取代")
                 self.logger.info(f"[Dispatch] 等待期间被新任务取代，退出")
                 return
 
-            subtask_status = self._last_subtask_status or "success"
-            subtask_result = self._last_subtask_result or ""
-            # "navigated" is an ALFWorld intermediate status — the slaver finished at a
-            # navigation step without a subsequent action.  Treat it as success so the
-            # frontend shows ✓ and task_had_failure stays clean.
-            if subtask_status == "navigated":
-                subtask_status = "success"
+            subtask_status, subtask_result = waited
+            call.end(
+                subtask_status == "success",
+                payload={"state": subtask_status, "result": {"message": subtask_result}},
+                error=None if subtask_status == "success" else subtask_result,
+            )
             task_queue.mark_done(current, status=subtask_status, result=subtask_result)
 
-            # Real DREAM route legs are strict dependencies.  A failed leg may
-            # never be skipped while a later navigation leg is dispatched.
-            if (
-                subtask_status in ("failure", "exception", "timeout")
-                and self._is_dream_backend()
+            # Real DREAM route legs, 以及无终态证据的步骤，都不能继续派发后续动作。
+            if subtask_status in _BLOCK_REMAINING_STATUSES and (
+                subtask_status in {"timeout", "unknown"} or self._is_dream_backend()
             ):
                 task_had_failure = True
-                remaining = task_queue.get_remaining()
-                for pending in remaining:
-                    task_queue.mark_done(
-                        pending,
-                        status="failure",
-                        result=(
-                            "DREAM前置子任务失败，严格串行安全合同已阻止后续任务："
-                            f"{current['subtask']}"
-                        ),
-                    )
-                self.logger.warning(
-                    "[DREAM fail-fast] 前置子任务失败；已阻止后续 %d 个子任务",
-                    len(remaining),
+                self._block_remaining_tasks(
+                    task_queue,
+                    (
+                        "前置子任务无可靠终态或已失败，已阻止后续任务："
+                        f"{current['subtask']}（{subtask_status}）"
+                    ),
                 )
                 break
 
@@ -745,7 +989,7 @@ class GlobalAgent:
 
             # 子任务失败/异常时，拍照诊断（但拍照任务本身失败不再触发拍照，避免死循环）
             is_camera_task = "拍照" in current["subtask"]
-            if self._last_subtask_status in ("failure", "exception", "timeout") and not is_camera_task:
+            if self._last_subtask_status in ("failure", "exception") and not is_camera_task:
                 task_had_failure = True
                 # demo「整理桌面」:失败技能直接重插到队尾重做(不走相机诊断/LLM 重规划);
                 # 用 inserted 判断避免无限重插——重插的那次再失败,就不再重插了。
@@ -797,8 +1041,8 @@ class GlobalAgent:
                                 )
                                 for t in remaining:
                                     task_queue.mark_done(
-                                        t, status="failure",
-                                        result=f"前置关键步骤失败（{current['subtask']}），已跳过"
+                                        t, status="blocked",
+                                        result=f"前置关键步骤失败（{current['subtask']}），未执行"
                                     )
                             break
                     except Exception:
@@ -866,6 +1110,10 @@ class GlobalAgent:
                     "total": total_cnt,
                 }
                 self.logger.info(f"[Experience] Task failed, waiting for human input")
+                self._journal(
+                    "TASK", event="fail", id=task_id, ok=False,
+                    detail=f"{completed_cnt}/{total_cnt}",
+                )
             else:
                 self._pending_success = {
                     "task_id": task_id,
@@ -874,6 +1122,7 @@ class GlobalAgent:
                     "total": total_cnt,
                 }
                 self.logger.info(f"[Experience] Task succeeded, asking user for optional experience")
+                self._journal("TASK", event="ok", id=task_id)
 
     def _send_camera_task(self, robot_name: str, task_id: str, description: str):
         """发送拍照子任务并等待完成。"""
@@ -885,11 +1134,31 @@ class GlobalAgent:
         self._last_subtask_status = None
         self._last_subtask_result = None
         self.collaborator.update_agent_busy(robot_name, True)
+        call = OutboundCall(
+            "slaver", "camera", command_id=f"{task_id}-camera",
+            task_id=task_id, detail=description,
+        )
         self.collaborator.send(
             f"fqplanner_to_{robot_name}", json.dumps(subtask_data)
         )
-        self.collaborator.wait_agents_free([robot_name])
-        self.logger.info(f"[Camera] 拍照完成，状态: {self._last_subtask_status}")
+        waited = self._wait_for_subtask_result(
+            robot_name,
+            task_id,
+            timeout=self._subtask_wait_timeout_sec(camera=True),
+        )
+        if waited is None:
+            call.end(False, error="拍照等待被中断，未得到终态证据")
+            self.logger.warning("[Camera] 拍照等待被中断，未得到终态证据")
+            return
+        status, result = waited
+        call.end(
+            status == "success",
+            payload={"state": status, "result": {"message": result}},
+            error=None if status == "success" else result,
+        )
+        self.logger.info(f"[Camera] 拍照结束，状态: {status}")
+        if status not in ("success",):
+            self.logger.warning(f"[Camera] 拍照未成功: {status} {result}")
 
     @staticmethod
     def _stringify_subtask_result(value) -> str:
@@ -904,8 +1173,16 @@ class GlobalAgent:
 
     def get_task_status(self) -> Dict:
         """返回当前任务的执行状态，供前端查询。"""
+        snapshot = self._load_reception_snapshot()
         if not self.current_task_queue:
-            return {"active": False}
+            if snapshot and str(snapshot.get("state") or "") not in _BUSINESS_TERMINAL_STATES:
+                return self._status_from_unresolved_snapshot(snapshot)
+            return {
+                "active": False,
+                "terminal": True,
+                "blocks_new_motion": False,
+                "can_resume": False,
+            }
 
         q = self.current_task_queue
         tasks = []
@@ -915,29 +1192,62 @@ class GlobalAgent:
                 "robot_name": t["robot_name"],
                 "subtask": t["subtask"],
                 "done": t["done"],
-                "status": t.get("status"),  # None | "success" | "failure" | "exception" | "timeout"
+                "status": t.get("status"),  # None | success | failure | exception | timeout | unknown | blocked
                 "inserted": t.get("inserted", False),
                 "result": self._stringify_subtask_result(t.get("result")),
             })
 
         failed = any(
-            t["done"] and t.get("status") in ("failure", "exception", "timeout")
+            t["done"] and t.get("status") in _EXECUTED_FAILURE_STATUSES
             for t in tasks
         )
+        blocked_steps = sum(1 for t in tasks if t["done"] and t.get("status") == "blocked")
         reception_running = getattr(self, "_reception_running", False)
+        dispatch_running = getattr(self, "_dispatch_running", False)
+        reception_state = self._reception_state
+        reception_status = str((reception_state or {}).get("state") or "")
+        recovery_required = reception_status == "RECOVERY_REQUIRED"
+        unresolved = recovery_required or (
+            reception_status
+            and reception_status not in _BUSINESS_TERMINAL_STATES
+        )
+        all_done = (
+            q.all_done()
+            and not reception_running
+            and not recovery_required
+        )
         result = {
             "active": True,
             "task_id": self.current_task_id,
             "task": self.current_task_desc,
             "reasoning": getattr(self, "current_reasoning", ""),
-            "all_done": q.all_done() and not reception_running,
-            "failed": failed,
+            "all_done": all_done,
+            "failed": failed or recovery_required,
+            "has_failures": failed or recovery_required,
             "total": len(tasks),
-            "completed": len([t for t in tasks if t["done"]]),
+            "completed": len([t for t in tasks if t["done"] and t.get("status") != "blocked"]),
+            "blocked_steps": blocked_steps,
             "subtask_list": tasks,
+            "state": reception_status or (
+                "RUNNING" if (reception_running or dispatch_running or not all_done) else (
+                    "FAILED" if failed else "SUCCEEDED"
+                )
+            ),
+            "terminal": all_done and not unresolved,
+            "execution_active": bool(reception_running or dispatch_running),
+            "blocks_new_motion": bool(
+                unresolved or reception_running or dispatch_running or not all_done
+            ),
+            "can_resume": False,
         }
-        if self._reception_state is not None:
-            result["reception_state"] = self._reception_state
+        if reception_state is not None:
+            result["reception_state"] = reception_state
+        if recovery_required:
+            result["state"] = "RECOVERY_REQUIRED"
+            result["all_done"] = False
+            result["terminal"] = False
+            result["execution_active"] = False
+            result["blocks_new_motion"] = True
         # ALFWorld: expose ground-truth won signal separately from subtask status
         try:
             from robot_api.client import check_success
@@ -947,6 +1257,28 @@ class GlobalAgent:
         except Exception:
             pass
         return result
+
+    def _status_from_unresolved_snapshot(self, snapshot: Dict) -> Dict:
+        state = str(snapshot.get("state") or "RECOVERY_REQUIRED")
+        return {
+            "active": True,
+            "task_id": snapshot.get("task_id"),
+            "task": self.current_task_desc or snapshot.get("task_id") or "未完成真机任务",
+            "reasoning": getattr(self, "current_reasoning", "") or snapshot.get("failure_reason") or "",
+            "all_done": False,
+            "failed": True,
+            "has_failures": True,
+            "total": 0,
+            "completed": 0,
+            "blocked_steps": 0,
+            "subtask_list": [],
+            "state": state,
+            "terminal": False,
+            "execution_active": False,
+            "blocks_new_motion": True,
+            "can_resume": False,
+            "reception_state": snapshot,
+        }
 
     def _incremental_replan(
         self, original_task: str, task_queue: TaskQueue, changes: list, vlm_feedback: str = None

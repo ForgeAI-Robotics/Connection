@@ -9,6 +9,14 @@ from datetime import datetime
 
 from .http_client import HttpClient, HttpContractError
 
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+from brain_journal import CallBook, summarize_vla_request
+
 
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
 
@@ -28,6 +36,7 @@ class VlaClient:
             contract_version=contract_version,
         )
         self.contract_version = contract_version
+        self.calls = CallBook("vla")
 
     def health(self):
         return self.http.request_json("GET", "/health")[0]
@@ -53,22 +62,39 @@ class VlaClient:
     def submit_task(
         self, payload, *, recovery_attempts=4, recovery_interval_sec=1.0
     ):
+        call = self.calls.start(
+            str(payload.get("operation") or "task"),
+            command_id=payload.get("command_id"),
+            task_id=payload.get("task_id"),
+            **summarize_vla_request(payload),
+        )
         try:
-            return self.http.request_json(
+            body = self.http.request_json(
                 "POST",
                 "/v1/vla/tasks",
                 payload,
                 accepted_statuses=(200, 202),
             )[0]
+            call.accepted(body)
+            return body
         except HttpContractError as exc:
             # 409 and an explicit "action_started=false" response are definite.
             # Network loss/504 may occur after the physical action was accepted.
             if exc.status_code == 409 or self._definitely_not_started(exc):
+                self.calls.complete(
+                    payload.get("command_id"), False, payload=exc.payload, error=exc
+                )
                 raise
             if exc.status_code not in {None, 504}:
+                self.calls.complete(
+                    payload.get("command_id"), False, payload=exc.payload, error=exc
+                )
                 raise
             command_id = payload.get("command_id")
             if not command_id:
+                self.calls.complete(
+                    payload.get("command_id"), False, payload=exc.payload, error=exc
+                )
                 raise VlaRecoveryRequired(
                     "VLA POST状态不确定且缺少command_id，禁止自动重发",
                     payload={"cause": str(exc)},
@@ -79,6 +105,7 @@ class VlaClient:
                 interval_sec=recovery_interval_sec,
             )
             if recovered is not None:
+                call.accepted(recovered)
                 return {
                     "accepted": True,
                     "command_id": command_id,
@@ -86,6 +113,7 @@ class VlaClient:
                     "recovered_after_post_error": True,
                     "detail": recovered,
                 }
+            self.calls.complete(command_id, False, payload=exc.payload, error=exc)
             raise VlaRecoveryRequired(
                 f"VLA POST结果不确定，原command_id有界重查仍无法确认: {command_id}",
                 payload={"command_id": command_id, "cause": str(exc)},
@@ -114,15 +142,20 @@ class VlaClient:
         deadline = time.monotonic() + float(timeout_sec)
         last = None
         uncertain_count = 0
+        call = self.calls.ensure("wait", command_id)
         while time.monotonic() < deadline:
             try:
                 last = self.task(command_id)
                 uncertain_count = 0
             except HttpContractError as exc:
                 if exc.status_code not in {None, 404, 504}:
+                    self.calls.complete(
+                        command_id, False, payload=exc.payload, error=exc
+                    )
                     raise
                 uncertain_count += 1
                 if uncertain_count >= max(1, int(uncertain_attempts)):
+                    self.calls.complete(command_id, False, payload=last, error=exc)
                     raise VlaRecoveryRequired(
                         f"VLA原任务连续无法确认，禁止补发动作: {command_id}",
                         payload={
@@ -136,14 +169,19 @@ class VlaClient:
                 continue
             if on_update:
                 on_update(last)
+            call.update(last)
             state = str(last.get("state") or "").lower()
             if state in TERMINAL_STATES:
+                if state != "succeeded":
+                    self.calls.complete(command_id, False, payload=last)
                 return last
             time.sleep(float(poll_interval_sec))
-        raise HttpContractError(
+        error = HttpContractError(
             f"VLA任务等待终态超时: {command_id}",
             payload=last,
         )
+        self.calls.complete(command_id, False, payload=last, error=error)
+        raise error
 
     def cancel(self, task_id, command_id, reason="operator_cancelled"):
         quoted = urllib.parse.quote(str(command_id), safe="")
@@ -228,13 +266,17 @@ class VlaClient:
         result_policy="strict_object_evidence",
     ):
         state = str(terminal.get("state") or "").lower()
-        result = self._require_identity(
-            terminal,
-            task_id=task_id,
-            command_id=command_id,
-            operation="pick",
-            object_id=object_id,
-        )
+        try:
+            result = self._require_identity(
+                terminal,
+                task_id=task_id,
+                command_id=command_id,
+                operation="pick",
+                object_id=object_id,
+            )
+        except HttpContractError as exc:
+            self.calls.complete(command_id, False, payload=terminal, error=exc)
+            raise
         checks = (
             state == "succeeded",
             result.get("success") is True,
@@ -255,10 +297,13 @@ class VlaClient:
             raise HttpContractError(
                 f"不支持的VLA结果策略: {result_policy}", payload=terminal)
         if not all(checks):
-            raise HttpContractError(
+            error = HttpContractError(
                 f"VLA抓取终态不满足推进条件: state={state}",
                 payload=terminal,
             )
+            self.calls.complete(command_id, False, payload=terminal, error=error)
+            raise error
+        self.calls.complete(command_id, True, payload=terminal)
         return terminal
 
     def require_place_success(
@@ -266,13 +311,17 @@ class VlaClient:
         result_policy="strict_object_evidence",
     ):
         state = str(terminal.get("state") or "").lower()
-        result = self._require_identity(
-            terminal,
-            task_id=task_id,
-            command_id=command_id,
-            operation="place",
-            object_id=object_id,
-        )
+        try:
+            result = self._require_identity(
+                terminal,
+                task_id=task_id,
+                command_id=command_id,
+                operation="place",
+                object_id=object_id,
+            )
+        except HttpContractError as exc:
+            self.calls.complete(command_id, False, payload=terminal, error=exc)
+            raise
         checks = (
             state == "succeeded",
             result.get("success") is True,
@@ -297,8 +346,11 @@ class VlaClient:
             raise HttpContractError(
                 f"不支持的VLA结果策略: {result_policy}", payload=terminal)
         if not all(checks):
-            raise HttpContractError(
+            error = HttpContractError(
                 f"VLA放置终态不满足推进条件: state={state}, object={object_id}",
                 payload=terminal,
             )
+            self.calls.complete(command_id, False, payload=terminal, error=error)
+            raise error
+        self.calls.complete(command_id, True, payload=terminal)
         return terminal

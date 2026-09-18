@@ -60,7 +60,7 @@ def skill_card() -> dict:
 def run_reception_skill(task="开始接待", on_step=None, backend="mock",
                         scenario="normal", headcount=4, reflect=True,
                         mode=None, task_id=None, real_config=None,
-                        on_state=None, **kw):
+                        on_state=None, force_new_task=False, **kw):
     """执行接待 skill:跑闭环,通过 on_step 上报【子任务级】进度。返回 trace(dict)。
 
     master 传的 on_step 把每个子任务写进 task_status(前端复用 🧠思考 + 子任务✓ 显示)。
@@ -86,11 +86,42 @@ def run_reception_skill(task="开始接待", on_step=None, backend="mock",
             real_config or {},
             on_step=on_step,
             on_state=on_state,
+            force_new_task=bool(force_new_task),
         )
     if selected_mode != "mock":
         raise ValueError(f"不支持的接待模式: {selected_mode}")
 
     from reception_loop import run_reception
+
+    try:
+        from brain_journal import emit as journal_emit
+        from brain_journal import get_journal
+    except ImportError:
+        journal_emit = None
+        get_journal = None
+
+    if get_journal is not None:
+        get_journal().set_current_task(task_id)
+    if journal_emit is not None:
+        journal_emit(
+            "TASK", event="start", type="reception", id=task_id, mode="mock",
+        )
+
+    original_on_step = on_step
+
+    def on_step(no, phase, detail, status="success"):
+        if journal_emit is not None:
+            journal_emit(
+                "STEP",
+                event=status,
+                order=no,
+                phase=phase,
+                detail=detail,
+                ok=status == "success",
+                task_id=task_id,
+            )
+        if original_on_step:
+            original_on_step(no, phase, detail, status)
 
     # retrieve Task Specific Memory(上次人类示范学到的【具体实例/特情】)→ re-ground 到本次接待。
     # 内容全部来自 demonstration_*.json、不写死:换示范视频→learn_from_demo 写新文件→这里自动读到新的。
@@ -105,8 +136,20 @@ def run_reception_skill(task="开始接待", on_step=None, backend="mock",
     except Exception:
         pass
 
-    return run_reception(scenario=scenario, backend=backend, headcount=headcount,
-                         reflect=reflect, on_step=on_step, **kw)
+    try:
+        result = run_reception(
+            scenario=scenario, backend=backend, headcount=headcount,
+            reflect=reflect, on_step=on_step, **kw,
+        )
+    except Exception as exc:
+        if journal_emit is not None:
+            journal_emit(
+                "TASK", event="fail", error=str(exc), ok=False, id=task_id,
+            )
+        raise
+    if journal_emit is not None:
+        journal_emit("TASK", event="ok", type="reception", id=task_id, mode="mock")
+    return result
 
 
 if __name__ == "__main__":

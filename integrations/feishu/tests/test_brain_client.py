@@ -36,10 +36,10 @@ class FakeSession:
             raise self.error
         return self.get_response
 
-    def post(self, url, json, timeout):
+    def post(self, url, json=None, timeout=None, headers=None, **kwargs):
         if self.error:
             raise self.error
-        self.last_post = (url, json, timeout)
+        self.last_post = (url, json, timeout, headers)
         return self.post_response
 
 
@@ -68,6 +68,7 @@ class BrainClientTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(session.last_post[1]["task_id"], "feishu_m1")
         self.assertIs(session.last_post[1]["refresh"], True)
+        self.assertEqual(session.last_post[3]["X-FQ-Source"], "feishu")
 
     async def test_publish_rejects_mismatched_task_id(self):
         session = FakeSession(

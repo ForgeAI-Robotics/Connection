@@ -44,7 +44,7 @@ class ProcessLogLayoutTest(unittest.TestCase):
             path = log_setup.reception_runtime_dir(now=stamp)
             self.assertEqual(Path(raw) / "2026-09-16" / "reception", path)
 
-    def test_reception_store_mirrors_into_process_log(self):
+    def test_reception_store_does_not_spam_process_log(self):
         from sop.reception_store import ReceptionStore
 
         with tempfile.TemporaryDirectory() as raw:
@@ -56,18 +56,23 @@ class ProcessLogLayoutTest(unittest.TestCase):
             with mock.patch("sys.stdout", captured):
                 store.save_state({
                     "task_id": "abc",
-                    "state": "FAILED",
-                    "runtime_phase": "FAILED",
-                    "failure_reason": "DREAM定位尚未Approve",
+                    "state": "RUNNING",
+                    "runtime_phase": "NAVIGATING_TO_TABLE2",
+                })
+                store.save_state({
+                    "task_id": "abc",
+                    "state": "RUNNING",
+                    "runtime_phase": "NAVIGATING_TO_TABLE2",
                 })
                 store.append_event(
                     "TASK_FAILED", task_id="abc", error="DREAM定位尚未Approve")
             text = captured.getvalue()
-            self.assertIn("[reception] task", text)
-            self.assertIn("TASK_FAILED", text)
-            self.assertIn("DREAM定位尚未Approve", text)
+            self.assertNotIn("[reception] task", text)
+            self.assertNotIn("NAVIGATING_TO_TABLE2", text)
             self.assertTrue((Path(raw) / "archive" / "current_task.json").exists())
-            self.assertTrue((Path(raw) / "archive" / "events.jsonl").exists())
+            events = (Path(raw) / "archive" / "events.jsonl").read_text(encoding="utf-8")
+            self.assertIn("TASK_FAILED", events)
+            self.assertIn("DREAM定位尚未Approve", events)
 
     def test_monitor_log_is_under_the_day_service_folder(self):
         with tempfile.TemporaryDirectory() as raw:

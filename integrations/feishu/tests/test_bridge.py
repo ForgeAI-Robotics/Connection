@@ -26,11 +26,11 @@ class FakeBrain:
             self.last_status = self.statuses.pop(0)
         return BrainStatus(self.last_status)
 
-    async def publish_task(self, task, task_id):
+    async def publish_task(self, task, task_id, **kwargs):
         self.published.append((task, task_id))
         return {"status": "success", "accepted": True, "task_id": task_id}
 
-    async def task_preflight(self, task):
+    async def task_preflight(self, task, **kwargs):
         return BrainPreflight({"ready": True, "required": False, "blockers": []})
 
 
@@ -337,7 +337,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_required_preflight_blocks_motion_task(self):
         class BlockedBrain(FakeBrain):
-            async def task_preflight(self, task):
+            async def task_preflight(self, task, **kwargs):
                 return BrainPreflight(
                     {
                         "ready": False,
@@ -365,7 +365,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_publish_identity_mismatch_is_not_reported_as_execution_failure(self):
         class MismatchBrain(FakeBrain):
-            async def publish_task(self, task, task_id):
+            async def publish_task(self, task, task_id, **kwargs):
                 raise BrainTaskIdMismatch("returned another_task")
 
         brain = MismatchBrain([{"active": False}])

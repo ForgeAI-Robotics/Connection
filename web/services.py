@@ -15,6 +15,14 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from log_setup import append_monitor_log, compact_log_text, log_root
+from brain_journal import (
+    BRAIN_LOG,
+    HTTP_ACCESS_LOG,
+    PIN_FILE,
+    latest_named_log,
+)
+
+MASTER_NAMED_LOGS = {BRAIN_LOG, HTTP_ACCESS_LOG}
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +111,8 @@ def summarize_task_status(payload: dict[str, Any]) -> str:
     progress = ""
     if completed is not None and total is not None:
         progress = f" {completed}/{total}"
+    if payload.get("state") == "RECOVERY_REQUIRED":
+        return f"待恢复 {task}".strip()
     if payload.get("all_done"):
         if payload.get("failed"):
             return f"已结束(失败) {task}".strip()
@@ -480,7 +490,17 @@ def descendants(pid: int) -> list[int]:
     return out
 
 
-def latest_log_file(service: Service) -> Optional[Path]:
+def latest_log_file(service: Service, kind: str | None = None) -> Optional[Path]:
+    name = service.log_service
+    selected = str(kind or "auto").strip().lower()
+    if name == "master" and selected in {"auto", "brain"}:
+        found = latest_named_log("master", BRAIN_LOG)
+        if found:
+            return found
+        if selected == "brain":
+            return None
+    if name == "master" and selected == "http":
+        return latest_named_log("master", HTTP_ACCESS_LOG)
     files: list[Path] = []
     name = service.log_service
     root = log_root()
@@ -498,6 +518,8 @@ def latest_log_file(service: Service) -> Optional[Path]:
             if not folder.is_dir():
                 continue
             files.extend(folder.glob("*.log"))
+            if name == "master":
+                files = [path for path in files if path.name not in MASTER_NAMED_LOGS]
             if files:
                 break
     if service.extra_log and service.extra_log.exists():
@@ -511,6 +533,17 @@ def latest_log_file(service: Service) -> Optional[Path]:
     if not timed:
         return None
     return max(timed)[1]
+
+
+def master_pin_text() -> Optional[str]:
+    path = latest_named_log("master", PIN_FILE)
+    if path is None:
+        return None
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text or None
 
 
 def display_log_path(path: Path) -> str:

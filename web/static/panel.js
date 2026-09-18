@@ -20,6 +20,7 @@ let logToken = 0;
 let logAbort = null;
 let statusInFlight = false;
 let logPath = "";
+let logKind = "brain";
 let reviewWasReady = null;
 let reviewOpened = false;
 
@@ -47,6 +48,7 @@ function selectLayer(layer) {
   });
   render(true);
   showLogPlaceholder();
+  updateLogKinds();
   loadLogs(true);
 }
 
@@ -59,6 +61,7 @@ function selectService(id) {
   logPath = "";
   markActive();
   showLogPlaceholder();
+  updateLogKinds();
   loadLogs(true);
 }
 
@@ -193,8 +196,27 @@ function markActive() {
     el.classList.toggle("active", el.dataset.id === selected);
   });
   const current = currentItem();
-  $("log-title").textContent = current ? `${current.name} 运行日志` : "运行日志";
+  const titles = {
+    brain: "指挥日志",
+    raw: "原始日志",
+    http: "HTTP 访问日志",
+  };
+  if (current && current.id === "master") {
+    $("log-title").textContent = `Master ${titles[logKind] || "指挥日志"}`;
+  } else {
+    $("log-title").textContent = current ? `${current.name} 运行日志` : "运行日志";
+  }
   $("log-meta").textContent = logPath;
+}
+
+function updateLogKinds() {
+  const host = $("log-kinds");
+  const current = currentItem();
+  const show = Boolean(current && current.id === "master");
+  host.hidden = !show;
+  host.querySelectorAll("button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.kind === logKind);
+  });
 }
 
 function showLogPlaceholder() {
@@ -323,18 +345,26 @@ async function loadLogs(reset) {
   if (logAbort) logAbort.abort();
   logAbort = new AbortController();
   const log = $("log");
-  const pin = !reset && stickToBottom(log);
+  const stick = !reset && stickToBottom(log);
   try {
-    const logs = await fetch(`/api/services/${encodeURIComponent(current.id)}/logs?lines=3000`, {
-      signal: logAbort.signal,
-    });
+    const kindQuery = current.id === "master" ? `&kind=${encodeURIComponent(logKind)}` : "";
+    const logs = await fetch(
+      `/api/services/${encodeURIComponent(current.id)}/logs?lines=3000${kindQuery}`,
+      { signal: logAbort.signal }
+    );
     const body = await logs.json();
     if (busy || token !== logToken || body.id !== selected) return;
     log.classList.remove("error", "loading");
     log.textContent = body.text || "暂无日志";
     logPath = body.path || "";
     $("log-meta").textContent = logPath;
-    if (reset || pin) log.scrollTop = log.scrollHeight;
+    const pinBox = $("log-pin");
+    if (pinBox) {
+      const pinText = current.id === "master" && logKind === "brain" ? body.pin : "";
+      pinBox.hidden = !pinText;
+      pinBox.textContent = pinText ? `失败钉住：${pinText}` : "";
+    }
+    if (reset || stick) log.scrollTop = log.scrollHeight;
   } catch (error) {
     if (error.name === "AbortError" || token !== logToken || busy) return;
     log.classList.remove("loading");
@@ -356,6 +386,7 @@ async function refresh(forceCards) {
       selected = layerItems()[0] ? layerItems()[0].id : "";
     }
     render(Boolean(forceCards));
+    updateLogKinds();
     await loadLogs(false);
   } catch (error) {
     $("log-meta").textContent = String(error);
@@ -366,6 +397,15 @@ async function refresh(forceCards) {
 
 document.querySelectorAll(".layer").forEach((button) => {
   button.onclick = () => selectLayer(button.dataset.layer);
+});
+
+document.querySelectorAll("#log-kinds button").forEach((button) => {
+  button.onclick = () => {
+    logKind = button.dataset.kind || "brain";
+    updateLogKinds();
+    markActive();
+    loadLogs(true);
+  };
 });
 
 refresh(true);
