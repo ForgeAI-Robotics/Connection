@@ -274,7 +274,72 @@ class ExecutionBaseTests(unittest.TestCase):
         self.assertFalse(status["all_done"])
         self.assertFalse(status["terminal"])
         self.assertTrue(status["blocks_new_motion"])
-        self.assertFalse(status["can_resume"])
+        self.assertTrue(status["can_resume"])
+
+    def test_publish_resume_reuses_failed_reception(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            ReceptionStore(runtime_dir).save_state({
+                "task_id": "old-task",
+                "state": "FAILED",
+                "failed_phase": "NAVIGATING_TO_RELAY2",
+                "holding": "cola_can_1",
+            })
+            agent = self._agent(runtime_dir=runtime_dir)
+            called = {}
+
+            def fake_run(task, task_id, refresh, force_new_task=False, resume=False):
+                called["task_id"] = task_id
+                called["resume"] = resume
+                called["force_new_task"] = force_new_task
+                return {"reasoning_explanation": "resumed", "subtask_list": []}
+
+            agent._run_reception_skill = fake_run
+            result = agent.publish_global_task(
+                "开始接待", False, "new-task", resume=True
+            )
+            self.assertFalse(result.get("ignored"), result)
+            self.assertTrue(called["resume"])
+            self.assertFalse(called["force_new_task"])
+            self.assertEqual("old-task", called["task_id"])
+
+    def test_publish_resume_allows_recovery_required(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            ReceptionStore(runtime_dir).save_state({
+                "task_id": "old-task",
+                "state": "RECOVERY_REQUIRED",
+                "failed_phase": "NAVIGATING_TO_RELAY2",
+                "holding": "cola_can_1",
+            })
+            agent = self._agent(runtime_dir=runtime_dir)
+            called = {}
+
+            def fake_run(task, task_id, refresh, force_new_task=False, resume=False):
+                called["resume"] = resume
+                called["task_id"] = task_id
+                return {"reasoning_explanation": "resumed", "subtask_list": []}
+
+            agent._run_reception_skill = fake_run
+            result = agent.publish_global_task(
+                "开始接待", False, "new-task", resume=True
+            )
+            self.assertFalse(result.get("ignored"), result)
+            self.assertTrue(called["resume"])
+            self.assertEqual("old-task", called["task_id"])
+
+    def test_failed_snapshot_exposes_can_resume(self):
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            ReceptionStore(runtime_dir).save_state({
+                "task_id": "old-task",
+                "state": "FAILED",
+                "failed_phase": "NAVIGATING_TO_RELAY2",
+                "holding": "cola_can_1",
+            })
+            agent = self._agent(runtime_dir=runtime_dir)
+            status = agent.get_task_status()
+            self.assertTrue(status["active"])
+            self.assertTrue(status["can_resume"])
+            self.assertEqual("FAILED", status["state"])
+            self.assertEqual("NAVIGATING_TO_RELAY2", status["reception_state"]["failed_phase"])
 
     def test_get_task_status_exposes_public_reflection(self):
         agent = self._agent()

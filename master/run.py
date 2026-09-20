@@ -259,6 +259,16 @@ def publish_task():
                 return jsonify({"error": "Invalid task format - must be a string"}), 400
             task = task.strip()
             entry = classify_task(task)
+            resume = bool(data.get("resume"))
+            if resume and not master_agent._is_reception_task(task):
+                return jsonify(
+                    {
+                        "status": "rejected",
+                        "accepted": False,
+                        "error": "断点继续只支持开始接待",
+                        "task": task,
+                    }
+                ), 200
             if entry.intent is Intent.CHAT:
                 journal_emit(
                     "INBOUND",
@@ -287,7 +297,6 @@ def publish_task():
                         "task": task,
                     }
                 ), 200
-            report = master_agent.get_task_preflight(task)
             journal_emit(
                 "INBOUND",
                 event="publish",
@@ -295,55 +304,59 @@ def publish_task():
                 intent=entry.intent.value,
                 risk=entry.risk.value,
                 force_new=bool(data.get("force_new_task")),
+                resume=resume,
                 id=task_id,
                 inherit_task=False,
                 **_inbound(),
             )
-            journal_emit(
-                "PREFLIGHT",
-                event="http",
-                text=task,
-                ready=report.get("ready"),
-                required=report.get("required"),
-                blockers=report.get("blockers"),
-                id=task_id,
-                inherit_task=False,
-            )
-            note_task_request(
-                "preflight",
-                task,
-                ready=report.get("ready"),
-                required=report.get("required"),
-                blockers=report.get("blockers"),
-            )
-            if report.get("required") and not report.get("ready"):
-                blockers = report.get("blockers") or []
+            if not resume:
+                report = master_agent.get_task_preflight(task)
                 journal_emit(
-                    "REJECTED",
-                    event="preflight",
+                    "PREFLIGHT",
+                    event="http",
                     text=task,
-                    blockers=blockers,
-                    error="；".join(str(item) for item in blockers) or "下游服务未就绪",
-                    ok=False,
+                    ready=report.get("ready"),
+                    required=report.get("required"),
+                    blockers=report.get("blockers"),
                     id=task_id,
                     inherit_task=False,
                 )
-                return jsonify(
-                    {
-                        "status": "rejected",
-                        "accepted": False,
-                        "ready": False,
-                        "required": True,
-                        "blockers": blockers,
-                        "error": "；".join(str(item) for item in blockers)
-                        or "下游服务未就绪",
-                        "task": task,
-                    }
-                ), 200
-            note_task_request("publish", task, task_id=task_id)
+                note_task_request(
+                    "preflight",
+                    task,
+                    ready=report.get("ready"),
+                    required=report.get("required"),
+                    blockers=report.get("blockers"),
+                )
+                if report.get("required") and not report.get("ready"):
+                    blockers = report.get("blockers") or []
+                    journal_emit(
+                        "REJECTED",
+                        event="preflight",
+                        text=task,
+                        blockers=blockers,
+                        error="；".join(str(item) for item in blockers) or "下游服务未就绪",
+                        ok=False,
+                        id=task_id,
+                        inherit_task=False,
+                    )
+                    return jsonify(
+                        {
+                            "status": "rejected",
+                            "accepted": False,
+                            "ready": False,
+                            "required": True,
+                            "blockers": blockers,
+                            "error": "；".join(str(item) for item in blockers)
+                            or "下游服务未就绪",
+                            "task": task,
+                        }
+                    ), 200
+            note_task_request("publish", task, task_id=task_id, resume=resume)
             subtask_list = master_agent.publish_global_task(
                 task, data["refresh"], task_id,
                 force_new_task=bool(data.get("force_new_task")),
+                resume=resume,
             )
 
         accepted = not (

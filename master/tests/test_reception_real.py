@@ -604,6 +604,102 @@ class ReceptionRealPipelineTest(unittest.TestCase):
             self.assertEqual("cola_can_1", saved["holding"])
             self.assertEqual({"nav_table2": "keep-me"}, saved["commands"])
 
+    def test_resume_from_relay2_skips_completed_pick(self):
+        dream_url = f"http://127.0.0.1:{self.dream_server.server_port}"
+        vla_url = f"http://127.0.0.1:{self.vla_server.server_port}"
+        FakeVlaHandler.holding = "cola_can_1"
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            store = ReceptionStore(runtime_dir)
+            store.save_state({
+                "contract_version": "fq/reception-lan/v1",
+                "task_id": "reception-resume-001",
+                "state": "FAILED",
+                "failed_phase": "NAVIGATING_TO_RELAY2",
+                "holding": "cola_can_1",
+                "object_location": "in_gripper",
+                "verified_state": "GRASP_CONFIRMED_BY_VLA",
+                "vla_result_policy": "hand_state_only",
+                "commands": {
+                    "table2": {"command_id": "nav-table2-old"},
+                    "vla_pick": {"command_id": "vla-pick-old"},
+                },
+            })
+            runner = ReceptionRealRunner(
+                {
+                    "contract_version": "fq/reception-lan/v1",
+                    "dream_base_url": dream_url,
+                    "vla_base_url": vla_url,
+                    "runtime_dir": runtime_dir,
+                    "dream_poll_interval_sec": 0.01,
+                    "vla_poll_interval_sec": 0.01,
+                    "navigation_timeout_sec": 2,
+                    "door_lateral_timeout_sec": 2,
+                    "vla_timeout_sec": 2,
+                    "place_timeout_sec": 2,
+                    "vla_result_policy": "hand_state_only",
+                    "dream_inspection_enabled": False,
+                    "photo_verification_enabled": False,
+                },
+                dream=DreamClient(dream_url),
+                vla=VlaClient(vla_url),
+                store=store,
+            )
+            result = runner.run("ignored-new-id", resume=True)
+            self.assertEqual("COMPLETED_HAND_STATE_ONLY", result["state"], result)
+            self.assertEqual("reception-resume-001", result["task_id"])
+            self.assertEqual(1, result.get("resume_count"))
+        semantic_events = [(a, b) for a, b, _c in EVENTS]
+        self.assertNotIn(("vla", "pick"), semantic_events)
+        self.assertNotIn(("dream", "table_2"), semantic_events)
+        self.assertEqual([
+            ("dream", "door_1"),
+            ("dream", "door_1"),
+            ("dream", "table_1"),
+            ("vla", "place"),
+        ], semantic_events)
+
+    def test_resume_preflight_allows_holding(self):
+        dream_url = f"http://127.0.0.1:{self.dream_server.server_port}"
+        vla_url = f"http://127.0.0.1:{self.vla_server.server_port}"
+        FakeVlaHandler.holding = "cola_can_1"
+        with tempfile.TemporaryDirectory() as runtime_dir:
+            store = ReceptionStore(runtime_dir)
+            store.save_state({
+                "task_id": "old-task",
+                "state": "FAILED",
+                "failed_phase": "NAVIGATING_TO_RELAY2",
+                "holding": "cola_can_1",
+                "commands": {
+                    "table2": {"command_id": "nav-table2-old"},
+                    "vla_pick": {"command_id": "vla-pick-old"},
+                },
+            })
+            runner = ReceptionRealRunner(
+                {
+                    "contract_version": "fq/reception-lan/v1",
+                    "dream_base_url": dream_url,
+                    "vla_base_url": vla_url,
+                    "runtime_dir": runtime_dir,
+                    "dream_poll_interval_sec": 0.01,
+                    "vla_poll_interval_sec": 0.01,
+                    "navigation_timeout_sec": 2,
+                    "door_lateral_timeout_sec": 2,
+                    "vla_timeout_sec": 2,
+                    "place_timeout_sec": 2,
+                    "vla_result_policy": "hand_state_only",
+                    "dream_inspection_enabled": False,
+                    "photo_verification_enabled": False,
+                },
+                dream=DreamClient(dream_url),
+                vla=VlaClient(vla_url),
+                store=store,
+            )
+            snapshot = runner._collect_preflight(allow_holding=True)
+            self.assertEqual("cola_can_1", snapshot["vla"]["holding"])
+            with self.assertRaises(Exception) as raised:
+                runner._collect_preflight()
+            self.assertIn("持有物体", str(raised.exception))
+
     def test_force_new_task_replaces_recovery_required(self):
         with tempfile.TemporaryDirectory() as runtime_dir:
             store = ReceptionStore(runtime_dir)

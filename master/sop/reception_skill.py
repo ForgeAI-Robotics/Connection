@@ -60,7 +60,7 @@ def skill_card() -> dict:
 def run_reception_skill(task="开始接待", on_step=None, backend="mock",
                         scenario="normal", headcount=4, reflect=True,
                         mode=None, task_id=None, real_config=None,
-                        on_state=None, force_new_task=False, **kw):
+                        on_state=None, force_new_task=False, resume=False, **kw):
     """执行接待 skill:跑闭环,通过 on_step 上报【子任务级】进度。返回 trace(dict)。
 
     master 传的 on_step 把每个子任务写进 task_status(前端复用 🧠思考 + 子任务✓ 显示)。
@@ -87,6 +87,7 @@ def run_reception_skill(task="开始接待", on_step=None, backend="mock",
             on_step=on_step,
             on_state=on_state,
             force_new_task=bool(force_new_task),
+            resume=bool(resume),
         )
     if selected_mode != "mock":
         raise ValueError(f"不支持的接待模式: {selected_mode}")

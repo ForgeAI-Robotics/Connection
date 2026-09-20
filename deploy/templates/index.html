@@ -150,6 +150,7 @@
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
                 <button class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
+                <button class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="resumeReception()">断点继续</button>
                 <button class="btn btn-outline btn-sm" onclick="refreshTaskStatus()">刷新任务进度</button>
             </div>
         </div>
@@ -323,6 +324,32 @@
         function startReception() {
             document.getElementById('task').value = '开始接待';
             sendTask({skipConfirm: true});
+        }
+        async function resumeReception() {
+            const result = document.getElementById('task-result');
+            if (!window.confirm('将从上次失败的步骤继续接待（不重开、不重抓）。确认现场已修好？')) {
+                result.textContent = '已取消断点继续';
+                return;
+            }
+            result.textContent = '正在断点继续...';
+            try {
+                const resp = await fetch('/publish_task', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task: '开始接待', resume: true, refresh: false})
+                });
+                const data = await resp.json();
+                result.textContent = JSON.stringify(data, null, 2);
+                if (data.accepted === false) {
+                    return;
+                }
+                if (data.status === 'success') {
+                    _prevAllDone = false;
+                    startTaskPolling();
+                }
+            } catch (e) {
+                result.textContent = '断点继续失败: ' + e.message;
+            }
         }
         document.getElementById('task').addEventListener('keydown', e => { if (e.key === 'Enter') sendTask(); });
 

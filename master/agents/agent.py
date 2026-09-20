@@ -307,6 +307,16 @@ class GlobalAgent:
             "确认机器人已停止后，发布时带 force_new_task 才能开始新任务。"
         )
 
+    def _reception_can_resume(self, snapshot, *, running: bool = False) -> bool:
+        if running or not snapshot:
+            return False
+        state = str(snapshot.get("state") or "")
+        if state in ("SUCCEEDED", "COMPLETED_HAND_STATE_ONLY", "CANCELLED"):
+            return False
+        return bool(snapshot.get("failed_phase")) or state in {
+            "FAILED", "RECOVERY_REQUIRED",
+        }
+
     def _reject_unresolved_task(self, reason: str) -> Dict:
         self.logger.warning(f"[publish] 拒绝新任务: {reason}")
         self._journal("REJECTED", event="blocked", error=reason, ok=False)
@@ -695,7 +705,8 @@ class GlobalAgent:
         return check_reception_real_preflight(real_config)
 
     def _run_reception_skill(
-        self, task, task_id, refresh, force_new_task: bool = False
+        self, task, task_id, refresh, force_new_task: bool = False,
+        resume: bool = False,
     ) -> Dict:
         """接待 skill:master 不拆子任务,整体调用它自跑补货闭环(每步重新确认、失败按现状恢复、
         事后反思)。on_step 把每个子任务动态 append 进 current_task_queue → 前端 task_status
@@ -711,13 +722,33 @@ class GlobalAgent:
             self.logger.info(f"[reception] 忽略重复触发(上一次接待未结束): {self.current_task_desc}")
             return self._reject_unresolved_task(msg)
 
+        snapshot = None
+        if resume:
+            snapshot = self._load_reception_snapshot()
+            if not snapshot:
+                return self._reject_unresolved_task("没有可继续的接待任务")
+            if not snapshot.get("failed_phase") and str(snapshot.get("state") or "") not in {
+                "FAILED", "RECOVERY_REQUIRED",
+            }:
+                return self._reject_unresolved_task("当前接待没有失败断点，无法继续")
+            task_id = snapshot.get("task_id") or task_id
+
         task_id = task_id or str(_uuid.uuid4()).replace("-", "")
         card = skill_card()
         real_config = dict(self.config.get("reception_real") or {})
         requested_mode = str(os.environ.get("RECEPTION_MODE") or "").strip().lower()
         reception_mode = requested_mode or (
             "real" if real_config.get("enabled") is True else "mock")
-        if reception_mode == "real":
+        if resume and reception_mode != "real":
+            return self._reject_unresolved_task("断点继续只支持真机接待")
+        if reception_mode == "real" and resume:
+            snapshot = snapshot if resume else None
+            start_phase = (snapshot or {}).get("failed_phase") or "失败步骤"
+            reasoning = (
+                f"断点继续接待 → 同一task从{start_phase}接着发送导航/VLA指令，"
+                "不重开任务、不重做已完成步骤。"
+            )
+        elif reception_mode == "real":
             reasoning = (
                 "识别到接待任务 → 在Master内执行真机固定单链路："
                 "DREAM table2 → VLA抓取 → VLM+LLM判真 → relay2 → relay3 → "
@@ -736,7 +767,7 @@ class GlobalAgent:
         self.current_task_type = "reception"
         self.last_reflection = None
         self._reception_running = True
-        self._reception_state = None
+        self._reception_state = dict(snapshot) if resume and snapshot else None
         self._pending_failure = None
         self._pending_success = None
         self.logger.info(f"[reception] 走接待 skill: {self.current_task_desc}")
@@ -781,6 +812,7 @@ class GlobalAgent:
                     on_step=_on_step,
                     on_state=_on_state,
                     force_new_task=force_new_task,
+                    resume=resume,
                 )
                 if isinstance(result, dict) and self._remember_reflection(
                     result.get("reflection")
@@ -823,10 +855,25 @@ class GlobalAgent:
         return {"reasoning_explanation": reasoning, "subtask_list": []}
 
     def publish_global_task(
-        self, task: str, refresh: bool, task_id: str, force_new_task: bool = False
+        self, task: str, refresh: bool, task_id: str, force_new_task: bool = False,
+        resume: bool = False,
     ) -> Dict:
         """Publish a global task to all Agents"""
         self.logger.info(f"Publishing global task: {task}")
+
+        if resume:
+            if not self._is_reception_task(task):
+                return self._reject_unresolved_task("断点继续只支持开始接待")
+            if self._reception_running:
+                return self._reject_unresolved_task(
+                    "已有一次接待正在执行，禁止覆盖未完成动作"
+                )
+            snapshot = self._load_reception_snapshot()
+            if snapshot and snapshot.get("task_id"):
+                task_id = snapshot["task_id"]
+            return self._run_reception_skill(
+                task, task_id, refresh, force_new_task=False, resume=True
+            )
 
         if self._reception_running:
             return self._reject_unresolved_task(
@@ -1313,7 +1360,10 @@ class GlobalAgent:
         """返回当前任务的执行状态，供前端查询。"""
         snapshot = self._load_reception_snapshot()
         if not self.current_task_queue:
-            if snapshot and str(snapshot.get("state") or "") not in _BUSINESS_TERMINAL_STATES:
+            if snapshot and (
+                str(snapshot.get("state") or "") not in _BUSINESS_TERMINAL_STATES
+                or self._reception_can_resume(snapshot)
+            ):
                 return self._status_from_unresolved_snapshot(snapshot)
             return {
                 "active": False,
@@ -1376,7 +1426,10 @@ class GlobalAgent:
             "blocks_new_motion": bool(
                 unresolved or reception_running or dispatch_running or not all_done
             ),
-            "can_resume": False,
+            "can_resume": self._reception_can_resume(
+                reception_state or snapshot,
+                running=bool(reception_running or dispatch_running),
+            ),
         }
         if reception_state is not None:
             result["reception_state"] = reception_state
@@ -1420,7 +1473,7 @@ class GlobalAgent:
             "terminal": False,
             "execution_active": False,
             "blocks_new_motion": True,
-            "can_resume": False,
+            "can_resume": self._reception_can_resume(snapshot),
             "reception_state": snapshot,
         }
         reflection = getattr(self, "last_reflection", None) or snapshot.get("reflection")

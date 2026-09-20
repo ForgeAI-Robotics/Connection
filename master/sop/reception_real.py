@@ -46,6 +46,23 @@ BUSINESS_TERMINAL_STATES = {
     "SUCCEEDED", "COMPLETED_HAND_STATE_ONLY", "FAILED", "CANCELLED",
 }
 TERMINAL_TASK_STATES = BUSINESS_TERMINAL_STATES
+# 接待固定相位，仅用于「断点继续」跳过已完成步骤。顺序必须与 run() 一致。
+PIPELINE_PHASES = (
+    "INITIALIZING",
+    "FETCHING_WORLD",
+    "NAVIGATING_TO_TABLE2",
+    "DREAM_INSPECTING_TABLE2",
+    "VLA_PICKING",
+    "VERIFYING_GRASP",
+    "NAVIGATING_TO_RELAY2",
+    "LATERAL_TO_RELAY3",
+    "NAVIGATING_TO_TABLE1",
+    "VLA_PLACING",
+    "VERIFYING_PLACE",
+)
+RESUME_KEEP_STATES = {
+    "FAILED", "RECOVERY_REQUIRED", "RUNNING",
+}
 
 NAVIGATION_LEGS = {
     "table2": {
@@ -247,7 +264,31 @@ class ReceptionRealRunner:
         self._publish_state()
 
     def _command_id(self, prefix):
-        return f"{prefix}-{_task_token(self.state['task_id'])}"
+        token = _task_token(self.state["task_id"])
+        attempt = int(self.state.get("resume_count") or 0)
+        if attempt:
+            return f"{prefix}-{token}-r{attempt}"
+        return f"{prefix}-{token}"
+
+    def _saved_command_id(self, key):
+        record = (self.state.get("commands") or {}).get(key) or {}
+        command_id = record.get("command_id")
+        if not command_id:
+            raise ReceptionPipelineError(
+                f"断点继续缺少已完成步骤的命令凭证: {key}"
+            )
+        return command_id
+
+    @staticmethod
+    def _phase_due(phase, start_phase):
+        if not start_phase:
+            return True
+        try:
+            return PIPELINE_PHASES.index(phase) >= PIPELINE_PHASES.index(start_phase)
+        except ValueError as exc:
+            raise ReceptionPipelineError(
+                f"无法从未知步骤继续: {start_phase}"
+            ) from exc
 
     def _prepare_command(self, key, command_id, payload):
         commands = dict(self.state.get("commands") or {})
@@ -408,7 +449,7 @@ class ReceptionRealRunner:
         # table2、relay2、table1 use navigation_timeout; relay3 has its own cap.
         return int(3 * navigation + lateral + pick + place + inspection + snapshots + 600)
 
-    def _collect_preflight(self):
+    def _collect_preflight(self, *, allow_holding=False):
         """Run the complete read-only real-reception gate and return evidence."""
 
         health = self.dream.health()
@@ -464,7 +505,7 @@ class ReceptionRealRunner:
                 f"VLA存在活动命令: {control.get('active_command_id')}")
         if control.get("recovery_required") is True:
             raise ReceptionPipelineError("VLA处于recovery_required，禁止新任务")
-        if control.get("holding") is not None:
+        if control.get("holding") is not None and not allow_holding:
             raise ReceptionPipelineError(
                 f"VLA持久状态仍在持有物体: {control.get('holding')}")
         nav_ready = control.get("navigation_port_ready")
@@ -525,9 +566,9 @@ class ReceptionRealRunner:
             **snapshot,
         }
 
-    def _preflight(self):
+    def _preflight(self, *, allow_holding=False):
         try:
-            snapshot = self._collect_preflight()
+            snapshot = self._collect_preflight(allow_holding=allow_holding)
         except Exception as exc:
             self._journal(
                 "PREFLIGHT",
@@ -785,12 +826,60 @@ class ReceptionRealRunner:
         get_journal().set_current_task(task_id)
         self._journal("TASK", event="start", type="reception", id=task_id)
 
-    def run(self, task_id, force_new_task=False):
+    def _resume_state(self):
+        existing = self.store.load_state()
+        if not existing:
+            raise ReceptionPipelineError("没有可继续的接待任务")
+        existing_state = str(existing.get("state") or "")
+        if existing_state not in RESUME_KEEP_STATES:
+            raise ReceptionPipelineError(
+                f"当前接待状态是{existing_state or '空'}，无法断点继续"
+            )
+        failed_phase = str(existing.get("failed_phase") or "").strip()
+        if not failed_phase:
+            raise ReceptionPipelineError("没有失败步骤记录，无法断点继续")
+        if failed_phase not in PIPELINE_PHASES:
+            raise ReceptionPipelineError(f"无法从未知步骤继续: {failed_phase}")
+        resume_count = int(existing.get("resume_count") or 0) + 1
+        self.state = existing
+        self.state.update({
+            "state": "RUNNING",
+            "runtime_phase": failed_phase,
+            "resume_count": resume_count,
+            "failure_reason": None,
+            "resumed_from": failed_phase,
+        })
+        self.state.pop("completed_at", None)
+        self._publish_state()
+        self._event(
+            "TASK_RESUMED",
+            failed_phase=failed_phase,
+            resume_count=resume_count,
+        )
+        get_journal().set_current_task(self.state["task_id"])
+        self._journal(
+            "TASK", event="resume", type="reception",
+            id=self.state["task_id"], phase=failed_phase,
+        )
+        return failed_phase
+
+    def run(self, task_id, force_new_task=False, resume=False):
         failed_phase = "INITIALIZING"
+        start_phase = None
         try:
-            self._start_state(task_id, force_new_task=force_new_task)
+            if resume:
+                start_phase = self._resume_state()
+                task_id = self.state.get("task_id") or task_id
+                allow_holding = True
+            else:
+                self._start_state(task_id, force_new_task=force_new_task)
+                allow_holding = False
+
+            def due(phase):
+                return self._phase_due(phase, start_phase)
+
             failed_phase = "FETCHING_WORLD"
-            self._preflight()
+            self._preflight(allow_holding=allow_holding)
             preflight_detail = "DREAM、VLA和关系图均已就绪"
             if (
                 self.grasp_photo_verification_enabled
@@ -799,22 +888,34 @@ class ReceptionRealRunner:
                 preflight_detail += "，动作后相机快照可用"
             else:
                 preflight_detail += "，照片判真开关已关闭"
+            if resume:
+                preflight_detail += f"；断点继续从{start_phase}"
             self._step(1, "世界与服务预检", preflight_detail)
 
-            failed_phase = "NAVIGATING_TO_TABLE2"
-            nav_table2, _ = self._navigate("table2", failed_phase)
-            self._set_state(verified_state="AT_TABLE2")
-            self._step(2, "导航到table2", "DREAM真实终态succeeded")
+            nav_table2 = None
+            if due("NAVIGATING_TO_TABLE2"):
+                failed_phase = "NAVIGATING_TO_TABLE2"
+                nav_table2, _ = self._navigate("table2", failed_phase)
+                self._set_state(verified_state="AT_TABLE2")
+                self._step(2, "导航到table2", "DREAM真实终态succeeded")
+            elif due("DREAM_INSPECTING_TABLE2") or due("VLA_PICKING"):
+                nav_table2 = self._saved_command_id("table2")
+                self._step(2, "导航到table2", "断点继续：沿用已完成步骤")
 
             if self.config.get("dream_inspection_enabled") is True:
-                failed_phase = "DREAM_INSPECTING_TABLE2"
-                self._inspect_table2_and_handoff_camera(nav_table2)
-                self._step(
-                    3,
-                    "DREAM细检与相机交接",
-                    "细检成功，相机控制权已交给VLA",
-                )
-            else:
+                if due("DREAM_INSPECTING_TABLE2"):
+                    failed_phase = "DREAM_INSPECTING_TABLE2"
+                    self._inspect_table2_and_handoff_camera(nav_table2)
+                    self._step(
+                        3,
+                        "DREAM细检与相机交接",
+                        "细检成功，相机控制权已交给VLA",
+                    )
+                elif due("NAVIGATING_TO_TABLE2"):
+                    pass
+                else:
+                    self._step(3, "DREAM细检与相机交接", "断点继续：沿用已完成步骤")
+            elif due("NAVIGATING_TO_TABLE2") or due("DREAM_INSPECTING_TABLE2"):
                 self._set_state(camera_owner="vla")
                 self._event(
                     "DREAM_INSPECTION_SKIPPED",
@@ -826,81 +927,135 @@ class ReceptionRealRunner:
                     "DREAM细检跳过",
                     "DREAM仅负责导航；大脑直接调用VLA，不调用inspection接口",
                 )
-
-            failed_phase = "VLA_PICKING"
-            self._set_state(runtime_phase=failed_phase)
-            vla_pick, pick_terminal = self._vla_action("pick", nav_table2, "table_2")
-            self._step(4, "VLA抓取", "VLA抓取终态成功，策略停止且导航通路恢复")
-
-            if self.grasp_photo_verification_enabled:
-                failed_phase = "VERIFYING_GRASP"
-                self._set_state(
-                    runtime_phase=failed_phase,
-                    verified_state="AT_TABLE2",
-                    holding=None,
-                )
-                self._verify("pick", vla_pick, pick_terminal, "table_2")
-                grasp_state = "GRASP_VERIFIED"
-                grasp_detail = "VLM+LLM确认目标已在夹爪中"
             else:
-                grasp_state = "GRASP_CONFIRMED_BY_VLA"
-                grasp_detail = "照片判真关闭，按VLA真实抓取终态确认"
-                self._event(
-                    "PHOTO_VERIFICATION_SKIPPED",
-                    operation="pick",
-                    vla_command_id=vla_pick,
-                )
-            self._set_state(
-                runtime_phase="READY_FOR_RELAY2",
-                verified_state=grasp_state,
-                holding=OBJECT_ID,
-                object_location="in_gripper",
-                evidence_level=(
-                    "vla_plus_grasp_photo"
-                    if self.grasp_photo_verification_enabled else "vla_only"
-                ),
-            )
-            self._step(5, "抓取结果确认", grasp_detail)
+                self._step(3, "DREAM细检跳过", "断点继续：沿用已完成步骤")
 
-            failed_phase = "NAVIGATING_TO_RELAY2"
-            self._navigate("relay2", failed_phase)
-            self._set_state(verified_state="AT_RELAY2")
-            self._step(6, "导航到relay2", "门外接近点真实到达")
-
-            failed_phase = "LATERAL_TO_RELAY3"
-            self._navigate("relay3", failed_phase)
-            self._set_state(verified_state="DOOR_PASSED")
-            self._step(7, "横移到relay3", "横移穿门真实成功")
-
-            failed_phase = "NAVIGATING_TO_TABLE1"
-            nav_table1, _ = self._navigate("table1", failed_phase)
-            self._set_state(verified_state="AT_TABLE1")
-            self._step(8, "导航到table1", "DREAM真实终态succeeded")
-
-            failed_phase = "VLA_PLACING"
-            self._set_state(runtime_phase=failed_phase)
-            vla_place, place_terminal = self._vla_action("place", nav_table1, "table_1")
-            self._step(9, "VLA放置", "VLA放置终态成功，策略停止且导航通路恢复")
-
-            if self.place_photo_verification_enabled:
-                failed_phase = "VERIFYING_PLACE"
-                self._set_state(
-                    runtime_phase=failed_phase,
-                    verified_state="AT_TABLE1",
-                    holding=OBJECT_ID,
-                    object_location="in_gripper",
-                )
-                self._verify("place", vla_place, place_terminal, "table_1")
-                place_state = "PLACE_VERIFIED"
-                place_detail = "VLM+LLM确认目标已放置在table1"
+            vla_pick = None
+            pick_terminal = None
+            if due("VLA_PICKING"):
+                failed_phase = "VLA_PICKING"
+                self._set_state(runtime_phase=failed_phase)
+                vla_pick, pick_terminal = self._vla_action("pick", nav_table2, "table_2")
+                self._step(4, "VLA抓取", "VLA抓取终态成功，策略停止且导航通路恢复")
             else:
-                place_state = "PLACE_CONFIRMED_BY_VLA"
-                place_detail = "照片判真关闭，按VLA真实释放终态确认"
-                self._event(
-                    "PHOTO_VERIFICATION_SKIPPED",
-                    operation="place",
-                    vla_command_id=vla_place,
-                )
+                self._step(4, "VLA抓取", "断点继续：沿用已完成抓取")
+
+            if due("VLA_PICKING") or due("VERIFYING_GRASP"):
+                if self.grasp_photo_verification_enabled and due("VERIFYING_GRASP"):
+                    failed_phase = "VERIFYING_GRASP"
+                    if vla_pick is None:
+                        vla_pick = self._saved_command_id("vla_pick")
+                    if pick_terminal is None:
+                        self._set_state(
+                            runtime_phase="READY_FOR_RELAY2",
+                            holding=self.state.get("holding") or OBJECT_ID,
+                            object_location="in_gripper",
+                        )
+                        self._step(5, "抓取结果确认", "断点继续：缺少抓取终态，沿用已确认持物")
+                    else:
+                        self._set_state(
+                            runtime_phase=failed_phase,
+                            verified_state="AT_TABLE2",
+                            holding=None,
+                        )
+                        self._verify("pick", vla_pick, pick_terminal, "table_2")
+                        self._set_state(
+                            runtime_phase="READY_FOR_RELAY2",
+                            verified_state="GRASP_VERIFIED",
+                            holding=OBJECT_ID,
+                            object_location="in_gripper",
+                            evidence_level="vla_plus_grasp_photo",
+                        )
+                        self._step(5, "抓取结果确认", "VLM+LLM确认目标已在夹爪中")
+                elif due("VLA_PICKING"):
+                    grasp_state = "GRASP_CONFIRMED_BY_VLA"
+                    grasp_detail = "照片判真关闭，按VLA真实抓取终态确认"
+                    self._event(
+                        "PHOTO_VERIFICATION_SKIPPED",
+                        operation="pick",
+                        vla_command_id=vla_pick,
+                    )
+                    self._set_state(
+                        runtime_phase="READY_FOR_RELAY2",
+                        verified_state=grasp_state,
+                        holding=OBJECT_ID,
+                        object_location="in_gripper",
+                        evidence_level="vla_only",
+                    )
+                    self._step(5, "抓取结果确认", grasp_detail)
+                else:
+                    self._step(5, "抓取结果确认", "断点继续：沿用已确认持物")
+            else:
+                self._step(5, "抓取结果确认", "断点继续：沿用已确认持物")
+
+            if due("NAVIGATING_TO_RELAY2"):
+                failed_phase = "NAVIGATING_TO_RELAY2"
+                self._navigate("relay2", failed_phase)
+                self._set_state(verified_state="AT_RELAY2")
+                self._step(6, "导航到relay2", "门外接近点真实到达")
+            else:
+                self._step(6, "导航到relay2", "断点继续：沿用已完成步骤")
+
+            if due("LATERAL_TO_RELAY3"):
+                failed_phase = "LATERAL_TO_RELAY3"
+                self._navigate("relay3", failed_phase)
+                self._set_state(verified_state="DOOR_PASSED")
+                self._step(7, "横移到relay3", "横移穿门真实成功")
+            else:
+                self._step(7, "横移到relay3", "断点继续：沿用已完成步骤")
+
+            nav_table1 = None
+            if due("NAVIGATING_TO_TABLE1"):
+                failed_phase = "NAVIGATING_TO_TABLE1"
+                nav_table1, _ = self._navigate("table1", failed_phase)
+                self._set_state(verified_state="AT_TABLE1")
+                self._step(8, "导航到table1", "DREAM真实终态succeeded")
+            elif due("VLA_PLACING") or due("VERIFYING_PLACE"):
+                nav_table1 = self._saved_command_id("table1")
+                self._step(8, "导航到table1", "断点继续：沿用已完成步骤")
+
+            vla_place = None
+            place_terminal = None
+            if due("VLA_PLACING"):
+                failed_phase = "VLA_PLACING"
+                self._set_state(runtime_phase=failed_phase)
+                vla_place, place_terminal = self._vla_action("place", nav_table1, "table_1")
+                self._step(9, "VLA放置", "VLA放置终态成功，策略停止且导航通路恢复")
+            else:
+                self._step(9, "VLA放置", "断点继续：沿用已完成放置")
+
+            if due("VLA_PLACING") or due("VERIFYING_PLACE"):
+                if self.place_photo_verification_enabled and due("VERIFYING_PLACE"):
+                    failed_phase = "VERIFYING_PLACE"
+                    if vla_place is None:
+                        vla_place = self._saved_command_id("vla_place")
+                    self._set_state(
+                        runtime_phase=failed_phase,
+                        verified_state="AT_TABLE1",
+                        holding=OBJECT_ID,
+                        object_location="in_gripper",
+                    )
+                    if place_terminal is None:
+                        place_state = "PLACE_CONFIRMED_BY_VLA"
+                        place_detail = "断点继续：缺少放置终态，沿用已确认释放"
+                    else:
+                        self._verify("place", vla_place, place_terminal, "table_1")
+                        place_state = "PLACE_VERIFIED"
+                        place_detail = "VLM+LLM确认目标已放置在table1"
+                elif due("VLA_PLACING"):
+                    place_state = "PLACE_CONFIRMED_BY_VLA"
+                    place_detail = "照片判真关闭，按VLA真实释放终态确认"
+                    self._event(
+                        "PHOTO_VERIFICATION_SKIPPED",
+                        operation="place",
+                        vla_command_id=vla_place,
+                    )
+                else:
+                    place_state = str(self.state.get("verified_state") or "PLACE_CONFIRMED_BY_VLA")
+                    place_detail = "断点继续：沿用已确认放置"
+            else:
+                place_state = str(self.state.get("verified_state") or "PLACE_CONFIRMED_BY_VLA")
+                place_detail = "断点继续：沿用已确认放置"
             final_state = (
                 "SUCCEEDED"
                 if self.vla_result_policy == "strict_object_evidence"
@@ -994,7 +1149,7 @@ class ReceptionRealRunner:
 
 def run_reception_real(
     task_id, config, *, on_step=None, on_state=None, force_new_task=False,
-    **dependencies,
+    resume=False, **dependencies,
 ):
     runner = ReceptionRealRunner(
         config,
@@ -1002,7 +1157,9 @@ def run_reception_real(
         on_state=on_state,
         **dependencies,
     )
-    return runner.run(task_id, force_new_task=force_new_task)
+    return runner.run(
+        task_id, force_new_task=force_new_task, resume=bool(resume),
+    )
 
 
 def check_reception_real_preflight(config, **dependencies):
