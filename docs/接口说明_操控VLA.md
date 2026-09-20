@@ -1,8 +1,90 @@
-# VLA侧：单链路联调实现与接口说明
+# 接口说明：操控 VLA
 
-日期：2026-08-27  
+初版日期：2026-08-27  
+当前现场口径：2026-09-20  
 契约版本：`fq/reception-lan/v1`  
-联调范围：接收大脑显式 pick/place 任务，订阅唯一RealSense相机服务，返回真实终态并提供动作后图片。
+适用范围：接收大脑显式 pick/place 任务，返回真实终态；照片判真启用时订阅唯一 RealSense 相机服务并提供动作后图片。
+
+> 本文是操控 VLA 对外接口的唯一维护文档。下方“当前现场实现口径”记录已经落地的能力；后续接口示例保留完整契约结构。两者冲突时，以当前现场实现口径为准。
+
+## 当前现场实现口径（2026-09-17）
+
+### 正式链路
+
+现场路径：`<VLA_BRIDGE_ROOT>`（由部署环境配置）
+
+```text
+DREAM / Agent (192.168.5.18:8001)
+        ↓ HTTP 8091
+g1_brain_vla_bridge
+        ↓ 导航 relay 交出 5556
+Phase-Aware Safe RTC (GR00T-N1.7-3B, dual camera, 30→50 Hz)
+        ↓ pose / TCP 5556
+已经运行的 SONIC + LinkerHand
+        ↓
+G1
+```
+
+桥接层不修改 SONIC、GR00T N1.7 或导航源码；真机动作只能经过已审核的 hook。抓取使用 `run_phase_aware_action_stack.sh`，该脚本只启动 policy server、Phase-Aware RTC client 和 keyboard publisher，复用已有 SONIC、NX 相机和 LinkerHand，不启动第二个 LowCmd 控制器。放置复用 `g1_navigation_vla_bridge/run_navigation_place_coke.sh`。
+
+### 当前能力与证据边界
+
+- `config.json` 已启用真实 pick/place hook，不是空后端；
+- 默认证据等级为 `hand_state_only`：只能证明左手连续稳定闭合或张开，不能证明可乐罐确实在手中或已放到目标桌面；
+- pick/place 的照片判真开关当前均为 `false`，图像不参与成功判定；
+- pick 使用 `left_wrist`，place 使用 `ego_view`；桥接层只读订阅 NX 唯一相机服务，不直接打开 USB RealSense；
+- place 在 DREAM 校验后进入 `waiting_operator_approval`，仍需现场操作者在 bridge tmux 中按 Enter；
+- 自动安全门控在 SONIC 底层独立运行，不依赖 Brain HTTP 或 VLA hook 才能执行原生 vendor 接管与 `dunxia`。
+
+因此，后文成功终态中的 `object_grasped`、`object_at_target`、负载、抬升和视觉证据是完整接口目标，不代表当前 `hand_state_only` 现场已经具备这些强证据。
+
+### 安全门控
+
+Bridge 只有在 SONIC、状态接口、相机、LinkerHand、LowCmd 所有权和安全模式均通过核验后才能报告可执行。`startup_safety_attested=true` 只表示启动时通过，不等同于持续 `sonic_healthy=true`；每个 pick/place hook 在取得 `5556` 前必须重新执行在线检查。
+
+安全门控配置、启动、状态、停止、自检和人工操作见 [联调说明：三端联调启动 §4](联调说明_三端联调启动.md)。
+
+### 5556 所有权与动作时序
+
+1. 常态下只有 sequential navigation relay 监听工作站 `5556`；
+2. DREAM 命令必须证明导航成功、已停止且 `navigation_transport_ready=true`；
+3. hook 重新验证 SONIC、安全监督器、相机和 LinkerHand；
+4. relay 通过 ROS ACK 交出 `5556`，仅看到端口空闲不算合法交接；
+5. Phase-Aware RTC 启动上层策略，不启动第二个 SONIC；
+6. pick hook 发送 prompt、`k`、`i`、`p` 并等待左手闭合证据；
+7. 策略停止且确认 `5556` 释放后，relay 才能通过 ROS ACK 恢复导航。
+
+任一步无法证明时失败关闭，不并行启动第二个 `5556` publisher。取消也必须先停止策略、确认 `5556` 释放并恢复 relay，才能返回 `policy_stopped=true` 和 `navigation_port_ready=true`。
+
+### DREAM 动作前只读校验
+
+动作前读取：
+
+```http
+GET {DREAM_BASE_URL}/v1/commands/{dream_command_id}
+GET {DREAM_BASE_URL}/v1/status
+```
+
+命令必须匹配 `command_id`、`target_id`、`state=succeeded`、`result.success`、`reached` 和 `navigation_stopped=true`；总状态必须满足：
+
+- `active_command_id == ""`
+- `active_command_state == null`
+- `navigation_transport_ready == true`
+
+字段缺失或无法证明时不得启动动作。
+
+以下字段名不是当前 DREAM 权威成功凭证，不能用来替代上述查询结果：
+
+- `navigation_active`
+- `navigation.state`
+- `active_command.state`
+- 仅凭 5556 端口空闲或 TCP 已连接
+
+如果命令、目标、终态或总状态无法从权威接口证明，返回 `NAVIGATION_STATUS_UNVERIFIABLE`，不得启动 pick/place。网络查询失败也不能降级为“默认导航已停止”。
+
+### place 人工批准
+
+place 在 DREAM 凭证校验后进入 `waiting_operator_approval`。只有现场操作者确认后才能开始动作；等待超时或取消时不得启动 place。进入终端和执行批准的步骤见 [联调说明：三端联调启动 §4.4](联调说明_三端联调启动.md)。
 
 ## 1. VLA侧职责
 
@@ -15,8 +97,8 @@ VLA侧负责：
 - 抓取后判断是否真正抓住目标，而不是只判断动作程序结束；
 - 放置后返回夹爪已释放、当前 `holding=null`；
 - 无论成功、失败或取消，都停止策略并恢复导航动作通路；
-- 只读订阅NX上唯一打开RealSense的相机服务，不重复打开USB设备；
-- VLA终态成功后，按大脑请求提供一张动作完成后的新图片。
+- 照片判真启用时，只读订阅 NX 上唯一打开 RealSense 的相机服务，不重复打开 USB 设备；
+- 照片判真启用且 VLA 终态成功后，按大脑请求提供一张动作完成后的新图片。
 
 VLA侧不负责：
 
@@ -33,16 +115,16 @@ VLA侧不负责：
 ```yaml
 server:
   host: "0.0.0.0"
-  port: <VLA_PORT>
+  port: 8091
   contract_version: "fq/reception-lan/v1"
 
 dream:
-  base_url: "http://192.168.0.185:8001"
+  base_url: "http://192.168.5.18:8001"
   request_timeout_sec: 5
 
 camera:
   owner: "vla_camera_subsystem"
-  source: "tcp://192.168.0.240:5555"
+  source: "tcp://192.168.5.240:5555"
   view: "left_wrist"
   keep_streaming_after_policy: true
   snapshot_dir: "runtime/snapshots"
@@ -52,7 +134,7 @@ task:
   allow_parallel_tasks: false
 ```
 
-VLA服务监听局域网地址而非仅 `127.0.0.1`。防火墙放行 `<VLA_PORT>`。VLA主机必须可以访问 DREAM 8001，以便只读验证导航凭证。
+VLA 服务默认监听 `0.0.0.0:8091`。防火墙放行 TCP 8091。VLA 主机必须可以访问 DREAM 8001，以便只读验证导航凭证。旧地址 `192.168.0.185` 已不再使用。
 
 ## 3. 统一字段和HTTP规范
 
@@ -223,8 +305,8 @@ VLA服务在开始策略前必须完成：
 3. 使用 `navigation_proof.dream_command_id` 调用：
 
    ```http
-   GET http://192.168.0.185:8001/v1/commands/{dream_command_id}
-   GET http://192.168.0.185:8001/v1/status
+   GET http://192.168.5.18:8001/v1/commands/{dream_command_id}
+   GET http://192.168.5.18:8001/v1/status
    ```
 
 4. DREAM返回 `state=succeeded && result.success=true`，且 `target_id` 与请求一致；
@@ -334,7 +416,7 @@ accepted
 }
 ```
 
-`object_at_target` 是 VLA自身判断，最终是否完成仍由大脑使用动作后图片判真。
+`object_at_target` 是 VLA 自身判断。严格物体证据策略要求它为 `true`；当前 `hand_state_only` 允许为 `null` 或 `true`，并由大脑以 `COMPLETED_HAND_STATE_ONLY` 收尾。只有放置照片判真开关启用时，大脑才追加动作后图片判真并写入视觉确认终态。
 
 ### 8.4 失败终态
 
@@ -471,6 +553,7 @@ X-Content-SHA256: <摘要>
 | `COMMAND_ID_CONFLICT` | 同ID不同请求体 |
 | `VLA_BUSY` | 已有活动任务 |
 | `NAVIGATION_PROOF_INVALID` | DREAM凭证不成功或目标不匹配 |
+| `NAVIGATION_STATUS_UNVERIFIABLE` | 无法从 DREAM 权威接口证明导航终态和总状态 |
 | `NAVIGATION_STILL_ACTIVE` | 导航仍在运动 |
 | `ACTION_PORT_ACQUIRE_FAILED` | 无法取得动作端口 |
 | `ACTION_PORT_RESTORE_FAILED` | 无法归还导航通路 |

@@ -40,6 +40,10 @@ experience:
   auto_save_on_success: true
 camera:
   enabled: false
+reflection:
+  enabled: true
+  use_llm: true
+  write_sop: false
 reception_real:
   enabled: false
   contract_version: fq/reception-lan/v1

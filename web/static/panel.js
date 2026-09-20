@@ -284,7 +284,7 @@ async function act(item, action) {
   }
   if (action === "restart" && item.confirm_restart) {
     const ok = window.confirm(
-      "重启 Master 会清空 Redis 协作库（collaborator.clear=true）。确定继续？"
+      "重启 Master 会中断当前进程和正在处理的任务；是否清空 Redis 由 master/config.yaml 的 collaborator.clear 决定（当前为 false）。确定继续？"
     );
     if (!ok) return;
   }

@@ -1,6 +1,6 @@
 """SSH into the DREAM workstation and run the reviewed navigation one-click.
 
-董威现场口径：
+现场执行口径：
 
     cd /home/fq/BJHYZJ_FQ/DREAM
     bash tools/g1_three_party_oneclick.sh start

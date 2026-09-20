@@ -50,4 +50,4 @@ tmux attach -t gs
 
 Redis 的启动日志在 `log/YYYY-MM-DD/redis/*.log`。`tmux attach -t redis` 里若只有一行 `[log] redis -> …`，去看这个文件，或重启 Redis 让窗口同步打出 `Ready to accept connections`。
 
-重启 Master 会清空 Redis 协作库（`collaborator.clear=true`），面板会弹出确认。
+面板重启 Master 前会弹出确认，因为它会中断当前 Master 进程和在处理任务。是否清空 Redis 协作库由 `master/config.yaml` 的 `collaborator.clear` 决定；当前为 `false`，不会主动清空，只有显式改成 `true` 才会在启动时清库。

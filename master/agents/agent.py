@@ -751,8 +751,9 @@ class GlobalAgent:
         elif reception_mode == "real":
             reasoning = (
                 "识别到接待任务 → 在Master内执行真机固定单链路："
-                "DREAM table2 → VLA抓取 → VLM+LLM判真 → relay2 → relay3 → "
-                "table1 → VLA放置 → VLM+LLM判真。任一步失败立即停止。")
+                "DREAM table2 → VLA抓取并按配置校验证据 → relay2 → relay3 → "
+                "table1 → VLA放置并按配置校验证据。照片开关开启时追加VLM+LLM判真；"
+                "任一步失败立即停止。")
         else:
             reasoning = (
                 f"识别到接待任务 → 调用【接待 skill】(自带 SOP {card.get('sop_version', '')} + "
