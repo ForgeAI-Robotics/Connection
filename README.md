@@ -160,7 +160,18 @@ Master 在接待任务进入 Pipeline 前执行只读 `task_preflight`。DREAM `
 | 飞书任务卡没有复盘 | 任务是否结束、复盘开关和模型配置 |
 | CUDA / 3DGS 无法启动 | `nvidia-smi`；使用 `.venv_3dgs`，不要使用 nouveau |
 
-## 7. 深入阅读
+## 7. 测试
+
+在仓库根目录运行全部离线测试：
+
+```bash
+python3 scripts/run_tests.py
+```
+
+该入口汇总 Master、Web、飞书、Robot API 和 DREAM 测试。需要在线服务或真实机器人
+的验收测试不会被自动执行。
+
+## 8. 深入阅读
 
 | 文档 / 文件 | 用途 |
 |---|---|
