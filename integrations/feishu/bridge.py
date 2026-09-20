@@ -731,6 +731,9 @@ class FeishuBridge:
             "reception_state": FeishuBridge._reception_status_signature(
                 status.get("reception_state")
             ),
+            "reflection": FeishuBridge._reflection_status_signature(
+                status.get("reflection")
+            ),
         }
         return hashlib.sha256(
             json.dumps(watched, ensure_ascii=False, sort_keys=True).encode("utf-8")
@@ -774,6 +777,21 @@ class FeishuBridge:
             "evidence_level": value.get("evidence_level"),
             "commands": command_ids,
             "remote_states": remote_states,
+            "reflection": FeishuBridge._reflection_status_signature(
+                value.get("reflection")
+            ),
+        }
+
+    @staticmethod
+    def _reflection_status_signature(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict) or not value:
+            return None
+        return {
+            "summary": value.get("summary"),
+            "source": value.get("source"),
+            "final": value.get("final"),
+            "error": value.get("error"),
+            "skipped": value.get("skipped"),
         }
 
     @staticmethod

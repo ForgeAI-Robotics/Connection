@@ -13,7 +13,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-from brain_journal import CallBook, OutboundCall, summarize_nav_request
+from brain_journal import CallBook, OutboundCall, call_reason, summarize_nav_request
 
 
 TERMINAL_STATES = {"succeeded", "failed", "cancelled"}
@@ -270,16 +270,33 @@ class DreamClient:
     def require_success(self, terminal, command_id):
         state = str(terminal.get("state") or "").lower()
         result = terminal.get("result") or {}
-        if not (
-            state == "succeeded"
-            and result.get("success") is True
-            and result.get("reached") is True
-            and result.get("navigation_stopped") is True
-        ):
-            error = HttpContractError(
-                f"DREAM导航成功证据不完整: {command_id}, state={state}",
-                payload=terminal,
+        unmet = [
+            name
+            for name, satisfied in (
+                ("state=succeeded", state == "succeeded"),
+                ("success=true", result.get("success") is True),
+                ("reached=true", result.get("reached") is True),
+                ("navigation_stopped=true", result.get("navigation_stopped") is True),
             )
+            if not satisfied
+        ]
+        if unmet:
+            parts = [
+                f"DREAM导航未达成: {command_id}",
+                f"state={state or '未知'}",
+                f"未满足: {'、'.join(unmet)}",
+            ]
+            error_body = (
+                terminal.get("error")
+                if isinstance(terminal.get("error"), dict) else {}
+            )
+            code = error_body.get("code")
+            if code:
+                parts.append(f"code={code}")
+            reason = call_reason(terminal)
+            if reason:
+                parts.append(f"reason={reason}")
+            error = HttpContractError(", ".join(parts), payload=terminal)
             self.calls.complete(command_id, False, payload=terminal, error=error)
             raise error
         self.calls.complete(command_id, True, payload=terminal)

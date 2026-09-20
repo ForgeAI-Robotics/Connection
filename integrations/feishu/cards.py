@@ -203,6 +203,27 @@ def task_card(
             failed_phase = str(reception.get("failed_phase") or runtime_phase)
             elements.append(_plain(f"失败阶段：{failed_phase}\n原因：{failure_reason}"))
 
+    reflection = status.get("reflection")
+    if not isinstance(reflection, dict) and isinstance(reception, dict):
+        reflection = reception.get("reflection")
+    if isinstance(reflection, dict):
+        summary = str(reflection.get("summary") or "").strip()
+        if not summary:
+            findings = reflection.get("findings") or []
+            parts = []
+            for item in findings:
+                if not isinstance(item, dict):
+                    continue
+                kind = str(item.get("type") or "").strip()
+                detail = str(item.get("detail") or "").strip()
+                if kind and detail:
+                    parts.append(f"{kind}：{detail}")
+                elif kind or detail:
+                    parts.append(kind or detail)
+            summary = " ".join(parts).strip()
+        if summary:
+            elements.append(_plain(f"复盘：{summary}"))
+
     subtasks = status.get("subtask_list") or []
     if isinstance(subtasks, list) and subtasks:
         lines = []

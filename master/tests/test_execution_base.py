@@ -276,6 +276,34 @@ class ExecutionBaseTests(unittest.TestCase):
         self.assertTrue(status["blocks_new_motion"])
         self.assertFalse(status["can_resume"])
 
+    def test_get_task_status_exposes_public_reflection(self):
+        agent = self._agent()
+        agent.current_task_queue = TaskQueue([
+            {"robot_name": "FQrobot", "subtask": "拍照查看：桌上有什么", "subtask_order": 1},
+        ])
+        agent.current_task_queue.mark_done(
+            agent.current_task_queue.tasks[0],
+            status="success",
+            result="桌上有可乐",
+        )
+        agent.current_task_id = "look-1"
+        agent.current_task_desc = "桌上有什么"
+        agent.current_task_type = "look"
+        agent.last_reflection = {
+            "summary": "观察完成：桌上有可乐 （模板档）",
+            "source": "模板档",
+            "findings": [{"type": "观察完成", "detail": "桌上有可乐"}],
+            "final": "success",
+            "backend": "sim",
+            "task_type": "look",
+            "episode": {"schema": "fq/reflection-episode/v1", "steps": ["secret-ledger"]},
+            "skipped": False,
+        }
+        status = agent.get_task_status()
+        self.assertEqual("观察完成：桌上有可乐 （模板档）", status["reflection"]["summary"])
+        self.assertEqual("look", status["reflection"]["task_type"])
+        self.assertNotIn("episode", status["reflection"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

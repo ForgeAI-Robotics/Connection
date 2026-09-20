@@ -131,6 +131,31 @@ class BrainJournalTests(unittest.TestCase):
         self.assertIn("state=navigating", last)
         self.assertNotIn("ok=false", last)
 
+    def test_inherit_task_false_keeps_previous_task_id_out(self):
+        self.journal.set_current_task("task-old")
+        self.journal.emit("INBOUND", event="preflight", text="开始接待",
+                          inherit_task=False)
+        self.journal.emit("PREFLIGHT", event="http", text="开始接待", ready=True,
+                          inherit_task=False)
+        self.journal.emit("INBOUND", event="publish", text="开始接待",
+                          id="task-new", inherit_task=False)
+        records = [
+            json.loads(line)
+            for line in self.journal.paths()["jsonl"].read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertIsNone(records[0]["task_id"])
+        self.assertIsNone(records[1]["task_id"])
+        self.assertEqual("task-new", records[2]["task_id"])
+        self.assertNotIn("task-old", self._brain_text())
+
+    def test_running_task_still_carries_its_id(self):
+        self.journal.set_current_task("task-run")
+        self.journal.emit("STEP", event="success", order=1, phase="世界与服务预检")
+        record = json.loads(
+            self.journal.paths()["jsonl"].read_text(encoding="utf-8").splitlines()[-1]
+        )
+        self.assertEqual("task-run", record["task_id"])
+
     def test_inbound_headers(self):
         from types import SimpleNamespace
         from brain_journal import inbound_from_flask

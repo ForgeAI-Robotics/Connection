@@ -130,6 +130,8 @@ class GlobalAgent:
         self._dispatch_running = False
         self._result_lock = threading.Lock()
         self._inflight_by_robot = {}
+        self.current_task_type = None
+        self.last_reflection = None
 
         self.logger.info(f"Configuration loaded from {config_path} ...")
         self.logger.info(f"Master Configuration:\n{self.config}")
@@ -137,6 +139,97 @@ class GlobalAgent:
         self._init_scene(self.config["profile"])
         self._start_listener()
         self._start_scene_change_listener()
+
+    def _episode_backend(self, reception_mode=None) -> str:
+        if reception_mode:
+            return "real" if str(reception_mode).lower() == "real" else "mock"
+        try:
+            from robot_api.config import load_robot_api_config
+            name = (load_robot_api_config().active_backend or "").lower()
+        except Exception:
+            name = ""
+        if name in ("dream", "real"):
+            return "real"
+        if name:
+            return "sim"
+        if (self.config.get("reception_real") or {}).get("enabled") is True:
+            return "real"
+        return "sim"
+
+    def _run_task_reflection(
+        self,
+        *,
+        task_type,
+        backend,
+        final,
+        error=None,
+        extra_steps=None,
+        episode=None,
+    ):
+        try:
+            from sop.episode import episode_from_steps, episode_from_task_queue
+            from sop.reflect import maybe_reflect
+        except ImportError:
+            from episode import episode_from_steps, episode_from_task_queue
+            from reflect import maybe_reflect
+        try:
+            if episode is None:
+                if extra_steps is not None:
+                    episode = episode_from_steps(
+                        self.current_task_id,
+                        self.current_task_desc,
+                        extra_steps,
+                        task_type=task_type,
+                        backend=backend,
+                        final=final,
+                        error=error,
+                    )
+                else:
+                    episode = episode_from_task_queue(
+                        self.current_task_id,
+                        self.current_task_desc,
+                        self.current_task_queue,
+                        task_type=task_type,
+                        backend=backend,
+                        final=final,
+                        error=error,
+                    )
+            result = maybe_reflect(episode, config=self.config, quiet=True)
+            self.last_reflection = result
+            if result and not result.get("skipped"):
+                self._journal(
+                    "TASK",
+                    event="reflect",
+                    id=self.current_task_id,
+                    type=task_type,
+                    detail=(result.get("summary") or "")[:500],
+                    ok=final == "success",
+                )
+            return result
+        except Exception as exc:
+            self.logger.warning(f"[reflection] skipped: {exc}")
+            self.last_reflection = {"error": str(exc), "summary": f"复盘失败：{exc}"}
+            return self.last_reflection
+
+    def _remember_reflection(self, payload):
+        if isinstance(payload, dict) and payload and not payload.get("skipped"):
+            self.last_reflection = payload
+            return payload
+        return None
+
+    @staticmethod
+    def _public_reflection(payload):
+        if not isinstance(payload, dict) or not payload or payload.get("skipped"):
+            return None
+        public = {}
+        for key in (
+            "summary", "source", "findings", "new_rules",
+            "final", "backend", "task_type", "error", "sop_v2",
+        ):
+            value = payload.get(key)
+            if value not in (None, "", []):
+                public[key] = value
+        return public or None
 
     @staticmethod
     def _is_dream_backend() -> bool:
@@ -640,6 +733,8 @@ class GlobalAgent:
         self.current_task_id = task_id
         self.current_task_desc = task if isinstance(task, str) else (task[0] if task else "开始接待")
         self.current_reasoning = reasoning
+        self.current_task_type = "reception"
+        self.last_reflection = None
         self._reception_running = True
         self._reception_state = None
         self._pending_failure = None
@@ -678,7 +773,7 @@ class GlobalAgent:
 
         def _worker():
             try:
-                run_reception_skill(
+                result = run_reception_skill(
                     task=self.current_task_desc,
                     task_id=task_id,
                     mode=reception_mode,
@@ -687,10 +782,40 @@ class GlobalAgent:
                     on_state=_on_state,
                     force_new_task=force_new_task,
                 )
+                if isinstance(result, dict) and self._remember_reflection(
+                    result.get("reflection")
+                ):
+                    return
+                state = self._reception_state if isinstance(self._reception_state, dict) else {}
+                if self._remember_reflection(state.get("reflection")):
+                    return
+                failed = any(
+                    t.get("done") and t.get("status") in _EXECUTED_FAILURE_STATUSES
+                    for t in (self.current_task_queue.tasks if self.current_task_queue else [])
+                )
+                rec_state = str(state.get("state") or "")
+                if rec_state == "RECOVERY_REQUIRED":
+                    final = "recovery"
+                elif rec_state in ("FAILED", "CANCELLED") or failed:
+                    final = "failure"
+                else:
+                    final = "success"
+                self._run_task_reflection(
+                    task_type="reception",
+                    backend=self._episode_backend(reception_mode),
+                    final=final,
+                    error=state.get("failure_reason"),
+                )
             except Exception as exc:
                 self.logger.error(f"[reception] skill 执行异常: {exc}")
                 _on_step(99, "接待任务异常", str(exc), "exception")
                 self._journal("TASK", event="fail", error=str(exc), ok=False)
+                self._run_task_reflection(
+                    task_type="reception",
+                    backend=self._episode_backend(reception_mode),
+                    final="failure",
+                    error=str(exc),
+                )
             finally:
                 self._reception_running = False
 
@@ -718,6 +843,7 @@ class GlobalAgent:
 
         # 每条新顶层任务独立规划，清空历史避免旧任务计划干扰 LLM
         self.conversation_history = []
+        self.last_reflection = None
 
         if self._is_reception_task(task):
             # 会议接待:走接待 skill(自带 SOP+经验,内部自跑补货闭环),不经通用 planner
@@ -793,6 +919,8 @@ class GlobalAgent:
         self.current_task_id = task_id
         self.current_task_desc = task if isinstance(task, str) else (task[0] if task else "")
         self.current_reasoning = reasoning_and_subtasks.get("reasoning_explanation", "")
+        self.current_task_type = task_type
+        self.last_reflection = None
         labels = [
             item.get("subtask")
             for item in subtask_list
@@ -1114,6 +1242,11 @@ class GlobalAgent:
                     "TASK", event="fail", id=task_id, ok=False,
                     detail=f"{completed_cnt}/{total_cnt}",
                 )
+                self._run_task_reflection(
+                    task_type=getattr(self, "current_task_type", None) or "generic",
+                    backend=self._episode_backend(),
+                    final="failure",
+                )
             else:
                 self._pending_success = {
                     "task_id": task_id,
@@ -1123,6 +1256,11 @@ class GlobalAgent:
                 }
                 self.logger.info(f"[Experience] Task succeeded, asking user for optional experience")
                 self._journal("TASK", event="ok", id=task_id)
+                self._run_task_reflection(
+                    task_type=getattr(self, "current_task_type", None) or "generic",
+                    backend=self._episode_backend(),
+                    final="success",
+                )
 
     def _send_camera_task(self, robot_name: str, task_id: str, description: str):
         """发送拍照子任务并等待完成。"""
@@ -1256,11 +1394,17 @@ class GlobalAgent:
                 result["won"] = won_result["won"]
         except Exception:
             pass
+        reflection = getattr(self, "last_reflection", None)
+        if not isinstance(reflection, dict) and isinstance(reception_state, dict):
+            reflection = reception_state.get("reflection")
+        public = self._public_reflection(reflection)
+        if public:
+            result["reflection"] = public
         return result
 
     def _status_from_unresolved_snapshot(self, snapshot: Dict) -> Dict:
         state = str(snapshot.get("state") or "RECOVERY_REQUIRED")
-        return {
+        payload = {
             "active": True,
             "task_id": snapshot.get("task_id"),
             "task": self.current_task_desc or snapshot.get("task_id") or "未完成真机任务",
@@ -1279,6 +1423,11 @@ class GlobalAgent:
             "can_resume": False,
             "reception_state": snapshot,
         }
+        reflection = getattr(self, "last_reflection", None) or snapshot.get("reflection")
+        public = self._public_reflection(reflection)
+        if public:
+            payload["reflection"] = public
+        return payload
 
     def _incremental_replan(
         self, original_task: str, task_queue: TaskQueue, changes: list, vlm_feedback: str = None

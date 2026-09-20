@@ -337,10 +337,15 @@ def run_reception(scenario="normal", backend="mock", headcount=4, meeting_cola=1
     if reflect:
         try:
             from reflect import reflect_reception
-            findings, new_rules, source, sop_out = reflect_reception(trace)
-            trace["reflection"] = {
+            findings, new_rules, source, sop_out, payload = reflect_reception(trace)
+            reflection = dict(payload or {})
+            reflection.update({
                 "findings": findings, "new_rules": new_rules, "source": source,
-                "sop_v2": os.path.relpath(sop_out, _ROOT) if sop_out else None}
+                "sop_v2": reflection.get("sop_v2") or (
+                    os.path.relpath(sop_out, _ROOT) if sop_out else None
+                ),
+            })
+            trace["reflection"] = reflection
             nr = f"新增 {len(new_rules)} 条经验规则" if new_rules else "无新增规则"
             _emit(8, "事后反思 → 新SOP", f"{source}:{nr}", "success")
         except Exception as exc:

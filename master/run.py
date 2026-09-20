@@ -119,6 +119,7 @@ def task_preflight():
             "INBOUND",
             event="preflight",
             text=task,
+            inherit_task=False,
             **_inbound(),
         )
         journal_emit(
@@ -128,6 +129,7 @@ def task_preflight():
             ready=report.get("ready"),
             required=report.get("required"),
             blockers=report.get("blockers"),
+            inherit_task=False,
         )
         note_task_request(
             "preflight",
@@ -264,6 +266,7 @@ def publish_task():
                     text=task,
                     intent="chat",
                     risk=entry.risk.value,
+                    inherit_task=False,
                     **_inbound(),
                 )
                 journal_emit(
@@ -272,6 +275,7 @@ def publish_task():
                     text=task,
                     error="闲聊不会发给大脑",
                     ok=False,
+                    inherit_task=False,
                 )
                 note_task_request("intent", task, intent="chat", risk=entry.risk.value)
                 return jsonify(
@@ -292,6 +296,7 @@ def publish_task():
                 risk=entry.risk.value,
                 force_new=bool(data.get("force_new_task")),
                 id=task_id,
+                inherit_task=False,
                 **_inbound(),
             )
             journal_emit(
@@ -301,6 +306,8 @@ def publish_task():
                 ready=report.get("ready"),
                 required=report.get("required"),
                 blockers=report.get("blockers"),
+                id=task_id,
+                inherit_task=False,
             )
             note_task_request(
                 "preflight",
@@ -318,6 +325,8 @@ def publish_task():
                     blockers=blockers,
                     error="；".join(str(item) for item in blockers) or "下游服务未就绪",
                     ok=False,
+                    id=task_id,
+                    inherit_task=False,
                 )
                 return jsonify(
                     {

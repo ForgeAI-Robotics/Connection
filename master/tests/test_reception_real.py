@@ -346,6 +346,22 @@ class ReceptionRealPipelineTest(unittest.TestCase):
         FakeVlaHandler.tasks.clear()
         FakeVlaHandler.snapshots.clear()
         FakeVlaHandler.holding = None
+        self._reflection_tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._reflection_tmp.cleanup)
+        self._old_reflection_dir = os.environ.get("FQPLANNER_REFLECTION_DIR")
+        self._old_reflection_llm = os.environ.get("FQPLANNER_REFLECTION_LLM")
+        os.environ["FQPLANNER_REFLECTION_DIR"] = self._reflection_tmp.name
+        os.environ["FQPLANNER_REFLECTION_LLM"] = "off"
+        def _restore_reflection_env():
+            if self._old_reflection_dir is None:
+                os.environ.pop("FQPLANNER_REFLECTION_DIR", None)
+            else:
+                os.environ["FQPLANNER_REFLECTION_DIR"] = self._old_reflection_dir
+            if self._old_reflection_llm is None:
+                os.environ.pop("FQPLANNER_REFLECTION_LLM", None)
+            else:
+                os.environ["FQPLANNER_REFLECTION_LLM"] = self._old_reflection_llm
+        self.addCleanup(_restore_reflection_env)
 
     def _preflight_report(self):
         dream_url = f"http://127.0.0.1:{self.dream_server.server_port}"
@@ -426,6 +442,12 @@ class ReceptionRealPipelineTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(runtime_dir, "current_task.json")))
             self.assertTrue(os.path.exists(os.path.join(runtime_dir, "images", "pick_after.jpg")))
             self.assertTrue(os.path.exists(os.path.join(runtime_dir, "images", "place_after.jpg")))
+            reflection = result.get("reflection") or {}
+            self.assertTrue(reflection.get("summary"), reflection)
+            self.assertEqual("reception", reflection.get("task_type"))
+            self.assertEqual("real", reflection.get("backend"))
+            self.assertEqual("success", reflection.get("final"))
+            self.assertTrue((result.get("ledger") or []), result)
 
         semantic_events = [(a, b) for a, b, _c in EVENTS]
         self.assertEqual([
@@ -597,6 +619,43 @@ class ReceptionRealPipelineTest(unittest.TestCase):
             self.assertEqual("RUNNING", runner.state["state"])
             self.assertIsNone(runner.state["holding"])
             self.assertEqual({}, runner.state["commands"])
+
+    def test_require_success_names_unmet_evidence_and_dream_reason(self):
+        client = DreamClient("http://127.0.0.1:1")
+        terminal = {
+            "state": "failed",
+            "result": {
+                "success": False,
+                "reached": False,
+                "navigation_stopped": True,
+                "message": "position_hard_failure",
+            },
+            "error": {
+                "code": "NAVIGATION_TERMINAL_UNREACHABLE",
+                "message": "position_hard_failure",
+            },
+        }
+        with self.assertRaises(HttpContractError) as caught:
+            client.require_success(terminal, "nav-table2-abc")
+        text = str(caught.exception)
+        self.assertIn("nav-table2-abc", text)
+        self.assertIn("state=failed", text)
+        self.assertIn("state=succeeded", text)
+        self.assertIn("success=true", text)
+        self.assertIn("reached=true", text)
+        self.assertNotIn("navigation_stopped=true", text)
+        self.assertIn("code=NAVIGATION_TERMINAL_UNREACHABLE", text)
+        self.assertIn("reason=position_hard_failure", text)
+
+    def test_require_success_reports_missing_fields_on_claimed_success(self):
+        client = DreamClient("http://127.0.0.1:1")
+        terminal = {"state": "succeeded", "result": {"success": True}}
+        with self.assertRaises(HttpContractError) as caught:
+            client.require_success(terminal, "nav-table2-abc")
+        text = str(caught.exception)
+        self.assertIn("reached=true", text)
+        self.assertIn("navigation_stopped=true", text)
+        self.assertNotIn("success=true、", text)
 
 
 if __name__ == "__main__":

@@ -268,11 +268,23 @@ class BrainJournal:
                 "pin": self._dir / PIN_FILE,
             }
 
-    def emit(self, kind: str, *, event: str | None = None, task_id=None, **fields):
+    def emit(
+        self,
+        kind: str,
+        *,
+        event: str | None = None,
+        task_id=None,
+        inherit_task: bool = True,
+        **fields,
+    ):
+        # inherit_task=False for inbound requests that carry no task identity of
+        # their own (standalone preflight, chat). Without it they inherit the
+        # previous task's id and pollute per-task greps.
         if not self.enabled:
             return None
         moment = _stamp()
-        known_task = str(task_id or fields.get("id") or self.current_task_id() or "")
+        carried = self.current_task_id() if inherit_task else None
+        known_task = str(task_id or fields.get("id") or carried or "")
         payload = {
             key: _json_ready(value)
             for key, value in fields.items()
@@ -365,8 +377,17 @@ def get_journal():
     return _JOURNAL
 
 
-def emit(kind: str, *, event: str | None = None, task_id=None, **fields):
-    return get_journal().emit(kind, event=event, task_id=task_id, **fields)
+def emit(
+    kind: str,
+    *,
+    event: str | None = None,
+    task_id=None,
+    inherit_task: bool = True,
+    **fields,
+):
+    return get_journal().emit(
+        kind, event=event, task_id=task_id, inherit_task=inherit_task, **fields
+    )
 
 
 def attach_master_journal() -> BrainJournal:

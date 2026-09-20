@@ -168,8 +168,73 @@ class ReceptionRealRunner:
             detail=detail,
             ok=status == "success",
         )
+        if not isinstance(self.state, dict):
+            self.state = {}
+        ledger = list(self.state.get("ledger") or [])
+        phase_text = str(phase or "")
+        is_verify = any(token in phase_text for token in ("确认", "判真", "复核"))
+        ok = status == "success"
+        ledger.append({
+            "order": order,
+            "phase": phase_text,
+            "detail": detail,
+            "status": status,
+            "claimed_ok": True if is_verify else ok,
+            "verify_ok": ok if is_verify else None,
+            "verify_detail": detail,
+        })
+        self.state["ledger"] = ledger
         if self.on_step:
             self.on_step(order, phase, detail, status)
+
+    def _reflection_final(self):
+        rec_state = str((self.state or {}).get("state") or "")
+        if rec_state == "RECOVERY_REQUIRED":
+            return "recovery"
+        if rec_state in ("FAILED", "CANCELLED"):
+            return "failure"
+        if rec_state in ("SUCCEEDED", "COMPLETED_HAND_STATE_ONLY"):
+            return "success"
+        if rec_state:
+            return "failure"
+        return None
+
+    def _attach_reflection(self):
+        """Post-task DeepSeek/template reflection. Does not open LLM planning."""
+        try:
+            try:
+                from episode import episode_from_steps
+                from reflect import maybe_reflect
+            except ImportError:
+                from sop.episode import episode_from_steps
+                from sop.reflect import maybe_reflect
+            final = self._reflection_final()
+            if not final:
+                return
+            state = self.state if isinstance(self.state, dict) else {}
+            episode = episode_from_steps(
+                state.get("task_id"),
+                "开始接待",
+                state.get("ledger") or [],
+                task_type="reception",
+                backend="real",
+                final=final,
+                error=state.get("failure_reason"),
+            )
+            result = maybe_reflect(episode, config=self.config, quiet=True)
+            if isinstance(result, dict) and result and not result.get("skipped"):
+                self.state["reflection"] = result
+                self._publish_state()
+                summary = str(result.get("summary") or "")[:500]
+                if summary and not result.get("skipped"):
+                    self._journal(
+                        "TASK", event="reflect", type="reception",
+                        detail=summary, ok=final == "success",
+                    )
+        except Exception as exc:
+            self._journal(
+                "TASK", event="reflect", error=str(exc), ok=False,
+            )
 
     def _remote_update(self, service, command_id, payload):
         remote = dict(self.state.get("remote_states") or {})
@@ -858,7 +923,6 @@ class ReceptionRealRunner:
             self._step(11, "接待任务完成", "单罐取放全链路完成")
             self._event("TASK_SUCCEEDED")
             self._journal("TASK", event="ok")
-            return copy.deepcopy(self.state)
         except Exception as exc:
             if isinstance(exc, (DreamRecoveryRequired, VlaRecoveryRequired)):
                 if not self.state:
@@ -886,8 +950,7 @@ class ReceptionRealRunner:
                     "TASK", event="fail", phase=failed_phase,
                     error=str(exc), ok=False, note="recovery_required",
                 )
-                return copy.deepcopy(self.state)
-            if self.state.get("state") == "RECOVERY_REQUIRED":
+            elif self.state.get("state") == "RECOVERY_REQUIRED":
                 self._event(
                     "RECOVERY_BLOCKED",
                     error_type=type(exc).__name__,
@@ -898,33 +961,35 @@ class ReceptionRealRunner:
                     "TASK", event="fail", phase="RECOVERY_REQUIRED",
                     error=str(exc), ok=False, note="recovery_blocked",
                 )
-                return copy.deepcopy(self.state)
-            if not self.state:
-                self.state = {
-                    "task_id": task_id,
-                    "contract_version": self.contract_version,
-                }
-            self.state.update({
-                "state": "FAILED",
-                "runtime_phase": "FAILED",
-                "failed_phase": failed_phase,
-                "failure_reason": str(exc),
-                "completed_at": now_iso(),
-            })
-            self._publish_state()
-            self._event(
-                "TASK_FAILED",
-                failed_phase=failed_phase,
-                error_type=type(exc).__name__,
-                error=str(exc),
-                error_payload=getattr(exc, "payload", None),
-            )
-            self._step(99, f"任务失败：{failed_phase}", str(exc), "failure")
-            self._journal(
-                "TASK", event="fail", phase=failed_phase,
-                error=str(exc), ok=False,
-            )
-            return copy.deepcopy(self.state)
+            else:
+                if not self.state:
+                    self.state = {
+                        "task_id": task_id,
+                        "contract_version": self.contract_version,
+                    }
+                self.state.update({
+                    "state": "FAILED",
+                    "runtime_phase": "FAILED",
+                    "failed_phase": failed_phase,
+                    "failure_reason": str(exc),
+                    "completed_at": now_iso(),
+                })
+                self._publish_state()
+                self._event(
+                    "TASK_FAILED",
+                    failed_phase=failed_phase,
+                    error_type=type(exc).__name__,
+                    error=str(exc),
+                    error_payload=getattr(exc, "payload", None),
+                )
+                self._step(99, f"任务失败：{failed_phase}", str(exc), "failure")
+                self._journal(
+                    "TASK", event="fail", phase=failed_phase,
+                    error=str(exc), ok=False,
+                )
+        finally:
+            self._attach_reflection()
+        return copy.deepcopy(self.state)
 
 
 def run_reception_real(

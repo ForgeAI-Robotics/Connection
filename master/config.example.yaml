@@ -77,3 +77,8 @@ reception_real:
       api_base: https://api.deepseek.com
       api_key_env: CLOUD_API_KEY
       timeout_sec: 60
+# Post-task DeepSeek/template reflection for every top-level task (sim and real).
+# Candidates are written under master/memory/reflections/. write_sop remains mock-reception only.
+reflection:
+  enabled: true
+  write_sop: false

@@ -165,6 +165,45 @@ class CardsAndSdkTests(unittest.TestCase):
         self.assertIn("视野描述", rendered)
         self.assertIn("回答：", rendered)
 
+    def test_task_card_shows_reflection(self):
+        record = TaskRecord(
+            message_id="m5",
+            event_id="e5",
+            chat_id="c1",
+            chat_type="p2p",
+            sender_open_id="ou_1",
+            task_text="开始接待",
+            risk_level="motion",
+            state="succeeded",
+            brain_task_id="feishu0123456789abcdef01234567",
+            card_message_id="card_4",
+            created_at=1,
+            updated_at=2,
+            expires_at=None,
+            tracking_timeout_sec=None,
+            confirmed_at=None,
+            completed_at=2,
+            last_error=None,
+            status_signature=None,
+            last_status_json=None,
+        )
+        status = {
+            "active": True,
+            "all_done": True,
+            "reflection": {
+                "summary": "顺利完成：记录的步骤均成功结束 （模板档）",
+                "source": "模板档",
+                "final": "success",
+            },
+        }
+        rendered = str(task_card(record, status))
+        self.assertIn("复盘：", rendered)
+        self.assertIn("顺利完成", rendered)
+        first = FeishuBridge._status_signature(status)
+        status["reflection"]["summary"] = "抓取失败：夹爪未夹住 （模板档）"
+        second = FeishuBridge._status_signature(status)
+        self.assertNotEqual(first, second)
+
 
 if __name__ == "__main__":
     unittest.main()
