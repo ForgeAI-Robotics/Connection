@@ -14,7 +14,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from log_setup import compact_log_text, log_root
+from common.log_setup import compact_log_text, log_root
 
 SOURCE_HEADER = "X-FQ-Source"
 CLIENT_HEADER = "X-FQ-Client"

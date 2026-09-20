@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from log_setup import note_task_request
+from common.log_setup import note_task_request
 from robot_api.config import load_robot_api_config
 from robot_api.intent import classify_entry, route_ambiguous_with_llm
 
@@ -805,7 +805,7 @@ def timeline_frame(filename):
 
 
 if __name__ == "__main__":
-    from log_setup import attach_process_log
+    from common.log_setup import attach_process_log
 
     attach_process_log("deploy")
     print("任务控制台已启动: http://127.0.0.1:8888")

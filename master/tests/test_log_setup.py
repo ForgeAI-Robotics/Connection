@@ -13,7 +13,7 @@ for path in (ROOT, MASTER):
     if path not in sys.path:
         sys.path.insert(0, path)
 
-import log_setup
+from common import log_setup
 
 
 class ProcessLogLayoutTest(unittest.TestCase):

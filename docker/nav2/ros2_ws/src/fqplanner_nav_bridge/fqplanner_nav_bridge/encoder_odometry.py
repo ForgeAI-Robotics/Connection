@@ -20,7 +20,7 @@ from tf2_ros import TransformBroadcaster
 import sys
 import os
 
-# Add serve_real path so we can import the motor bus
+# Add extensions/serve_real path so we can import the motor bus.
 _SERVE_REAL = os.environ.get("FQPLANNER_SERVE_REAL", "")
 if _SERVE_REAL and os.path.isdir(_SERVE_REAL):
     _backend_base = os.path.join(_SERVE_REAL, "backend", "base", "RealBase")

@@ -14,7 +14,7 @@ _ATTACHED = False
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parents[1]
 
 
 def log_root() -> Path:
@@ -154,7 +154,7 @@ def attach_process_log(service: str) -> Path:
     print(f"[log] {service} -> {path}", flush=True)
     if service == "master":
         print(f"[log] reception archive -> {os.environ[RECEPTION_RUNTIME_ENV]}", flush=True)
-        from brain_journal import attach_master_journal
+        from common.brain_journal import attach_master_journal
 
         attach_master_journal()
     return path

@@ -244,7 +244,7 @@ def api_action(service_id: str, action: str):
 
 def main() -> None:
     os.chdir(ROOT)
-    from log_setup import attach_process_log
+    from common.log_setup import attach_process_log
 
     attach_process_log("panel")
     app.run(host="0.0.0.0", port=5678, debug=False, threaded=True)

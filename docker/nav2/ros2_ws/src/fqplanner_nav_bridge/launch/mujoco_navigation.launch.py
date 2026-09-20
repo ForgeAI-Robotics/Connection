@@ -13,11 +13,7 @@ from launch_ros.actions import Node
 
 
 def _default_map(root):
-    candidates = (
-        os.path.join(root, "simulation", "nav2", "maps", "kitchen_map.yaml"),
-        os.path.join(root, "nav2", "maps", "kitchen_map.yaml"),
-    )
-    return next((path for path in candidates if os.path.exists(path)), candidates[0])
+    return os.path.join(root, "simulation", "nav2", "maps", "kitchen_map.yaml")
 
 
 def _default_project_root():

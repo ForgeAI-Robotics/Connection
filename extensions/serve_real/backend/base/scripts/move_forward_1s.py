@@ -3,7 +3,7 @@
 Move the differential base forward for one second.
 
 Example:
-    python3 scripts/move_forward_1s.py --port /dev/ttyACM0 --speed 0.1
+    python3 extensions/serve_real/backend/base/scripts/move_forward_1s.py --port /dev/ttyACM0 --speed 0.1
 """
 
 import argparse

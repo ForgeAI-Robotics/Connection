@@ -9,8 +9,8 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-import log_setup
-from brain_journal import (
+from common import log_setup
+from common.brain_journal import (
     BrainJournal,
     OutboundCall,
     fingerprint,
@@ -158,7 +158,7 @@ class BrainJournalTests(unittest.TestCase):
 
     def test_inbound_headers(self):
         from types import SimpleNamespace
-        from brain_journal import inbound_from_flask
+        from common.brain_journal import inbound_from_flask
 
         req = SimpleNamespace(
             headers={

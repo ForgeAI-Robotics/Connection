@@ -20,7 +20,7 @@ if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 load_dotenv(os.path.join(_project_root, '.env'))
 
-from brain_journal import OutboundCall, emit as journal_emit, get_journal
+from common.brain_journal import OutboundCall, emit as journal_emit, get_journal
 
 # Bypass system proxy for API calls
 os.environ['NO_PROXY'] = '*'

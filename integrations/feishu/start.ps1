@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-$Requirements = Join-Path $PSScriptRoot "requirements.txt"
+$Requirements = Join-Path $ProjectRoot "config\dependencies\requirements-feishu.txt"
 $EntryPoint = Join-Path $PSScriptRoot "run.py"
 
 if (-not (Test-Path -LiteralPath $VenvPython)) {

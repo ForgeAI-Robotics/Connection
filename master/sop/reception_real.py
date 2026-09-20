@@ -27,16 +27,16 @@ except ModuleNotFoundError as exc:
 from .reception_store import ReceptionStore, now_iso
 
 try:
-    from brain_journal import emit as journal_emit
-    from brain_journal import get_journal
+    from common.brain_journal import emit as journal_emit
+    from common.brain_journal import get_journal
 except ModuleNotFoundError:
     import sys
 
     root = Path(__file__).resolve().parents[2]
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    from brain_journal import emit as journal_emit
-    from brain_journal import get_journal
+    from common.brain_journal import emit as journal_emit
+    from common.brain_journal import get_journal
 
 
 CONTRACT_VERSION = "fq/reception-lan/v1"

@@ -1,7 +1,6 @@
 # Secrets and per-machine configuration (public examples are explicitly retained)
 .env
 .env.*
-!.env.example
 *.pem
 *.key
 *.p12
@@ -13,7 +12,7 @@ secrets*
 /master/config.yaml
 /slaver/config.yaml
 /robot_api/config.yaml
-/serve_real/config.yaml
+/extensions/serve_real/config.yaml
 /serve_dream/config.yaml
 /serve_dream/dream_navigation_sop.yaml
 /tools/

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from log_setup import create_process_log_path
+from common.log_setup import create_process_log_path
 
 
 def _redis_binaries():

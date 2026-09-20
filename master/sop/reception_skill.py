@@ -95,8 +95,8 @@ def run_reception_skill(task="开始接待", on_step=None, backend="mock",
     from reception_loop import run_reception
 
     try:
-        from brain_journal import emit as journal_emit
-        from brain_journal import get_journal
+        from common.brain_journal import emit as journal_emit
+        from common.brain_journal import get_journal
     except ImportError:
         journal_emit = None
         get_journal = None

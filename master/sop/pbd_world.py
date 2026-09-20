@@ -3,7 +3,7 @@
 PBD 组(定位建图语义地图)在 PBD 主机跑重服务(模型/CUDA/ROS2),大脑只装纯 Python 客户端
 `pbd_ag_client`,HTTP 轮询拉:占据地图 / 机器人位姿 / 语义物体(类别+中心+bbox+父子关系+稳定 id)/
 RGB(按需);回传:任务上下文 / 工作点导航目标(map 系坐标)。客户端与文档见
-`PBD_AG_大脑端轻量客户端_v0.1.0/`。轮询 = 大脑按频率主动 GET 拉最新(不是 PBD 推送)。
+`extensions/pbd_ag/`。轮询 = 大脑按频率主动 GET 拉最新(不是 PBD 推送)。
 
 用法:
   export PBD_AG_SERVER=http://10.11.32.63:8088

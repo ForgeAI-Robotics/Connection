@@ -283,7 +283,10 @@ class RobotRuntime:
 
     def _real_grasp(self, object_name: str | None):
         try:
-            from serve_real.bridge.arm import real_arm_fail_on_error, trigger_real_grasp
+            from extensions.serve_real.bridge.arm import (
+                real_arm_fail_on_error,
+                trigger_real_grasp,
+            )
         except Exception as exc:
             return {"success": False, "result": f"真实机械臂桥接导入失败: {exc}"}
 
@@ -301,7 +304,7 @@ class RobotRuntime:
     @staticmethod
     def _real_base(payload: dict[str, Any]):
         try:
-            from serve_real.bridge.base import start_move_duration
+            from extensions.serve_real.bridge.base import start_move_duration
 
             start_move_duration(
                 float(payload.get("vx", 0.0)),

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def main():
-    from log_setup import attach_process_log
+    from common.log_setup import attach_process_log
 
     attach_process_log("serve_dream")
     parser = argparse.ArgumentParser(description="serve_dream - DREAM 真机后端适配")

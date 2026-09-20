@@ -124,7 +124,7 @@ def record(line: str) -> None:
     formatted = f"[{stamp}] {line}"
     _HISTORY.append(formatted)
     try:
-        from log_setup import append_monitor_log
+        from common.log_setup import append_monitor_log
 
         append_monitor_log("dream", formatted, stamped=True)
     except OSError:

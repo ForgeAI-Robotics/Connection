@@ -14,8 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from log_setup import append_monitor_log, compact_log_text, log_root
-from brain_journal import (
+from common.log_setup import append_monitor_log, compact_log_text, log_root
+from common.brain_journal import (
     BRAIN_LOG,
     HTTP_ACCESS_LOG,
     PIN_FILE,
@@ -392,7 +392,7 @@ def start_shell(service: Service) -> str:
 
     python = _venv_python()
     if service.id == "redis":
-        from log_setup import create_process_log_path
+        from common.log_setup import create_process_log_path
         from scripts.start_redis import build_redis_command, redis_env
 
         log_path = create_process_log_path("redis")

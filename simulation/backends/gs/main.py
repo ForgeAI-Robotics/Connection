@@ -95,7 +95,7 @@ def main():
     root = _PROJECT_ROOT
     if root not in sys.path:
         sys.path.insert(0, root)
-    from log_setup import attach_process_log
+    from common.log_setup import attach_process_log
 
     attach_process_log("gs")
     parser = argparse.ArgumentParser(description="MotrixSim + 3DGS backend")

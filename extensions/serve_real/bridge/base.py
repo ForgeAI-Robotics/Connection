@@ -2,7 +2,7 @@
 """
 Bridge unified robot base commands to the real differential base.
 
-The bridge is disabled by default. Enable it in serve_real/config.yaml:
+The bridge is disabled by default. Enable it in extensions/serve_real/config.yaml:
     real_base:
       enabled: 1
 """

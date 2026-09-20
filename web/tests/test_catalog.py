@@ -137,7 +137,7 @@ class CatalogTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
 
         from web.services import by_id, latest_log_file
-        import log_setup
+        from common import log_setup
 
         with TemporaryDirectory() as raw:
             os.environ[log_setup.LOG_ROOT_ENV] = raw
@@ -158,7 +158,7 @@ class CatalogTests(unittest.TestCase):
         from tempfile import TemporaryDirectory
 
         from web import services
-        import log_setup
+        from common import log_setup
 
         services.PROBE_HISTORY.clear()
         services._LAST_MONITOR.clear()

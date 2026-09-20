@@ -178,7 +178,7 @@ async def _run(settings: Settings) -> None:
 
 def main() -> int:
     try:
-        from log_setup import attach_process_log
+        from common.log_setup import attach_process_log
 
         attach_process_log("feishu")
         settings = load_settings(require_credentials=True)

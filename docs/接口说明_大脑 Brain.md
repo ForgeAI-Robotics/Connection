@@ -110,7 +110,7 @@ reception_real:
   place_photo_verification_enabled: false
 ```
 
-环境变量 `RECEPTION_MODE` 非空时优先于 `reception_real.enabled`。公开模板 `.env.example` 默认使用 `mock`，现场真机环境必须明确设置为 `real` 或移除该覆盖。
+环境变量 `RECEPTION_MODE` 非空时优先于 `reception_real.enabled`。公开模板 `config/examples/env.example` 默认使用 `mock`，现场真机环境必须明确设置为 `real` 或移除该覆盖。
 
 当前两个照片判真开关均为 `false`：大脑不把相机状态作为预检硬门，不请求动作后快照，也不调用 VLM/LLM。抓取和放置依据 VLA 真实终态、左手连续帧证据、`holding/released`、`policy_stopped` 和 `navigation_port_ready` 推进；任务状态中的 `evidence_level` 当前为 `vla_only`。打开对应照片开关后，才执行该动作的图片双重判真。
 

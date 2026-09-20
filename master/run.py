@@ -6,7 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 if __name__ == "__main__":
-    from log_setup import attach_process_log
+    from common.log_setup import attach_process_log
 
     attach_process_log("master")
 
@@ -15,8 +15,8 @@ from agents.agent import GlobalAgent
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO
-from log_setup import note_task_request
-from brain_journal import emit as journal_emit, inbound_from_flask
+from common.log_setup import note_task_request
+from common.brain_journal import emit as journal_emit, inbound_from_flask
 from robot_api.intent import Intent, classify_task
 
 # The documented entry point is ``python master/run.py`` from the repository

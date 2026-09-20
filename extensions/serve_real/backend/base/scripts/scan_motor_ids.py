@@ -3,7 +3,7 @@
 Scan Feetech motor IDs on a serial bus.
 
 Example:
-    python3 scripts/scan_motor_ids.py --port /dev/ttyACM0
+    python3 extensions/serve_real/backend/base/scripts/scan_motor_ids.py --port /dev/ttyACM0
 """
 
 import argparse

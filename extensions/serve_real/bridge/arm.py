@@ -2,7 +2,7 @@
 """
 Bridge LLM grasp tool calls to the real arm grasp server.
 
-The bridge is disabled by default. Enable it in serve_real/config.yaml:
+The bridge is disabled by default. Enable it in extensions/serve_real/config.yaml:
     real_arm:
       enabled: 1
 """

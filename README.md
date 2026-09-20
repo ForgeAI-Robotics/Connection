@@ -40,7 +40,7 @@ flowchart TD
 
 ## 2. 冷机怎么开
 
-面板：`http://192.168.5.35:5678`（`web/run_panel.py`，systemd `fqplanner-panel`）。无登录，只能在可信网络使用。冷机只有面板自启，业务进程默认全停。
+面板：`http://192.168.5.35:5678`（`web/app.py`，systemd `fqplanner-panel`）。无登录，只能在可信网络使用。冷机只有面板自启，业务进程默认全停。
 
 建议顺序：
 
@@ -65,12 +65,12 @@ flowchart TD
 首次配置：
 
 ```bash
-cp .env.example .env
+python scripts/bootstrap_local.py
 ```
 
 本机只维护两套 Python 3.10 环境：`.venv` 运行大脑、网页、飞书和普通工具，`.venv_3dgs` 专用于 CUDA / 3DGS 渲染。不要再创建独立的 `.venv_feishu`；飞书依赖已纳入项目依赖并由 `.venv` 运行。
 
-飞书、SSH、远端地址从根目录 `.env` 读取。不要提交填写后的 `.env`。公开模板中 `RECEPTION_MODE=mock` 是安全默认值，并且它优先于 `master/config.yaml` 的 `reception_real.enabled`；真机环境必须显式改成 `RECEPTION_MODE=real` 或移除该环境变量。旧地址 `192.168.5.185` 和 `192.168.0.108` 已停用。
+该命令从 [`config/examples/`](config/examples/) 创建缺失的本地配置，不覆盖已有文件，也不启动服务。飞书、SSH、远端地址从根目录 `.env` 读取。不要提交填写后的 `.env`。公开模板中 `RECEPTION_MODE=mock` 是安全默认值，并且它优先于 `master/config.yaml` 的 `reception_real.enabled`；真机环境必须显式改成 `RECEPTION_MODE=real` 或移除该环境变量。旧地址 `192.168.5.185` 和 `192.168.0.108` 已停用。配置和依赖清单边界见 [`config/README.md`](config/README.md)。
 
 每个服务一个 tmux session：
 
@@ -165,7 +165,9 @@ Master 在接待任务进入 Pipeline 前执行只读 `task_preflight`。DREAM `
 | 文档 / 文件 | 用途 |
 |---|---|
 | [文档目录](docs/README.md) | 架构、接口、联调、规划和排障索引 |
+| [公共模块](common/README.md) | 进程日志和大脑业务流水账等共享基础设施 |
 | [仿真目录](simulation/README.md) | Desk、MuJoCo、3DGS 及后续仿真工具的归类入口 |
+| [非主链扩展](extensions/README.md) | PBD、NX 语音和旧式真机直连能力 |
 | [架构说明：三端架构](docs/架构说明_三端架构.md) | 当前系统全局架构 |
 | [联调说明：三端联调启动](docs/联调说明_三端联调启动.md) | 大脑、导航、VLA/NX 启动、人工闸门、预检和收工 |
 | [接口说明：大脑 Brain](docs/接口说明_大脑%20Brain.md) | Master 编排、状态、断点继续和证据策略 |
@@ -177,4 +179,4 @@ Master 在接待任务进入 Pipeline 前执行只读 `task_preflight`。DREAM `
 | `master/run.py`、`deploy/run.py` | 网页如何转到 Master |
 | `robot_api/intent.py` | 闲聊和任务如何分流 |
 | `robot_api/look.py` | 飞书看图 |
-| `web/run_panel.py` | 面板进程管理 |
+| `web/app.py` | 面板进程管理 |

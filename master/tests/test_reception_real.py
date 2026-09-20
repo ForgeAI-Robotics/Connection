@@ -465,8 +465,8 @@ class ReceptionRealPipelineTest(unittest.TestCase):
         ], semantic_events)
 
     def test_complete_pipeline_without_photo_verification(self):
-        import log_setup
-        from brain_journal import BrainJournal, reset_journal_for_tests
+        from common import log_setup
+        from common.brain_journal import BrainJournal, reset_journal_for_tests
 
         dream_url = f"http://127.0.0.1:{self.dream_server.server_port}"
         vla_url = f"http://127.0.0.1:{self.vla_server.server_port}"

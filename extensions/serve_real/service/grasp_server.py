@@ -5,10 +5,10 @@
 监听 Socket 连接，接收 0xAA 指令，执行当前项目内的抓取脚本并返回结果。
 
 使用方法：
-    python3 serve_real/service/grasp_server.py
+    python3 extensions/serve_real/service/grasp_server.py
 
     或在后台运行：
-    nohup python3 serve_real/service/grasp_server.py > grasp_server.log 2>&1 &
+    nohup python3 extensions/serve_real/service/grasp_server.py > grasp_server.log 2>&1 &
 """
 
 import socket
@@ -20,7 +20,7 @@ from pathlib import Path
 # 配置
 HOST = "0.0.0.0"  # 监听所有网络接口
 PORT = 9999       # 端口号
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = "../../camera_10s.sh"  # 相对项目根目录
 GRASP_COMMAND = 0xAA  # 抓取指令字节
 TIMEOUT = 60          # 抓取脚本超时时间（秒）
