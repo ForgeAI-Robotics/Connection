@@ -69,7 +69,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(desk.port, 5008)
         self.assertTrue(desk.controllable)
         command = start_shell(desk)
-        self.assertIn("serve_desk/main.py", command)
+        self.assertIn("simulation/backends/desk/main.py", command)
         self.assertIn("exec", command)
 
     def test_mujoco_tmux_command(self):
@@ -77,7 +77,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(mujoco.port, 5001)
         self.assertTrue(mujoco.controllable)
         command = start_shell(mujoco)
-        self.assertIn("serve/main.py", command)
+        self.assertIn("simulation/backends/mujoco/main.py", command)
         self.assertIn("--no-viewer", command)
         self.assertIn("MUJOCO_GL=egl", command)
         master = next(item for item in catalog() if item.id == "master")
@@ -88,7 +88,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(gs.port, 5002)
         self.assertTrue(gs.controllable)
         command = start_shell(gs)
-        self.assertIn("serve_3dgs/main.py", command)
+        self.assertIn("simulation/backends/gs/main.py", command)
         self.assertIn("--no-viewer", command)
         self.assertIn("--robot xlerobot", command)
         self.assertIn("exec", command)

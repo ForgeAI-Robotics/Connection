@@ -16,10 +16,15 @@ import numpy as np
 import yaml
 
 _FREE_POINTS_PATH = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), '..', '..', 'nav2', 'maps', 'free_points.json')
+    os.path.join(
+        os.path.dirname(__file__), '..', '..', 'simulation', 'nav2', 'maps',
+        'free_points.json',
+    )
 )
 _NAV2_CONFIG_PATH = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), '..', '..', 'nav2', 'config.yaml')
+    os.path.join(
+        os.path.dirname(__file__), '..', '..', 'simulation', 'nav2', 'config.yaml',
+    )
 )
 
 _pts      = None   # list of (x, y)

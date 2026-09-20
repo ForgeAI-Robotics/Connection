@@ -34,7 +34,8 @@ def _belief_obj_locations() -> dict:
     try:
         state_path = _os.path.normpath(_os.path.join(
             _os.path.dirname(__file__), "..", "..",
-            "serve", "scene", "config", "scene_state.yaml"))
+            "simulation", "backends", "mujoco", "scene", "config",
+            "scene_state.yaml"))
         with open(state_path, encoding="utf-8") as f:
             state = yaml.safe_load(f) or {}
     except Exception:

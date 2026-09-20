@@ -1,4 +1,4 @@
-"""进程内 mock 世界 —— 八月「G1 会议接待」demo(替代桌面 serve_desk,先跑通大脑程序结构)。
+"""进程内 mock 世界 —— 八月「G1 会议接待」demo（替代独立 Desk 后端，先跑通大脑程序结构）。
 
 分两层(对应「VLA 自报 vs 大脑重新观测」这个 demo 核心):
   - **物理操作**(w_set_light / w_pick_cola / w_walk / w_place_cola):会被 fault 注入干扰,

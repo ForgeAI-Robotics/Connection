@@ -12,7 +12,7 @@ if [ ! -d "${DEFAULT_NAV_BRIDGE}" ]; then
   DEFAULT_NAV_BRIDGE="${SCRIPT_DIR}/nav2/ros2_ws/src/fqplanner_nav_bridge"
 fi
 HOST_NAV_BRIDGE="${HOST_NAV_BRIDGE:-${DEFAULT_NAV_BRIDGE}}"
-HOST_NAV2_DIR="${HOST_NAV2_DIR:-${PROJECT_ROOT}/nav2}"
+HOST_NAV2_DIR="${HOST_NAV2_DIR:-${PROJECT_ROOT}/simulation/nav2}"
 
 docker run --rm -it \
   --name "${CONTAINER_NAME}" \

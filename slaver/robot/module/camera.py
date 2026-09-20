@@ -30,7 +30,8 @@ _camera_cfg = _cfg.get("camera", {})
 _vlm_cfg = _camera_cfg.get("vlm", {})
 
 _serve_camera_config_path = os.path.join(
-    _project_root, "serve", "scene", "config", "camera.yaml"
+    _project_root, "simulation", "backends", "mujoco", "scene", "config",
+    "camera.yaml"
 )
 _serve_camera_cfg = {}
 if os.path.exists(_serve_camera_config_path):

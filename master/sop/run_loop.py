@@ -8,7 +8,7 @@
   个人物品未被挪动) → trace 存档(任务④事后反思的输入)。
 
 用法:
-  python master/sop/run_loop.py            # 需 serve_desk 在跑 + active_backend: desk
+  python master/sop/run_loop.py            # 需 Desk 后端在跑 + active_backend: desk
 """
 
 import json
@@ -90,7 +90,7 @@ def main():
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--vlm", action="store_true",
-                    help="用 qwen 看 photos/ 真照片决定技能集(否则用 serve_desk 几何档)")
+                    help="用 qwen 看 photos/ 真照片决定技能集（否则用 Desk 几何档）")
     args = ap.parse_args()
 
     print("=" * 64)
@@ -116,7 +116,7 @@ def main():
         if no_skill:
             print(f"  ⚠ VLM 判要处理但 VLA 无对应技能(跳过/需人): {no_skill}")
     else:
-        print("判断源: 几何档(serve_desk /objects)")
+        print("判断源: 几何档(Desk /objects)")
         needed = [s for s in SKILL_ORDER if pending_objects(s, objects, zones)]
     print("判断 → 需执行技能: " + (", ".join(SKILLS[s]["label"] for s in needed) or "无(桌面已达标)"))
 

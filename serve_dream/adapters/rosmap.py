@@ -2,7 +2,7 @@
 
 DREAM 交付的 trinary 占据图:occupied=0 / unknown=205 / free=254。
 直接透传像素值即可与项目现有语义兼容:
-  - nav2/free_points_generator: <128 = 障碍, >=250 = 可通行(205 unknown 两不沾 = 不可走也不算障碍)
+  - simulation/nav2/free_points_generator: <128 = 障碍，>=250 = 可通行
   - serve /scan 射线: <128 = 占据
 坐标约定与 nav2 生成器一致(origin 为左下角,PGM 第一行是地图顶部)。
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 def read_map_yaml(path):
-    """与 nav2/free_points_generator.read_map_yaml 同款解析,容忍行内注释。"""
+    """与 simulation/nav2/free_points_generator 的解析约定一致。"""
     text = Path(path).read_text()
     image = re.search(r"^image:\s*(.+)$", text, re.M).group(1).strip()
     resolution = float(re.search(r"^resolution:\s*([-0-9.]+)", text, re.M).group(1))

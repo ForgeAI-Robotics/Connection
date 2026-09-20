@@ -1,6 +1,7 @@
 """接待版工作点生成 —— 从 free_points,为【每个要操作的目标】各选一个工作点。
 
-和 nav2/workpoints_generator(贪心最少覆盖)的区别:接待要【每个目标都能操作到】,不合并——
+和 simulation/nav2/workpoints_generator（贪心最少覆盖）的区别：接待要
+【每个目标都能操作到】，不合并——
   · 取可乐:可乐/冰箱前一个工作点,yaw 朝可乐(取);
   · 摆放:每把椅子(座位)旁一个工作点,yaw 朝【桌子】(把可乐放到该座位前的桌面),不是朝椅子本身。
 
@@ -19,7 +20,7 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(os.path.dirname(_HERE))
-sys.path.insert(0, os.path.join(_ROOT, "nav2"))
+sys.path.insert(0, os.path.join(_ROOT, "simulation", "nav2"))
 from workpoints_generator import snap_to_90, compute_yaw   # noqa: E402  复用朝向计算
 
 D_MIN, D_MAX = 0.3, 0.6   # 可操作距离窗(默认;真值由 G1 臂长/底盘定,联调调)

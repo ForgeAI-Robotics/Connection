@@ -48,11 +48,8 @@ def _is_fixture_name(target: str) -> bool:
 
 
 def _scene_mem():
-    """延迟导入 serve 的 scene_memory(把 serve 加到 path)。"""
-    serve_path = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'serve'))
-    if serve_path not in sys.path:
-        sys.path.insert(0, serve_path)
-    from scene import scene_memory
+    """延迟导入 MuJoCo 仿真的场景记忆。"""
+    from simulation.backends.mujoco.scene import scene_memory
     return scene_memory
 
 

@@ -12,11 +12,10 @@ from robot_api.client import (
     place_object as _place_object,
     get_scene,
 )
-
-_SERVE_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'serve'))
-if _SERVE_PATH not in sys.path:
-    sys.path.insert(0, _SERVE_PATH)
-from scene.scene_memory import move_object as _move_object, coords_to_waypoint as _coords_to_waypoint
+from simulation.backends.mujoco.scene.scene_memory import (
+    coords_to_waypoint as _coords_to_waypoint,
+    move_object as _move_object,
+)
 
 
 def _place_position_for_fixture(target_name, fixture):

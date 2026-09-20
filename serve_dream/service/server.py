@@ -1,6 +1,6 @@
-"""serve_dream HTTP 后端 — 把 DREAM(导航建图组)交付物适配成 FQPlanner 标准后端接口。
+"""serve_dream HTTP 后端 — 把 DREAM（导航建图组）适配成标准后端接口。
 
-上层(master/slaver/nav2 生成器)通过 robot_api 打这里,与打 serve/serve_3dgs 无差别:
+上层通过 robot_api 调用，与仿真后端使用同一套接口：
   GET  /objects /fixtures /scene /base_status /map_data /health
   POST /nav        → 按对方文件契约写任务、轮询结果(adapters/nav_handoff)
   POST /grasp /place /screenshot → 501,真机上由 VLA 组后端提供(robot_api 分路由)

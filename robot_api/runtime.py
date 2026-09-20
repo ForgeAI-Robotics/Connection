@@ -260,8 +260,8 @@ class RobotRuntime:
         return payload
 
     def _nav_call(self, backend, args):
-        """底盘导航端点按后端选:serve_3dgs(motrixsim)底盘导航是 /move_to(取 target=[x,y],同学确认),
-        robocasa 等用 /nav。这样不用给 serve_3dgs 另写 /nav 端点。坐标目标才重路由;名称目标(ALFWorld
+        """底盘导航端点按后端选：3DGS/MotrixSim 使用 /move_to（target=[x,y]），
+        RoboCasa 等用 /nav。坐标目标才重路由；名称目标（ALFWorld
         等符号后端)仍走 /nav 透传。/move_to 只接位置、不控 yaw(如需朝向后续用 /move_duration 补)。"""
         std = self._navigation_payload(args["target"], args.get("yaw"))
         name = (backend.name or "").lower()

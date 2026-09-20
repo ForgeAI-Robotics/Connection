@@ -163,6 +163,7 @@ Master 在接待任务进入 Pipeline 前执行只读 `task_preflight`。DREAM `
 | 文档 / 文件 | 用途 |
 |---|---|
 | [文档目录](docs/README.md) | 架构、接口、联调、规划和排障索引 |
+| [仿真目录](simulation/README.md) | Desk、MuJoCo、3DGS 及后续仿真工具的归类入口 |
 | [架构说明：三端架构](docs/架构说明_三端架构.md) | 当前系统全局架构 |
 | [联调说明：三端联调启动](docs/联调说明_三端联调启动.md) | 大脑、导航、VLA/NX 启动、人工闸门、预检和收工 |
 | [接口说明：大脑 Brain](docs/接口说明_大脑%20Brain.md) | Master 编排、状态、断点继续和证据策略 |

@@ -12,6 +12,14 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
+def _default_map(root):
+    candidates = (
+        os.path.join(root, "simulation", "nav2", "maps", "kitchen_map.yaml"),
+        os.path.join(root, "nav2", "maps", "kitchen_map.yaml"),
+    )
+    return next((path for path in candidates if os.path.exists(path)), candidates[0])
+
+
 def _default_project_root():
     env_root = os.environ.get("FQPLANNER_ROOT")
     if env_root:
@@ -31,7 +39,7 @@ def _default_project_root():
 
     for candidate in candidates:
         root = os.path.abspath(candidate)
-        if os.path.exists(os.path.join(root, "nav2", "maps", "kitchen_map.yaml")):
+        if os.path.exists(_default_map(root)):
             return root
     return os.getcwd()
 
@@ -40,7 +48,7 @@ def generate_launch_description():
     package_share = get_package_share_directory("fqplanner_nav_bridge")
     nav2_launch_dir = os.path.join(get_package_share_directory("nav2_bringup"), "launch")
     project_root = _default_project_root()
-    default_map = os.path.join(project_root, "nav2", "maps", "kitchen_map.yaml")
+    default_map = _default_map(project_root)
 
     backend_url = LaunchConfiguration("backend_url")
     nav_bridge_url = LaunchConfiguration("nav_bridge_url")

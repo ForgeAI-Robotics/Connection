@@ -1,7 +1,7 @@
 """桌面整理技能级工具 —— 整理牛奶/可乐/笔筒/清垃圾。
 
 demo「整理桌面」用。每个技能内部调 master/sop/skill_executor.execute_skill(走 robot_api →
-当前后端,如 serve_desk mock / 将来 VLA),把该类物体归位/清走。子任务文本("整理牛奶"等)由
+当前后端（如 Desk mock / 将来 VLA），把该类物体归位/清走。子任务文本（“整理牛奶”等）由
 master demo 规划分支产出,slaver agent 匹配到这里对应的技能工具。
 """
 

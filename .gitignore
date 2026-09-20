@@ -63,13 +63,13 @@ integrations/feishu/runtime/
 /master/sop/reception_status.json
 /master/sop/demo_*.json
 /master/sop/demo_sop_v2.yaml
-/nav2/maps/
+/simulation/nav2/maps/
 /serve_dream/integration/
 /serve_dream/*.ps1
 /serve_dream/*.cmd
 /master/*.cmd
-/assets/scene/
-/assets/scene_3dgs/maps/
+/simulation/assets/scene/
+/simulation/assets/scene_3dgs/maps/
 **/scene_state.yaml
 *.mp4
 *.avi

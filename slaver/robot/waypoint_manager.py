@@ -13,7 +13,10 @@ import yaml
 from robot_api.client import get_fixtures, get_objects
 
 try:
-    from serve.scene.scene_memory import get_object_coords, get_object_location
+    from simulation.backends.mujoco.scene.scene_memory import (
+        get_object_coords,
+        get_object_location,
+    )
 except Exception:
     def get_object_coords(obj_name):
         return None
@@ -22,13 +25,15 @@ except Exception:
         return None
 
 _WAYPOINTS_PATH = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'serve', 'scene', 'config', 'waypoints.yaml'
+    os.path.dirname(__file__), '..', '..', 'simulation', 'backends', 'mujoco',
+    'scene', 'config', 'waypoints.yaml'
 )
 _NAV2_CONFIG_PATH = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'nav2', 'config.yaml'
+    os.path.dirname(__file__), '..', '..', 'simulation', 'nav2', 'config.yaml'
 )
 _FREE_POINTS_PATH = os.path.join(
-    os.path.dirname(__file__), '..', '..', 'nav2', 'maps', 'free_points.json'
+    os.path.dirname(__file__), '..', '..', 'simulation', 'nav2', 'maps',
+    'free_points.json'
 )
 
 _waypoints_cache = None

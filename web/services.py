@@ -298,7 +298,7 @@ def catalog() -> list[Service]:
             controllable=True,
             window="desk",
             port=5008,
-            match="serve_desk/main.py",
+            match="simulation/backends/desk/main.py",
             log_service="desk",
             health=_health_http("http://127.0.0.1:5008/health"),
         ),
@@ -309,7 +309,7 @@ def catalog() -> list[Service]:
             controllable=True,
             window="mujoco",
             port=5001,
-            match="serve/main.py",
+            match="simulation/backends/mujoco/main.py",
             log_service="mujoco",
             health=_health_http("http://127.0.0.1:5001/camera/status"),
         ),
@@ -320,7 +320,7 @@ def catalog() -> list[Service]:
             controllable=True,
             window="gs",
             port=5002,
-            match="serve_3dgs/main.py",
+            match="simulation/backends/gs/main.py",
             log_service="gs",
             health=_health_http("http://127.0.0.1:5002/camera/status"),
         ),
@@ -423,16 +423,18 @@ def start_shell(service: Service) -> str:
     if service.id == "slaver":
         return f"exec {_shell_quote(str(python))} slaver/run.py"
     if service.id == "desk":
-        return f"exec {_shell_quote(str(python))} serve_desk/main.py"
+        return f"exec {_shell_quote(str(python))} simulation/backends/desk/main.py"
     if service.id == "mujoco":
         return (
             "export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl; "
-            f"exec {_shell_quote(str(python))} serve/main.py --no-viewer"
+            f"exec {_shell_quote(str(python))} "
+            "simulation/backends/mujoco/main.py --no-viewer"
         )
     if service.id == "gs":
         return (
             "export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl; "
-            f"exec {_shell_quote(str(_3dgs_python()))} serve_3dgs/main.py "
+            f"exec {_shell_quote(str(_3dgs_python()))} "
+            "simulation/backends/gs/main.py "
             "--no-viewer --no-composite --robot xlerobot"
         )
     raise ValueError(f"{service.id} 不能由面板启动")

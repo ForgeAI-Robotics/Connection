@@ -12,9 +12,11 @@ import yaml
 from .config import PROJECT_ROOT
 
 
-DEFAULT_SCENE_CONFIG_DIR = PROJECT_ROOT / "assets" / "scene_config"
-DEFAULT_NAV2_CONFIG_PATH = PROJECT_ROOT / "nav2" / "config.yaml"
-DEFAULT_FREE_POINTS_PATH = PROJECT_ROOT / "nav2" / "maps" / "free_points.json"
+DEFAULT_SCENE_CONFIG_DIR = PROJECT_ROOT / "simulation" / "assets" / "scene_config"
+DEFAULT_NAV2_CONFIG_PATH = PROJECT_ROOT / "simulation" / "nav2" / "config.yaml"
+DEFAULT_FREE_POINTS_PATH = (
+    PROJECT_ROOT / "simulation" / "nav2" / "maps" / "free_points.json"
+)
 
 
 def scene_config_dir() -> Path:
