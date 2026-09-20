@@ -1,13 +1,13 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$VenvPython = Join-Path $ProjectRoot ".venv_feishu\Scripts\python.exe"
+$VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $Requirements = Join-Path $PSScriptRoot "requirements.txt"
 $EntryPoint = Join-Path $PSScriptRoot "run.py"
 
 if (-not (Test-Path -LiteralPath $VenvPython)) {
-    Write-Host "首次启动：正在创建飞书桥接运行环境..."
-    py -3.11 -m venv (Join-Path $ProjectRoot ".venv_feishu")
+    Write-Host "首次启动：正在创建项目运行环境..."
+    py -3.10 -m venv (Join-Path $ProjectRoot ".venv")
 }
 
 & $VenvPython -c "import lark_channel, dotenv, requests" 2>$null

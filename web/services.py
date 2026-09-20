@@ -63,11 +63,6 @@ def _venv_python() -> Path:
     return ROOT / ".venv" / "bin" / "python"
 
 
-def _feishu_python() -> Path:
-    candidate = ROOT / ".venv_feishu" / "bin" / "python"
-    return candidate if candidate.exists() else _venv_python()
-
-
 def _3dgs_python() -> Path:
     candidate = ROOT / ".venv_3dgs" / "bin" / "python"
     return candidate if candidate.exists() else _venv_python()
@@ -419,7 +414,7 @@ def start_shell(service: Service) -> str:
     if service.id == "deploy":
         return f"exec {_shell_quote(str(python))} deploy/run.py"
     if service.id == "feishu":
-        return f"exec {_shell_quote(str(_feishu_python()))} integrations/feishu/run.py"
+        return f"exec {_shell_quote(str(python))} integrations/feishu/run.py"
     if service.id == "slaver":
         return f"exec {_shell_quote(str(python))} slaver/run.py"
     if service.id == "desk":

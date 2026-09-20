@@ -68,6 +68,8 @@ flowchart TD
 cp .env.example .env
 ```
 
+本机只维护两套 Python 3.10 环境：`.venv` 运行大脑、网页、飞书和普通工具，`.venv_3dgs` 专用于 CUDA / 3DGS 渲染。不要再创建独立的 `.venv_feishu`；飞书依赖已纳入项目依赖并由 `.venv` 运行。
+
 飞书、SSH、远端地址从根目录 `.env` 读取。不要提交填写后的 `.env`。公开模板中 `RECEPTION_MODE=mock` 是安全默认值，并且它优先于 `master/config.yaml` 的 `reception_real.enabled`；真机环境必须显式改成 `RECEPTION_MODE=real` 或移除该环境变量。旧地址 `192.168.5.185` 和 `192.168.0.108` 已停用。
 
 每个服务一个 tmux session：
@@ -122,7 +124,7 @@ LARK_BRAIN_URL=http://127.0.0.1:8888
 启动飞书桥接：
 
 ```bash
-.venv_feishu/bin/python integrations/feishu/run.py
+.venv/bin/python integrations/feishu/run.py
 ```
 
 同一应用只能运行一个桥接进程，本机需要能访问 `open.feishu.cn`。

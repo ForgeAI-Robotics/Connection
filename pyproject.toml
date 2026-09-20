@@ -29,6 +29,8 @@ dependencies = [
     "flask-cors==6.0.1",
     "Flask-SocketIO==5.5.1",
     "mcp==1.10.1",
+    "lark-channel-sdk==1.0.0",
+    "requests>=2.32,<3",
     # --- AI/LLM ---
     "openai==2.15.0",
     "python-dotenv==0.21.0",

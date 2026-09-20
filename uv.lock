@@ -21,6 +21,24 @@ wheels = [
 ]
 
 [[package]]
+name = "accelerate"
+version = "1.15.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyyaml" },
+    { name = "safetensors" },
+    { name = "torch" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f5/b5/1d3ed029ac71d3f2961346829a268da923698e9fd63f218f78841f216bfd/accelerate-1.15.0.tar.gz", hash = "sha256:5654f8c5eaa0d4fa68b33e287a97765da6849bf6d51dcac874e73fbbddfb6134", size = 422615, upload-time = "2026-09-09T13:04:49.078Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8a/4c/34f0450479d01195027260da68d8a3880683f1640c3ca5adf64acb3185f1/accelerate-1.15.0-py3-none-any.whl", hash = "sha256:97eacca0b73e45cb867dbf8c5d5d4dc32219544300e0c8992c7334dc2ef33cec", size = 394295, upload-time = "2026-09-09T13:04:47.331Z" },
+]
+
+[[package]]
 name = "aiohappyeyeballs"
 version = "2.6.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -34,15 +52,15 @@ name = "aiohttp"
 version = "3.14.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "aiohappyeyeballs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "aiosignal", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "async-timeout", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "attrs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "frozenlist", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "multidict", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "propcache", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "yarl", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "aiohappyeyeballs" },
+    { name = "aiosignal" },
+    { name = "async-timeout" },
+    { name = "attrs" },
+    { name = "frozenlist" },
+    { name = "multidict" },
+    { name = "propcache" },
+    { name = "typing-extensions" },
+    { name = "yarl" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/82/78/8ea7308cac6934de8c74a14f3d5f65d1c89287426688be79538d0e5c013d/aiohttp-3.14.1.tar.gz", hash = "sha256:307f2cff90a764d329e77040603fa032db89c5c24fdad50c4c15334cba744035", size = 7955794, upload-time = "2026-06-07T21:09:35.529Z" }
 wheels = [
@@ -55,8 +73,8 @@ name = "aiosignal"
 version = "1.4.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "frozenlist", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "frozenlist" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/61/62/06741b579156360248d1ec624842ad0edf697050bbaf7c3e46394e106ad1/aiosignal-1.4.0.tar.gz", hash = "sha256:f47eecd9468083c2029cc99945502cb7708b082c232f9aca65da147157b251c7", size = 25007, upload-time = "2025-07-03T22:54:43.528Z" }
 wheels = [
@@ -77,9 +95,9 @@ name = "anyio"
 version = "4.14.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "exceptiongroup", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "idna", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "exceptiongroup" },
+    { name = "idna" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3b/72/5562aabb8dd7181e8e860622a38bea08d17842b99ecd4c91f84ac95251b0/anyio-4.14.1.tar.gz", hash = "sha256:8d648a3544c1a700e3ff78615cd679e4c5c3f149904287e73687b2596963629e", size = 254831, upload-time = "2026-06-24T20:56:06.017Z" }
 wheels = [
@@ -115,14 +133,12 @@ wheels = [
 
 [[package]]
 name = "av"
-version = "17.1.0"
+version = "15.1.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5e/e3/477fa20578c284abeda08d91b63ee9abaebc93445d8feeb989d3d444bae1/av-17.1.0.tar.gz", hash = "sha256:7f1e71ff621b66253333926f948e00faae11d855b2442133c65128bca64cdeb3", size = 4288546, upload-time = "2026-06-07T05:52:55.999Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e9/c3/83e6e73d1592bc54436eae0bc61704ae0cff0c3cfbde7b58af9ed67ebb49/av-15.1.0.tar.gz", hash = "sha256:39cda2dc810e11c1938f8cb5759c41d6b630550236b3365790e67a313660ec85", size = 3774192, upload-time = "2025-08-30T04:41:56.076Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/04/a4/542d4bfd9f4aec5f3265985b9dbc6b259d45c2e668f9714e5f4e05b71e64/av-17.1.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:90c49bc9608377d01e82e747377505419a229464873341db18202d5dddecce5a", size = 36647600, upload-time = "2026-06-07T05:51:48.57Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fb/40/128429b9eb0c4a2beb122ed8d04b189515df68967987c2654a2e262a5c43/av-17.1.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:3dcd41e53f53f9a3260751d9c3c11d34e93d70d61e506c81f13dbc1e3606e07b", size = 37763744, upload-time = "2026-06-07T05:51:59.222Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/77/43/96b35170bf2e64e00a41748c6400ff73232dc0fc62ded283679fb07c7fe0/av-17.1.0-cp311-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:f9a65d1f48b818323fb411e80358f89d77dec340b01d27c6b2dfbb9cbf4b779f", size = 35370183, upload-time = "2026-06-07T05:52:11.959Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e2/ac/92e52d5ed0e0b84d9d93e52b4338c2713d8a44082b8696e6516fdae7c4e4/av-17.1.0-cp311-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e1c90f85cd7431ede95b11e8e711571a896ebea433f298849c2c0f1594c8d86e", size = 36451495, upload-time = "2026-06-07T05:52:22.581Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/25/c0/5c967b0872fce1add80a8f50fa7ce11e3e3e5257c2b079263570bc854699/av-15.1.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:659f9d6145fb2c58e8b31907283b6ba876570f5dd6e7e890d74c09614c436c8e", size = 39070227, upload-time = "2025-08-30T04:39:24.079Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d5/ae/50cc2af1bf68452cbfec8d1b2554c18f6d167c8ba6d7ad7707797dfd1541/av-15.1.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:e33a76e38f03bb5de026b9f66ccf23dc01ddd2223221096992cb52ac22e62538", size = 40371627, upload-time = "2025-08-30T04:39:31.207Z" },
 ]
 
 [[package]]
@@ -130,8 +146,8 @@ name = "beautifulsoup4"
 version = "4.15.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "soupsieve", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "soupsieve" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/43/65/318323f98dbee45d42dff61d8f047181bc6f2268a9068cfad035a46be5af/beautifulsoup4-4.15.0.tar.gz", hash = "sha256:288e3ca7d54b06f2ac191970bc275c1939cb46d450b255bf6718b04aa37ab4f7", size = 632571, upload-time = "2026-06-07T16:44:20.453Z" }
 wheels = [
@@ -152,7 +168,7 @@ name = "bleach"
 version = "6.4.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "webencodings", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "webencodings" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/48/3c/e12ac860709702bd5ebeb9b56a4fe334f1001246ee1b8f2b7ee28912df7d/bleach-6.4.0.tar.gz", hash = "sha256:4202482733d85cedd04e59fcb2f89f4e4c7c385a78d3c3c23c30446843a37452", size = 204857, upload-time = "2026-06-05T13:01:13.734Z" }
 wheels = [
@@ -161,7 +177,7 @@ wheels = [
 
 [package.optional-dependencies]
 css = [
-    { name = "tinycss2", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "tinycss2" },
 ]
 
 [[package]]
@@ -187,7 +203,7 @@ name = "cffi"
 version = "2.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "pycparser", marker = "implementation_name != 'PyPy' and platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "pycparser" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/eb/56/b1ba7935a17738ae8453301356628e8147c79dbb825bcbc73dc7401f9846/cffi-2.0.0.tar.gz", hash = "sha256:44d1b5909021139fe36001ae048dbdde8214afa20200eda0f64c068cac5d5529", size = 523588, upload-time = "2025-09-08T23:24:04.541Z" }
 wheels = [
@@ -226,12 +242,12 @@ wheels = [
 
 [[package]]
 name = "cmake"
-version = "4.3.4"
+version = "4.1.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/de/ba/27ea7c1a258b44d249ff5eceb78660fee75ed2488eab425ea7d9bc514153/cmake-4.3.4.tar.gz", hash = "sha256:c97e84a62cf71aaa4f012da5aea411b432b1361d78e6421f987679869aa0fa7a", size = 36968, upload-time = "2026-06-20T09:04:03.308Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f2/17/f8f42ae205604319cc36f46d9929bd9bfbd83d3d02d6314c44fa97c42006/cmake-4.1.3.tar.gz", hash = "sha256:89f48ddc2570eb62447e33311cffc6dfeb09631bd0a19423d8a59cec8af030f1", size = 34998, upload-time = "2025-11-19T22:41:27.312Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cd/0c/050f6470163998205646dcce8b262612eeae49486320b106be1cc2175f8b/cmake-4.3.4-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:61a34a746853b3740c6ad494e51faf4d457b9ef82099e19974148808c31cc2eb", size = 29528910, upload-time = "2026-06-20T09:03:03.713Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b9/eb/cc34dadcdb71e5218a765a2ebd8ba1bb9d113bd4d3724f71196e4ca7de6c/cmake-4.3.4-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:250deb91d4a25427b67624b6b1ec2b52a995995797549d552bda1025e5b6d8da", size = 38576617, upload-time = "2026-06-20T09:03:46.705Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e0/6c/323c40671c6f1b3e02bb4a7404fbe2bf653190a56e63cf4b6a4f06e876bc/cmake-4.1.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:81f11b72bc59cbe547d9f283487ef0519bf68176edffcdfa1a4dc5a52f292369", size = 29690899, upload-time = "2025-11-19T22:40:45.363Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a4/66/fa0e8d3c66459a616f0baf9d22933e14137c259f4b62f0dad9c3723cf42d/cmake-4.1.3-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:6966746b25d1e9c8d32c731452e220e84331b5133544f710b21bd228a93812ca", size = 43357408, upload-time = "2025-11-19T22:41:15.302Z" },
 ]
 
 [[package]]
@@ -239,7 +255,7 @@ name = "coloredlogs"
 version = "15.0.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "humanfriendly", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "humanfriendly" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cc/c7/eed8f27100517e8c0e6b923d5f0845d0cb99763da6fdee00478f91db7325/coloredlogs-15.0.1.tar.gz", hash = "sha256:7c991aa71a4577af2f82600d8f8f3a89f936baeaf9b50a9c197da014e5bf16b0", size = 278520, upload-time = "2021-06-11T10:22:45.202Z" }
 wheels = [
@@ -260,7 +276,7 @@ name = "contourpy"
 version = "1.3.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/66/54/eb9bfc647b19f2009dd5c7f5ec51c4e6ca831725f1aea7a993034f483147/contourpy-1.3.2.tar.gz", hash = "sha256:b6945942715a034c671b7fc54f9588126b0b8bf23db2696e3ca8328f3ff0ab54", size = 13466130, upload-time = "2025-04-15T17:47:53.79Z" }
 wheels = [
@@ -280,26 +296,27 @@ wheels = [
 
 [[package]]
 name = "datasets"
-version = "3.6.0"
+version = "4.8.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "dill", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "filelock", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "fsspec", extra = ["http"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "huggingface-hub", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "multiprocess", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pandas", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyarrow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "requests", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "xxhash", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "dill" },
+    { name = "filelock" },
+    { name = "fsspec", extra = ["http"] },
+    { name = "httpx" },
+    { name = "huggingface-hub" },
+    { name = "multiprocess" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "tqdm" },
+    { name = "xxhash" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1a/89/d3d6fef58a488f8569c82fd293ab7cbd4250244d67f425dcae64c63800ea/datasets-3.6.0.tar.gz", hash = "sha256:1b2bf43b19776e2787e181cfd329cb0ca1a358ea014780c3581e0f276375e041", size = 569336, upload-time = "2025-05-07T15:15:02.659Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/66/34/14cd8e76f907f7d4dca2334cfeec9f81d30fd15c25a015f99aaea694eaed/datasets-4.8.5.tar.gz", hash = "sha256:0f0c1c3d56ffff2c93b2f4c63c95bac94f3d7e8621aea2a2a576275233bba772", size = 605649, upload-time = "2026-04-27T15:43:57.384Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/20/34/a08b0ee99715eaba118cbe19a71f7b5e2425c2718ef96007c325944a1152/datasets-3.6.0-py3-none-any.whl", hash = "sha256:25000c4a2c0873a710df127d08a202a06eab7bf42441a6bc278b499c2f72cd1b", size = 491546, upload-time = "2025-05-07T15:14:59.742Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/65/99/00f3196036501b53032c4b1ab8337a0b978dee832ed276dae3815df4e8b5/datasets-4.8.5-py3-none-any.whl", hash = "sha256:5079900781719c0e063a8efdd2cd95a31ad0c63209178669cd23cf1b926149ff", size = 528973, upload-time = "2026-04-27T15:43:53.702Z" },
 ]
 
 [[package]]
@@ -326,7 +343,7 @@ name = "deepdiff"
 version = "8.6.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "orderly-set", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "orderly-set" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/89/50/767448e792d41bfb6094ee317a355c1cb221dca24b2e178e2203bbea2a77/deepdiff-8.6.2.tar.gz", hash = "sha256:186dcbd181e4d76cef11ab05f802d0056c5d6083c5a6748c1473e9d7481e183e", size = 634860, upload-time = "2026-03-18T17:16:33.785Z" }
 wheels = [
@@ -344,22 +361,21 @@ wheels = [
 
 [[package]]
 name = "diffusers"
-version = "0.38.0"
+version = "0.35.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "filelock", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "httpx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "huggingface-hub", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "importlib-metadata", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "regex", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "requests", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "safetensors", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "filelock" },
+    { name = "huggingface-hub" },
+    { name = "importlib-metadata" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "regex" },
+    { name = "requests" },
+    { name = "safetensors" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/01/ed/255d3dfd4a2271dffc8f1895f9d2720b3bf1beaecf02148bb5604439e594/diffusers-0.38.0.tar.gz", hash = "sha256:1e094ec5c16f18c42fb89d37f07a94cf9aab3ebbe527ab059c609597b8857626", size = 4328401, upload-time = "2026-05-01T05:42:15.276Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/03/68/288ca23c7c05c73e87ffe5efffc282400ac9b017f7a9bb03883f4310ea15/diffusers-0.35.2.tar.gz", hash = "sha256:30ecd552303edfcfe1724573c3918a8462ee3ab4d529bdbd4c0045f763affded", size = 3366711, upload-time = "2025-10-15T04:05:17.213Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/42/c0/3237566ea6e3a542f3c0669a253d62fe75f27b84b3d7bd4fb3b5ee89d73c/diffusers-0.38.0-py3-none-any.whl", hash = "sha256:18e53f9e539096320470f62c6360a6fd5727ff28cffda566265316e13fcdb612", size = 5245919, upload-time = "2026-05-01T05:42:12.779Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2a/2e/38d9824f8c6bb048c5ba21c6d4da54c29c162a46b58b3ef907a360a76d3e/diffusers-0.35.2-py3-none-any.whl", hash = "sha256:d50d5e74fdd6dcf55e5c1d304bc52cc7c2659abd1752740d736d7b54078b4db5", size = 4121649, upload-time = "2025-10-15T04:05:14.391Z" },
 ]
 
 [[package]]
@@ -385,11 +401,11 @@ name = "draccus"
 version = "0.10.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "mergedeep", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyyaml-include", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "toml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-inspect", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "mergedeep" },
+    { name = "pyyaml" },
+    { name = "pyyaml-include" },
+    { name = "toml" },
+    { name = "typing-inspect" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4e/e2/f5012fda17ee5d1eaf3481b6ca3e11dffa5348e5e08ab745538fdc8041bb/draccus-0.10.0.tar.gz", hash = "sha256:8dd08304219becdcd66cd16058ba98e9c3e6b7bfe48ccb9579dae39f8d37ae19", size = 62243, upload-time = "2025-02-05T07:27:48.182Z" }
 wheels = [
@@ -416,10 +432,10 @@ wheels = [
 
 [package.optional-dependencies]
 epath = [
-    { name = "fsspec", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "importlib-resources", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "zipp", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "fsspec" },
+    { name = "importlib-resources" },
+    { name = "typing-extensions" },
+    { name = "zipp" },
 ]
 
 [[package]]
@@ -433,7 +449,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -481,12 +497,12 @@ name = "flask"
 version = "3.1.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "blinker", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "click", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "itsdangerous", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jinja2", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "markupsafe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "werkzeug", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "blinker" },
+    { name = "click" },
+    { name = "itsdangerous" },
+    { name = "jinja2" },
+    { name = "markupsafe" },
+    { name = "werkzeug" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c0/de/e47735752347f4128bcf354e0da07ef311a78244eba9e3dc1d4a5ab21a98/flask-3.1.1.tar.gz", hash = "sha256:284c7b8f2f58cb737f0cf1c30fd7eaf0ccfcde196099d24ecede3fc2005aa59e", size = 753440, upload-time = "2025-05-13T15:01:17.447Z" }
 wheels = [
@@ -498,8 +514,8 @@ name = "flask-cors"
 version = "6.0.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "flask", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "werkzeug", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "flask" },
+    { name = "werkzeug" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/76/37/bcfa6c7d5eec777c4c7cf45ce6b27631cebe5230caf88d85eadd63edd37a/flask_cors-6.0.1.tar.gz", hash = "sha256:d81bcb31f07b0985be7f48406247e9243aced229b7747219160a0559edd678db", size = 13463, upload-time = "2025-06-11T01:32:08.518Z" }
 wheels = [
@@ -511,8 +527,8 @@ name = "flask-socketio"
 version = "5.5.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "flask", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-socketio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "flask" },
+    { name = "python-socketio" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d1/1f/54d3de4982df695682af99c65d4b89f8a46fe6739780c5a68690195835a0/flask_socketio-5.5.1.tar.gz", hash = "sha256:d946c944a1074ccad8e99485a6f5c79bc5789e3ea4df0bb9c864939586c51ec4", size = 37401, upload-time = "2025-01-06T19:49:59.056Z" }
 wheels = [
@@ -543,45 +559,48 @@ name = "fqplanner"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "deepdiff", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "einops", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "flask", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "flask-cors", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "flask-socketio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "gaussian-renderer", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "gsplat", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "h5py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "ipykernel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "lerobot", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "matplotlib", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "mcp", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "mediapy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "motrixsim-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "mujoco", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nbconvert", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "ninja", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "onnxruntime", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "openai", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "opencv-python", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "plyfile", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "psutil", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyrender", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyserial", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-dotenv", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "redis", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "rich", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "scikit-learn", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "scipy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "sentence-transformers", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "setuptools", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "socksio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "wheel", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "deepdiff" },
+    { name = "einops" },
+    { name = "flask" },
+    { name = "flask-cors" },
+    { name = "flask-socketio" },
+    { name = "gaussian-renderer" },
+    { name = "gsplat" },
+    { name = "h5py" },
+    { name = "ipykernel" },
+    { name = "lark-channel-sdk" },
+    { name = "lerobot" },
+    { name = "matplotlib" },
+    { name = "mcp" },
+    { name = "mediapy" },
+    { name = "motrixsim-core" },
+    { name = "mujoco" },
+    { name = "nbconvert" },
+    { name = "ninja" },
+    { name = "numpy" },
+    { name = "onnxruntime" },
+    { name = "openai" },
+    { name = "opencv-python" },
+    { name = "packaging" },
+    { name = "pillow" },
+    { name = "plyfile" },
+    { name = "psutil" },
+    { name = "pydantic" },
+    { name = "pyrender" },
+    { name = "pyserial" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "redis" },
+    { name = "requests" },
+    { name = "rich" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "sentence-transformers" },
+    { name = "setuptools" },
+    { name = "socksio" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "wheel" },
 ]
 
 [package.metadata]
@@ -595,7 +614,8 @@ requires-dist = [
     { name = "gsplat", specifier = "==1.5.3" },
     { name = "h5py", specifier = ">=3.10.0" },
     { name = "ipykernel", specifier = "==7.2.0" },
-    { name = "lerobot", specifier = ">=0.3.3" },
+    { name = "lark-channel-sdk", specifier = "==1.0.0" },
+    { name = "lerobot", specifier = ">=0.4.4,<0.5" },
     { name = "matplotlib", specifier = "==3.10.9" },
     { name = "mcp", specifier = "==1.10.1" },
     { name = "mediapy", specifier = "==1.2.6" },
@@ -611,11 +631,13 @@ requires-dist = [
     { name = "pillow", specifier = "==11.2.1" },
     { name = "plyfile", specifier = "==1.1.3" },
     { name = "psutil", specifier = "==7.0.0" },
+    { name = "pydantic", specifier = ">=2.5,<2.14" },
     { name = "pyrender", specifier = ">=0.1.45" },
     { name = "pyserial" },
     { name = "python-dotenv", specifier = "==0.21.0" },
     { name = "pyyaml", specifier = "==6.0.2" },
     { name = "redis", specifier = "==5.2.1" },
+    { name = "requests", specifier = ">=2.32,<3" },
     { name = "rich", specifier = "==15.0.0" },
     { name = "scikit-learn", specifier = "==1.5.2" },
     { name = "scipy", specifier = "==1.15.3" },
@@ -659,7 +681,7 @@ wheels = [
 
 [package.optional-dependencies]
 http = [
-    { name = "aiohttp", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "aiohttp" },
 ]
 
 [[package]]
@@ -667,12 +689,12 @@ name = "gaussian-renderer"
 version = "0.2.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "gsplat", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "plyfile", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "scipy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "trimesh", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "gsplat" },
+    { name = "numpy" },
+    { name = "plyfile" },
+    { name = "scipy" },
+    { name = "torch" },
+    { name = "trimesh" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f4/89/83023e3e019aa4143d96d6fc01487d4790940e98c202f27d1ae232ddba77/gaussian_renderer-0.2.0.tar.gz", hash = "sha256:a5068d1b58cd174d315a591cdc6e2c26b271306074a8d11cdd02c60bbe58b7de", size = 33409, upload-time = "2026-03-19T05:54:05.121Z" }
 wheels = [
@@ -684,7 +706,7 @@ name = "gitdb"
 version = "4.0.12"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "smmap", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "smmap" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/72/94/63b0fc47eb32792c7ba1fe1b694daec9a63620db1e313033d18140c2320a/gitdb-4.0.12.tar.gz", hash = "sha256:5ef71f855d191a3326fcfbc0d5da835f26b13fbcba60c32c21091c349ffdb571", size = 394684, upload-time = "2025-01-02T07:20:46.413Z" }
 wheels = [
@@ -696,7 +718,7 @@ name = "gitpython"
 version = "3.1.50"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "gitdb", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "gitdb" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/33/f6/354ae6491228b5eb40e10d89c4d13c651fe1cf7556e35ebdded50cff57ce/gitpython-3.1.50.tar.gz", hash = "sha256:80da2d12504d52e1f998772dc5baf6e553f8d2fcfe1fcc226c9d9a2ee3372dcc", size = 219798, upload-time = "2026-05-06T04:01:26.571Z" }
 wheels = [
@@ -722,11 +744,11 @@ name = "gsplat"
 version = "1.5.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "jaxtyping", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "ninja", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "rich", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "jaxtyping" },
+    { name = "ninja" },
+    { name = "numpy" },
+    { name = "rich" },
+    { name = "torch" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6d/94/a0963873708223385ac926112dc3e40ab08297784ac53d95309b4cb5a801/gsplat-1.5.3.tar.gz", hash = "sha256:343f080c470e891ba3c697c03bdf0952cb982d1d535fdc24adb23c2cb4fba906", size = 4743603, upload-time = "2025-07-04T16:50:42.899Z" }
 wheels = [
@@ -735,17 +757,17 @@ wheels = [
 
 [[package]]
 name = "gymnasium"
-version = "0.29.1"
+version = "1.3.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "cloudpickle", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "farama-notifications", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "cloudpickle" },
+    { name = "farama-notifications" },
+    { name = "numpy" },
+    { name = "typing-extensions" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0d/f8/5699ddb3e1c4f6d97b8930e573074849b921da8374fccd141f0f3a9bd713/gymnasium-0.29.1.tar.gz", hash = "sha256:1a532752efcb7590478b1cc7aa04f608eb7a2fdad5570cd217b66b6a35274bb1", size = 820485, upload-time = "2023-08-21T13:07:32.024Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4d/ff/14b6880d703dfaca204490979d3254ccd280c99550798993319902873658/gymnasium-1.3.0.tar.gz", hash = "sha256:6939e86e835d6b71b6ba6bfd360487420876deafc79bfb7bacba83a7c446bcf3", size = 830646, upload-time = "2026-04-22T13:47:14.155Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a8/4d/3cbfd81ed84db450dbe73a89afcd8bc405273918415649ac6683356afe92/gymnasium-0.29.1-py3-none-any.whl", hash = "sha256:61c3384b5575985bb7f85e43213bcb40f36fcdff388cae6bc229304c71f2843e", size = 953939, upload-time = "2023-08-21T13:07:29.934Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e9/73/fda6a25f3beeb5e49d74330b44092b9e5a547395ccd478d1103ddcbff1fc/gymnasium-1.3.0-py3-none-any.whl", hash = "sha256:6b8c159a8540dcbcb221722d7efda24d78ebbcbc3bd2ea1c2611aa2a34471fc2", size = 953904, upload-time = "2026-04-22T13:47:12.13Z" },
 ]
 
 [[package]]
@@ -762,7 +784,7 @@ name = "h5py"
 version = "3.16.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/db/33/acd0ce6863b6c0d7735007df01815403f5589a21ff8c2e1ee2587a38f548/h5py-3.16.0.tar.gz", hash = "sha256:a0dbaad796840ccaa67a4c144a0d0c8080073c34c76d5a6941d6818678ef2738", size = 446526, upload-time = "2026-03-06T13:49:08.07Z" }
 wheels = [
@@ -795,8 +817,8 @@ name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "certifi", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "h11", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "certifi" },
+    { name = "h11" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/06/94/82699a10bca87a5556c9c59b5963f2d039dbd239f25bc2a63907a05a14cb/httpcore-1.0.9.tar.gz", hash = "sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8", size = 85484, upload-time = "2025-04-24T22:06:22.219Z" }
 wheels = [
@@ -808,10 +830,10 @@ name = "httpx"
 version = "0.28.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "anyio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "certifi", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "httpcore", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "idna", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "anyio" },
+    { name = "certifi" },
+    { name = "httpcore" },
+    { name = "idna" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b1/df/48c586a5fe32a0f01324ee087459e112ebb7224f646c0b5023f5e79e9956/httpx-0.28.1.tar.gz", hash = "sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc", size = 141406, upload-time = "2024-12-06T15:37:23.222Z" }
 wheels = [
@@ -829,29 +851,29 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "0.36.2"
+version = "0.35.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "filelock", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "fsspec", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "hf-xet", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "requests", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "hf-xet" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7c/b7/8cb61d2eece5fb05a83271da168186721c450eb74e3c31f7ef3169fa475b/huggingface_hub-0.36.2.tar.gz", hash = "sha256:1934304d2fb224f8afa3b87007d58501acfda9215b334eed53072dd5e815ff7a", size = 649782, upload-time = "2026-02-06T09:24:13.098Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/10/7e/a0a97de7c73671863ca6b3f61fa12518caf35db37825e43d63a70956738c/huggingface_hub-0.35.3.tar.gz", hash = "sha256:350932eaa5cc6a4747efae85126ee220e4ef1b54e29d31c3b45c5612ddf0b32a", size = 461798, upload-time = "2025-09-29T14:29:58.625Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl", hash = "sha256:48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270", size = 566395, upload-time = "2026-02-06T09:24:11.133Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/31/a0/651f93d154cb72323358bf2bbae3e642bdb5d2f1bfc874d096f7cb159fa0/huggingface_hub-0.35.3-py3-none-any.whl", hash = "sha256:0e3a01829c19d86d03793e4577816fe3bdfc1602ac62c7fb220d593d351224ba", size = 564262, upload-time = "2025-09-29T14:29:55.813Z" },
 ]
 
 [package.optional-dependencies]
 cli = [
-    { name = "inquirerpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "inquirerpy" },
 ]
 hf-transfer = [
-    { name = "hf-transfer", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "hf-transfer" },
 ]
 
 [[package]]
@@ -877,8 +899,8 @@ name = "imageio"
 version = "2.37.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
+    { name = "pillow" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b1/84/93bcd1300216ea50811cee96873b84a1bebf8d0489ffaf7f2a3756bab866/imageio-2.37.3.tar.gz", hash = "sha256:bbb37efbfc4c400fcd534b367b91fcd66d5da639aaa138034431a1c5e0a41451", size = 389673, upload-time = "2026-03-09T11:31:12.573Z" }
 wheels = [
@@ -887,8 +909,8 @@ wheels = [
 
 [package.optional-dependencies]
 ffmpeg = [
-    { name = "imageio-ffmpeg", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "psutil", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "imageio-ffmpeg" },
+    { name = "psutil" },
 ]
 
 [[package]]
@@ -905,7 +927,7 @@ name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "zipp", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "zipp" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a9/01/15bb152d77b21318514a96f43af312635eb2500c96b55398d020c93d86ea/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc", size = 56405, upload-time = "2026-03-20T06:42:56.999Z" }
 wheels = [
@@ -926,8 +948,8 @@ name = "inquirerpy"
 version = "0.3.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "pfzy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "prompt-toolkit", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "pfzy" },
+    { name = "prompt-toolkit" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/64/73/7570847b9da026e07053da3bbe2ac7ea6cde6bb2cbd3c7a5a950fa0ae40b/InquirerPy-0.3.4.tar.gz", hash = "sha256:89d2ada0111f337483cb41ae31073108b2ec1e618a49d7110b0d7ade89fc197e", size = 44431, upload-time = "2022-06-27T23:11:20.598Z" }
 wheels = [
@@ -939,18 +961,18 @@ name = "ipykernel"
 version = "7.2.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "comm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "debugpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "ipython", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jupyter-client", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jupyter-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "matplotlib-inline", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nest-asyncio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "psutil", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyzmq", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tornado", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "comm" },
+    { name = "debugpy" },
+    { name = "ipython" },
+    { name = "jupyter-client" },
+    { name = "jupyter-core" },
+    { name = "matplotlib-inline" },
+    { name = "nest-asyncio" },
+    { name = "packaging" },
+    { name = "psutil" },
+    { name = "pyzmq" },
+    { name = "tornado" },
+    { name = "traitlets" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ca/8d/b68b728e2d06b9e0051019640a40a9eb7a88fcd82c2e1b5ce70bef5ff044/ipykernel-7.2.0.tar.gz", hash = "sha256:18ed160b6dee2cbb16e5f3575858bc19d8f1fe6046a9a680c708494ce31d909e", size = 176046, upload-time = "2026-02-06T16:43:27.403Z" }
 wheels = [
@@ -962,16 +984,16 @@ name = "ipython"
 version = "8.39.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "decorator", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "exceptiongroup", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jedi", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "matplotlib-inline", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pexpect", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "prompt-toolkit", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pygments", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "stack-data", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "decorator" },
+    { name = "exceptiongroup" },
+    { name = "jedi" },
+    { name = "matplotlib-inline" },
+    { name = "pexpect" },
+    { name = "prompt-toolkit" },
+    { name = "pygments" },
+    { name = "stack-data" },
+    { name = "traitlets" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/40/18/f8598d287006885e7136451fdea0755af4ebcbfe342836f24deefaed1164/ipython-8.39.0.tar.gz", hash = "sha256:4110ae96012c379b8b6db898a07e186c40a2a1ef5d57a7fa83166047d9da7624", size = 5513971, upload-time = "2026-03-27T10:02:13.94Z" }
 wheels = [
@@ -992,7 +1014,7 @@ name = "jaxtyping"
 version = "0.3.7"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "wadler-lindig", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "wadler-lindig" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/38/40/a2ea3ce0e3e5f540eb970de7792c90fa58fef1b27d34c83f9fa94fea4729/jaxtyping-0.3.7.tar.gz", hash = "sha256:3bd7d9beb7d3cb01a89f93f90581c6f4fff3e5c5dc3c9307e8f8687a040d10c4", size = 45721, upload-time = "2026-01-30T14:18:47.409Z" }
 wheels = [
@@ -1004,7 +1026,7 @@ name = "jedi"
 version = "0.20.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "parso", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "parso" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/46/b7/a3635f6a2d7cf5b5dd98064fc1d5fbbafcb25477bcea204a3a92145d158b/jedi-0.20.0.tar.gz", hash = "sha256:c3f4ccbd276696f4b19c54618d4fb18f9fc24b0aef02acf704b23f487daa1011", size = 3119416, upload-time = "2026-05-01T23:38:47.814Z" }
 wheels = [
@@ -1016,7 +1038,7 @@ name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "markupsafe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "markupsafe" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz", hash = "sha256:0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d", size = 245115, upload-time = "2025-03-05T20:05:02.478Z" }
 wheels = [
@@ -1047,7 +1069,7 @@ name = "jsonlines"
 version = "4.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "attrs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "attrs" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/35/87/bcda8e46c88d0e34cad2f09ee2d0c7f5957bccdb9791b0b934ec84d84be4/jsonlines-4.0.0.tar.gz", hash = "sha256:0c6d2c09117550c089995247f605ae4cf77dd1533041d366351f6f298822ea74" }
 wheels = [
@@ -1059,10 +1081,10 @@ name = "jsonschema"
 version = "4.26.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "attrs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jsonschema-specifications", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "referencing", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "rpds-py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "attrs" },
+    { name = "jsonschema-specifications" },
+    { name = "referencing" },
+    { name = "rpds-py" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b3/fc/e067678238fa451312d4c62bf6e6cf5ec56375422aee02f9cb5f909b3047/jsonschema-4.26.0.tar.gz", hash = "sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326", size = 366583, upload-time = "2026-01-07T13:41:07.246Z" }
 wheels = [
@@ -1074,7 +1096,7 @@ name = "jsonschema-specifications"
 version = "2025.9.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "referencing", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "referencing" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/19/74/a633ee74eb36c44aa6d1095e7cc5569bebf04342ee146178e2d36600708b/jsonschema_specifications-2025.9.1.tar.gz", hash = "sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d", size = 32855, upload-time = "2025-09-08T01:34:59.186Z" }
 wheels = [
@@ -1086,12 +1108,12 @@ name = "jupyter-client"
 version = "8.9.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "jupyter-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-dateutil", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyzmq", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tornado", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "jupyter-core" },
+    { name = "python-dateutil" },
+    { name = "pyzmq" },
+    { name = "tornado" },
+    { name = "traitlets" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7d/dc/5512503b088997c2250b8bf18258fba9d9ce5ead641183700960d3c9d342/jupyter_client-8.9.1.tar.gz", hash = "sha256:a58f730dd9e728ba16ba1d62ebccf7ffe1ebbdbce4e95cfae941b7321ae1f4fa", size = 359256, upload-time = "2026-06-09T13:15:01.033Z" }
 wheels = [
@@ -1103,8 +1125,8 @@ name = "jupyter-core"
 version = "5.9.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "platformdirs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "platformdirs" },
+    { name = "traitlets" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/02/49/9d1284d0dc65e2c757b74c6687b6d319b02f822ad039e5c512df9194d9dd/jupyter_core-5.9.1.tar.gz", hash = "sha256:4d09aaff303b9566c3ce657f580bd089ff5c91f5f89cf7d8846c3cdf465b5508", size = 89814, upload-time = "2025-10-16T19:19:18.444Z" }
 wheels = [
@@ -1132,36 +1154,53 @@ wheels = [
 ]
 
 [[package]]
-name = "lerobot"
-version = "0.3.3"
+name = "lark-channel-sdk"
+version = "1.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "av", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "cmake", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "datasets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "deepdiff", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "diffusers", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "draccus", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "einops", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "flask", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "gymnasium", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "huggingface-hub", extra = ["cli", "hf-transfer"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "imageio", extra = ["ffmpeg"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jsonlines", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "opencv-python-headless", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pynput", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyserial", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "rerun-sdk", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "termcolor", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torchcodec", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torchvision", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "wandb", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "httpx" },
+    { name = "pycryptodome" },
+    { name = "requests" },
+    { name = "requests-toolbelt" },
+    { name = "websockets" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c7/01/45eb19324a80c8719e7bd98fc12c5dfb50da2b58c2404953f6d0112a6fc3/lerobot-0.3.3.tar.gz", hash = "sha256:5a8c526f4f50a5a4260b75f0382af26d01ef169c9a1ae8ca453ad5c6e1cf5aef", size = 450703, upload-time = "2025-08-06T18:41:35.689Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/71/b7/69c82b1d1f7353fafc655ec7b758850dc257c7c06175961734ecab489c9f/lark_channel_sdk-1.0.0.tar.gz", hash = "sha256:b6e991938cee540e24c13bd5f45ba04e02caa6c13a570ed6deb7e6d0bd2a5fa3", size = 363920, upload-time = "2026-06-05T08:57:49.258Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8e/be/3361a6417799062bbf7b7f6863900e3c1843eb7b21a5ffc5831fdfc7a3b3/lerobot-0.3.3-py3-none-any.whl", hash = "sha256:ae8354b516f5c8cfaa059d5ac926b4d03e96ca73350b971f8c7d75b905ba953d", size = 597692, upload-time = "2025-08-06T18:41:33.608Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/70/14/707c2386f7162bf7f653901d8663d21376af8cf99f7134e86e6d87856b2f/lark_channel_sdk-1.0.0-py3-none-any.whl", hash = "sha256:4674d2d873aa23da24fb2705f7e174dc7c827ee5657936dafbac9cbeea017132", size = 540091, upload-time = "2026-06-05T08:57:47.351Z" },
+]
+
+[[package]]
+name = "lerobot"
+version = "0.4.4"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "accelerate" },
+    { name = "av" },
+    { name = "cmake" },
+    { name = "datasets" },
+    { name = "deepdiff" },
+    { name = "diffusers" },
+    { name = "draccus" },
+    { name = "einops" },
+    { name = "gymnasium" },
+    { name = "huggingface-hub", extra = ["cli", "hf-transfer"] },
+    { name = "imageio", extra = ["ffmpeg"] },
+    { name = "jsonlines" },
+    { name = "opencv-python-headless" },
+    { name = "packaging" },
+    { name = "pynput" },
+    { name = "pyserial" },
+    { name = "rerun-sdk" },
+    { name = "setuptools" },
+    { name = "termcolor" },
+    { name = "torch" },
+    { name = "torchcodec" },
+    { name = "torchvision" },
+    { name = "wandb" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2d/b8/3278777bcc001e9c6ae35bab57638f036af6931d8630549cc66ea616b4d7/lerobot-0.4.4.tar.gz", hash = "sha256:50ad61441b1e1260010031406ca836a514af20ae1d2c0149892fe040380b1016", size = 842972, upload-time = "2026-02-27T18:07:46.142Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cb/2d/2c43b7d99346b04925313f485b8f99596aeb8094f556d4312da9f2e1ca60/lerobot-0.4.4-py3-none-any.whl", hash = "sha256:e53800ead8216861540ad3aebaf12e3cf87a399b3c1f234eeead33716c9c24fd", size = 1078897, upload-time = "2026-02-27T18:07:44.028Z" },
 ]
 
 [[package]]
@@ -1169,7 +1208,7 @@ name = "markdown-it-py"
 version = "4.2.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "mdurl", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "mdurl" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/06/ff/7841249c247aa650a76b9ee4bbaeae59370dc8bfd2f6c01f3630c35eb134/markdown_it_py-4.2.0.tar.gz", hash = "sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49", size = 82454, upload-time = "2026-05-07T12:08:28.36Z" }
 wheels = [
@@ -1191,15 +1230,15 @@ name = "matplotlib"
 version = "3.10.9"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "contourpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "cycler", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "fonttools", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "kiwisolver", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyparsing", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-dateutil", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "contourpy" },
+    { name = "cycler" },
+    { name = "fonttools" },
+    { name = "kiwisolver" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pillow" },
+    { name = "pyparsing" },
+    { name = "python-dateutil" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/63/1b/4be5be87d43d327a0cf4de1a56e86f7f84c89312452406cf122efe2839e6/matplotlib-3.10.9.tar.gz", hash = "sha256:fd66508e8c6877d98e586654b608a0456db8d7e8a546eb1e2600efd957302358", size = 34811233, upload-time = "2026-04-24T00:14:13.539Z" }
 wheels = [
@@ -1213,7 +1252,7 @@ name = "matplotlib-inline"
 version = "0.2.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "traitlets" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/bd/c0/9f7c9a46090390368a4d7bcb76bb87a4a36c421e4c0792cdb53486ffac7a/matplotlib_inline-0.2.2.tar.gz", hash = "sha256:72f3fe8fce36b70d4a5b612f899090cd0401deddc4ea90e1572b9f4bfb058c79", size = 8150, upload-time = "2026-05-08T17:33:33.49Z" }
 wheels = [
@@ -1225,16 +1264,16 @@ name = "mcp"
 version = "1.10.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "anyio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "httpx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "httpx-sse", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jsonschema", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pydantic", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pydantic-settings", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-multipart", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "sse-starlette", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "starlette", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "uvicorn", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "anyio" },
+    { name = "httpx" },
+    { name = "httpx-sse" },
+    { name = "jsonschema" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-multipart" },
+    { name = "sse-starlette" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7c/68/63045305f29ff680a9cd5be360c755270109e6b76f696ea6824547ddbc30/mcp-1.10.1.tar.gz", hash = "sha256:aaa0957d8307feeff180da2d9d359f2b801f35c0c67f1882136239055ef034c2", size = 392969, upload-time = "2025-06-27T12:03:08.982Z" }
 wheels = [
@@ -1255,10 +1294,10 @@ name = "mediapy"
 version = "1.2.6"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "ipython", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "matplotlib", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "ipython" },
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "pillow" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b3/eb/8a0499fb1a2f373f97e2b4df91797507c3971c42c59f1610bed090c57ddc/mediapy-1.2.6.tar.gz", hash = "sha256:2c866cfa0a170213f771b1dd5584a2e82d8d0dc0fa94982f83e29aae27e49c83", size = 28143, upload-time = "2026-02-03T10:29:31.104Z" }
 wheels = [
@@ -1279,7 +1318,7 @@ name = "mistune"
 version = "3.3.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/04/5f/007786743f962224423753b78f7d7acb0f2ade46d1604f2e0fa2bedf9020/mistune-3.3.2.tar.gz", hash = "sha256:e12ee4f1e74336e91aa1141e35f913b337c40bdf7c0cc49f21fb853a27e8b62f", size = 111284, upload-time = "2026-06-23T00:29:28.568Z" }
 wheels = [
@@ -1291,8 +1330,8 @@ name = "motrixsim-core"
 version = "0.7.1.dev97295"
 source = { registry = "https://pypi.motphys.com/simple/" }
 dependencies = [
-    { name = "absl-py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "absl-py" },
+    { name = "numpy" },
 ]
 wheels = [
     { url = "https://pypi.motphys.com/packages/motrixsim_core-0.7.1.dev97295-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0249ef5ab039c983277f56bf918737b6d96e9a19d88bbfdca6437ecbc68b3765" },
@@ -1312,11 +1351,11 @@ name = "mujoco"
 version = "3.10.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "absl-py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "etils", extra = ["epath"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "glfw", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyopengl", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "absl-py" },
+    { name = "etils", extra = ["epath"] },
+    { name = "glfw" },
+    { name = "numpy" },
+    { name = "pyopengl" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a2/3b/c76837b7fdb007f7605ff783689a0bd23a5a49b065928bec2f1fa7ea3d67/mujoco-3.10.0.tar.gz", hash = "sha256:c9e8d5d87d82204ed5bccc87d843c0a53e75aaf381de2938ec46d04f1ac6e24e", size = 1094987, upload-time = "2026-06-22T17:40:59.904Z" }
 wheels = [
@@ -1328,7 +1367,7 @@ name = "multidict"
 version = "6.7.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1a/c2/c2d94cbe6ac1753f3fc980da97b3d930efe1da3af3c9f5125354436c073d/multidict-6.7.1.tar.gz", hash = "sha256:ec6652a1bee61c53a3e5776b6049172c53b6aaba34f18c9ad04f82712bac623d", size = 102010, upload-time = "2026-01-26T02:46:45.979Z" }
 wheels = [
@@ -1342,7 +1381,7 @@ name = "multiprocess"
 version = "0.70.16"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "dill", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "dill" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b5/ae/04f39c5d0d0def03247c2893d6f2b83c136bf3320a2154d7b8858f2ba72d/multiprocess-0.70.16.tar.gz", hash = "sha256:161af703d4652a0e1410be6abccecde4a7ddffd19341be0a7011b94aeb171ac1", size = 1772603, upload-time = "2024-01-28T18:52:34.85Z" }
 wheels = [
@@ -1366,10 +1405,10 @@ name = "nbclient"
 version = "0.11.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "jupyter-client", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jupyter-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nbformat", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "jupyter-client" },
+    { name = "jupyter-core" },
+    { name = "nbformat" },
+    { name = "traitlets" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/28/a5/b3bae4b590c0cbcada2c63a34f7580024e834a8ba213e949a2f906705787/nbclient-0.11.0.tar.gz", hash = "sha256:04a134a5b087f2c5887f228aca155db50169b8cd9334dee6942c8e927e56081a", size = 62535, upload-time = "2026-06-05T07:52:41.746Z" }
 wheels = [
@@ -1381,20 +1420,20 @@ name = "nbconvert"
 version = "7.17.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "beautifulsoup4", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "bleach", extra = ["css"], marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "defusedxml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jinja2", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jupyter-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jupyterlab-pygments", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "markupsafe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "mistune", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nbclient", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nbformat", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pandocfilters", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pygments", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "beautifulsoup4" },
+    { name = "bleach", extra = ["css"] },
+    { name = "defusedxml" },
+    { name = "jinja2" },
+    { name = "jupyter-core" },
+    { name = "jupyterlab-pygments" },
+    { name = "markupsafe" },
+    { name = "mistune" },
+    { name = "nbclient" },
+    { name = "nbformat" },
+    { name = "packaging" },
+    { name = "pandocfilters" },
+    { name = "pygments" },
+    { name = "traitlets" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/01/b1/708e53fe2e429c103c6e6e159106bcf0357ac41aa4c28772bd8402339051/nbconvert-7.17.1.tar.gz", hash = "sha256:34d0d0a7e73ce3cbab6c5aae8f4f468797280b01fd8bd2ca746da8569eddd7d2", size = 865311, upload-time = "2026-04-08T00:44:14.914Z" }
 wheels = [
@@ -1406,10 +1445,10 @@ name = "nbformat"
 version = "5.10.4"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "fastjsonschema", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jsonschema", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jupyter-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "traitlets", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "fastjsonschema" },
+    { name = "jsonschema" },
+    { name = "jupyter-core" },
+    { name = "traitlets" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6d/fd/91545e604bc3dad7dca9ed03284086039b294c6b3d75c0d2fa45f9e9caf3/nbformat-5.10.4.tar.gz", hash = "sha256:322168b14f937a5d11362988ecac2a4952d3d8e3a2cbeb2319584631226d5b3a", size = 142749, upload-time = "2024-04-04T11:20:37.371Z" }
 wheels = [
@@ -1492,7 +1531,7 @@ name = "nvidia-cudnn-cu12"
 version = "9.7.1.26"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cublas-cu12" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/25/dc/dc825c4b1c83b538e207e34f48f86063c88deaa35d46c651c7c181364ba2/nvidia_cudnn_cu12-9.7.1.26-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:6d011159a158f3cfc47bf851aea79e31bcff60d530b70ef70474c84cac484d07", size = 726851421, upload-time = "2025-02-06T22:18:29.812Z" },
@@ -1503,7 +1542,7 @@ name = "nvidia-cufft-cu12"
 version = "11.3.3.41"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-nvjitlink-cu12" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ac/26/b53c493c38dccb1f1a42e1a21dc12cba2a77fbe36c652f7726d9ec4aba28/nvidia_cufft_cu12-11.3.3.41-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:da650080ab79fcdf7a4b06aa1b460e99860646b176a43f6208099bdc17836b6a", size = 193118795, upload-time = "2025-01-23T17:56:30.536Z" },
@@ -1530,9 +1569,9 @@ name = "nvidia-cusolver-cu12"
 version = "11.7.2.55"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cusparse-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-cublas-cu12" },
+    { name = "nvidia-cusparse-cu12" },
+    { name = "nvidia-nvjitlink-cu12" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c2/08/953675873a136d96bb12f93b49ba045d1107bc94d2551c52b12fa6c7dec3/nvidia_cusolver_cu12-11.7.2.55-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:4d1354102f1e922cee9db51920dba9e2559877cf6ff5ad03a00d853adafb191b", size = 260373342, upload-time = "2025-01-23T17:58:56.406Z" },
@@ -1543,7 +1582,7 @@ name = "nvidia-cusparse-cu12"
 version = "12.5.7.53"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nvidia-nvjitlink-cu12" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c2/ab/31e8149c66213b846c082a3b41b1365b831f41191f9f40c6ddbc8a7d550e/nvidia_cusparse_cu12-12.5.7.53-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3c1b61eb8c85257ea07e9354606b26397612627fdcd327bfd91ccf6155e7c86d", size = 292064180, upload-time = "2025-01-23T18:00:23.233Z" },
@@ -1586,12 +1625,12 @@ name = "onnxruntime"
 version = "1.22.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "coloredlogs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "flatbuffers", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "protobuf", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "sympy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "coloredlogs" },
+    { name = "flatbuffers" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "protobuf" },
+    { name = "sympy" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/84/57/901eddbfb59ac4d008822b236450d5765cafcd450c787019416f8d3baf11/onnxruntime-1.22.1-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:bddc75868bcf6f9ed76858a632f65f7b1846bdcefc6d637b1e359c2c68609964", size = 16459905, upload-time = "2025-07-10T19:15:21.749Z" },
@@ -1602,14 +1641,14 @@ name = "openai"
 version = "2.15.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "anyio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "distro", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "httpx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jiter", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pydantic", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "sniffio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "httpx" },
+    { name = "jiter" },
+    { name = "pydantic" },
+    { name = "sniffio" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/94/f4/4690ecb5d70023ce6bfcfeabfe717020f654bde59a775058ec6ac4692463/openai-2.15.0.tar.gz", hash = "sha256:42eb8cbb407d84770633f31bf727d4ffb4138711c670565a41663d9439174fba", size = 627383, upload-time = "2026-01-09T22:10:08.603Z" }
 wheels = [
@@ -1621,7 +1660,7 @@ name = "opencv-python"
 version = "4.13.0.92"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/db/07/90b34a8e2cf9c50fe8ed25cac9011cde0676b4d9d9c973751ac7616223a2/opencv_python-4.13.0.92-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:402033cddf9d294693094de5ef532339f14ce821da3ad7df7c9f6e8316da32cf", size = 70460872, upload-time = "2026-02-05T06:59:19.162Z" },
@@ -1630,14 +1669,14 @@ wheels = [
 
 [[package]]
 name = "opencv-python-headless"
-version = "4.13.0.92"
+version = "4.12.0.88"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
 ]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a4/63/6861102ec149c3cd298f4d1ea7ce9d6adbc7529221606ff1dab991a19adb/opencv-python-headless-4.12.0.88.tar.gz", hash = "sha256:cfdc017ddf2e59b6c2f53bc12d74b6b0be7ded4ec59083ea70763921af2b6c09", size = 95379675, upload-time = "2025-07-07T09:21:06.815Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/92/ce/bd17ff5772938267fd49716e94ca24f616ff4cb1ff4c6be13085108037be/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:0525a3d2c0b46c611e2130b5fdebc94cf404845d8fa64d2f3a3b679572a5bd22", size = 56016764, upload-time = "2026-02-05T10:26:48.904Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4b/33/b5db29a6c00eb8f50708110d8d453747ca125c8b805bc437b289dbdcc057/opencv_python_headless-4.13.0.92-cp37-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:0bd48544f77c68b2941392fcdf9bcd2b9cdf00e98cb8c29b2455d194763cf99e", size = 60391106, upload-time = "2026-02-05T10:30:14.236Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/89/53/e19c21e0c4eb1275c3e2c97b081103b6dfb3938172264d283a519bf728b9/opencv_python_headless-4.12.0.88-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:236c8df54a90f4d02076e6f9c1cc763d794542e886c576a6fee46ec8ff75a7a9", size = 54023419, upload-time = "2025-07-07T09:15:10.164Z" },
 ]
 
 [[package]]
@@ -1645,7 +1684,7 @@ name = "opentelemetry-api"
 version = "1.43.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ae/cc/e4c9584181f86494df0f6bdec1a4f3280c50db44704dc2a407e994fc87bb/opentelemetry_api-1.43.0.tar.gz", hash = "sha256:107d0d03857ea8fc7c5fcbbbd83f800c281f0d560553d61c1d675fccfd1761c1", size = 73476, upload-time = "2026-06-24T15:19:55.323Z" }
 wheels = [
@@ -1657,9 +1696,9 @@ name = "opentelemetry-sdk"
 version = "1.43.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "opentelemetry-api", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "opentelemetry-semantic-conventions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3e/eb/5041074274ac0956b03637cc039d434569112468e875eddfcc9a0674ce06/opentelemetry_sdk-1.43.0.tar.gz", hash = "sha256:d8187c81c162df9913e4003dd6485f7390d9a24fc17026ec7387b8b8218b08e9", size = 254744, upload-time = "2026-06-24T15:20:08.467Z" }
 wheels = [
@@ -1671,8 +1710,8 @@ name = "opentelemetry-semantic-conventions"
 version = "0.64b0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "opentelemetry-api", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "opentelemetry-api" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5a/30/5f26df29509eccd86b99b481ac9ffa39da49ba9577cc69071c552ae30447/opentelemetry_semantic_conventions-0.64b0.tar.gz", hash = "sha256:72f76fb2d1582d9d033dd1fcd84532e961e6ff3d90d24ba6fabc72975a83864c", size = 148340, upload-time = "2026-06-24T15:20:09.267Z" }
 wheels = [
@@ -1702,10 +1741,10 @@ name = "pandas"
 version = "2.3.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-dateutil", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pytz", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tzdata", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
+    { name = "python-dateutil" },
+    { name = "pytz" },
+    { name = "tzdata" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/33/01/d40b85317f86cf08d853a4f495195c73815fdf205eef3993821720274518/pandas-2.3.3.tar.gz", hash = "sha256:e05e1af93b977f7eafa636d043f9f94c7ee3ac81af99c13508215942e64c993b", size = 4495223, upload-time = "2025-09-29T23:34:51.853Z" }
 wheels = [
@@ -1736,7 +1775,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "ptyprocess", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "ptyprocess" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -1779,7 +1818,7 @@ name = "plyfile"
 version = "1.1.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/78/d8/f68ec9a54568236ba4c00fc0b002f74d2a559841c1fce86ab356599da032/plyfile-1.1.3.tar.gz", hash = "sha256:1c37720cb0470b762cec2dfef573ee7996a616c359c0ec34fdd766ace3ea0634", size = 36163, upload-time = "2025-10-22T01:58:40.06Z" }
 wheels = [
@@ -1791,7 +1830,7 @@ name = "prompt-toolkit"
 version = "3.0.52"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "wcwidth", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "wcwidth" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a1/96/06e01a7b38dce6fe1db213e061a4602dd6032a8a97ef6c1a862537732421/prompt_toolkit-3.0.52.tar.gz", hash = "sha256:28cde192929c8e7321de85de1ddbe736f1375148b02f2e17edd840042b1be855", size = 434198, upload-time = "2025-08-27T15:24:02.057Z" }
 wheels = [
@@ -1811,12 +1850,12 @@ wheels = [
 
 [[package]]
 name = "protobuf"
-version = "7.35.1"
+version = "6.33.6"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/da/01/9ef0afd7999eb9badb3a768b4aedd78c86d4c65cfaf1958ab276199e76b4/protobuf-7.35.1.tar.gz", hash = "sha256:ce115a26fe0c39a2c29973d914d327e516a6455464489fe3cd1e51a1b354f81a", size = 458717, upload-time = "2026-06-11T21:55:40.257Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/66/70/e908e9c5e52ef7c3a6c7902c9dfbb34c7e29c25d2f81ade3856445fd5c94/protobuf-6.33.6.tar.gz", hash = "sha256:a6768d25248312c297558af96a9f9c929e8c4cee0659cb07e780731095f38135", size = 444531, upload-time = "2026-03-18T19:05:00.988Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e4/be/5b3cfe508bfab6761414ff944e3366eb13be4fd71efcd69450f89ba39f43/protobuf-7.35.1-cp310-abi3-manylinux2014_x86_64.whl", hash = "sha256:74758715c53d7158fb76caf4f0cfdacc5329a4b1bb994f865d6cf302d413a1c4", size = 327130, upload-time = "2026-06-11T21:55:35.921Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/19/c7/5f7c636ec43e0c545e28d1f1db71990108306f7bdcb89f069ba97e428e7f/protobuf-7.35.1-py3-none-any.whl", hash = "sha256:4bc97768d8fe4ad6743c8a19403e314511ed9f6d13205b687e52421c023ac1b9", size = 171659, upload-time = "2026-06-11T21:55:39.155Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/16/92/d1e32e3e0d894fe00b15ce28ad4944ab692713f2e7f0a99787405e43533a/protobuf-6.33.6-cp39-abi3-manylinux2014_x86_64.whl", hash = "sha256:e9db7e292e0ab79dd108d7f1a94fe31601ce1ee3f7b79e0692043423020b0593", size = 323436, upload-time = "2026-03-18T19:04:55.768Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c4/72/02445137af02769918a93807b2b7890047c32bfb9f90371cbc12688819eb/protobuf-6.33.6-py3-none-any.whl", hash = "sha256:77179e006c476e69bf8e8ce866640091ec42e1beb80b213c3900006ecfba6901", size = 170656, upload-time = "2026-03-18T19:04:59.826Z" },
 ]
 
 [[package]]
@@ -1866,31 +1905,42 @@ wheels = [
 ]
 
 [[package]]
+name = "pycryptodome"
+version = "3.23.0"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/8e/a6/8452177684d5e906854776276ddd34eca30d1b1e15aa1ee9cefc289a33f5/pycryptodome-3.23.0.tar.gz", hash = "sha256:447700a657182d60338bab09fdb27518f8856aecd80ae4c6bdddb67ff5da44ef", size = 4921276, upload-time = "2025-05-17T17:21:45.242Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5f/e9/a09476d436d0ff1402ac3867d933c61805ec2326c6ea557aeeac3825604e/pycryptodome-3.23.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c8987bd3307a39bc03df5c8e0e3d8be0c4c3518b7f044b0f4c15d1aa78f52575", size = 2268954, upload-time = "2025-05-17T17:20:55.027Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/22/82/6edc3fc42fe9284aead511394bac167693fb2b0e0395b28b8bedaa07ef04/pycryptodome-3.23.0-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:dea827b4d55ee390dc89b2afe5927d4308a8b538ae91d9c6f7a5090f397af1aa", size = 2267414, upload-time = "2025-05-17T17:21:06.72Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d4/5e/63f5cbde2342b7f70a39e591dbe75d9809d6338ce0b07c10406f1a140cdc/pycryptodome-3.23.0-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:14e15c081e912c4b0d75632acd8382dfce45b258667aa3c67caf7a4d4c13f630", size = 1664461, upload-time = "2025-05-17T17:21:25.225Z" },
+]
+
+[[package]]
 name = "pydantic"
-version = "2.14.0a1"
+version = "2.13.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "annotated-types", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pydantic-core", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-inspection", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "annotated-types" },
+    { name = "pydantic-core" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/cb/71/0ae6d4e0a84faf0cd050033416509c44a19dc6dbec5bfdd3e1318cb1feb4/pydantic-2.14.0a1.tar.gz", hash = "sha256:2c3a5627d48f59725564c41b582328a29fa8d9b1108128ef6710463a0136d4fd", size = 844232, upload-time = "2026-05-22T13:23:43.109Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/53/ef/fc4f868f4e2cee79f863883abffceff107875f569b848507319842d2a681/pydantic-2.13.5.tar.gz", hash = "sha256:51a9c5f7b2f8e636f04c6cada605d9b6a3bf1348fdf945a3d8869b19bba0ee08", size = 845750, upload-time = "2026-08-28T14:04:00.916Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/91/4e/15d81754895da3f256273432da60fcb7c885177fefaf495c5b4364fadca5/pydantic-2.14.0a1-py3-none-any.whl", hash = "sha256:61a1ea8d65df95b681c1fab9cd7d01b2472837f798df53dc6d0f41f0c217b061", size = 470439, upload-time = "2026-05-22T13:23:40.57Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl", hash = "sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73", size = 472589, upload-time = "2026-08-28T14:03:59.136Z" },
 ]
 
 [[package]]
 name = "pydantic-core"
-version = "2.47.0"
+version = "2.46.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "typing-extensions" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a7/74/319859f70c733f341df03823c8ca27ce9003faaac3ffa3110f3af1c8641a/pydantic_core-2.47.0.tar.gz", hash = "sha256:422c1797a7864b2a9a996435aba92fe571fb80190f67a31edbc1ac040c7b51fe", size = 476601, upload-time = "2026-05-22T13:19:00.229Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/af/f9/8a06bea35ef8daf588f707784c973a7046e0034c8d8cfb08828eeffb8b75/pydantic_core-2.46.5.tar.gz", hash = "sha256:10416c15b8839ecc4ef4d0885da76da6fd0f67333a0eb8aff6d93c4b8f2910fc", size = 472262, upload-time = "2026-08-28T10:01:31.677Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ce/19/8e07e5e9d72efdceaf316214066e08a54dcc8768d0c161ada61d41513452/pydantic_core-2.47.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0744954b81a77cfd381760d8b1bf92ba4db57d2da235e695d6fd3c94f741d24d", size = 2091555, upload-time = "2026-05-22T13:20:28.536Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/6c/da/ec315b54c393bc516352c46027bfee5725161e85c5a75dcadc0c1cafebb9/pydantic_core-2.47.0-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:8ad7522d6e0cf28192b30f4c9db62e9b7a13ef10652bf8310de27bcb4a6c1c40", size = 2354528, upload-time = "2026-05-22T13:19:52.558Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/34/a1/c8e6b66f499f510752c07a092dfe27621f9c255635e59d38704b5681c35a/pydantic_core-2.46.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:850a08d167dde16db8702c274f320c7be9d7da6f6dff2b58b18f9e815bd94f5b", size = 2064073, upload-time = "2026-08-28T09:57:45.613Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b4/72/dd1a29853cf6d22a1ebd9e3baf0239cbc57d2d16caff36a89e38eb9b1db3/pydantic_core-2.46.5-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:eb7d8d0e5886a89a55d2eef490e272fa965a9d57c6b29a5b5088a7997ec2cad1", size = 2320505, upload-time = "2026-08-28T09:57:53.236Z" },
 ]
 
 [[package]]
@@ -1898,9 +1948,9 @@ name = "pydantic-settings"
 version = "2.14.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "pydantic", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-dotenv", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-inspection", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "typing-inspection" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5c/b5/8f48e906c3e0205276e8bd8cb7512217a87b2685304d64be27cad5b3019f/pydantic_settings-2.14.2.tar.gz", hash = "sha256:c19dd64b19097f1de80184f0cc7b0272a13ae6e170cbf240a3e27e381ed14a5f", size = 237700, upload-time = "2026-06-19T13:44:56.324Z" }
 wheels = [
@@ -1930,9 +1980,9 @@ name = "pynput"
 version = "1.8.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "evdev", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and 'linux' in sys_platform" },
-    { name = "python-xlib", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and 'linux' in sys_platform" },
-    { name = "six", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "evdev", marker = "'linux' in sys_platform" },
+    { name = "python-xlib", marker = "'linux' in sys_platform" },
+    { name = "six" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/86/c6/e2d415610cfbc78308bee44218a46124aaa3301b1df08814df819b2254a1/pynput-1.8.2.tar.gz", hash = "sha256:f493c87157cd3861b4468f7f896857051762f44ed26f1b641e7cc5840a457087", size = 82818, upload-time = "2026-05-12T19:11:39.464Z" }
 wheels = [
@@ -1959,16 +2009,16 @@ name = "pyrender"
 version = "0.1.45"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "freetype-py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "imageio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "networkx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyglet", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyopengl", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "scipy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "six", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "trimesh", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "freetype-py" },
+    { name = "imageio" },
+    { name = "networkx" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pyglet" },
+    { name = "pyopengl" },
+    { name = "scipy" },
+    { name = "six" },
+    { name = "trimesh" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4d/5a/2a3e5bfd83071a81e02291288391e0fa2c85d1c6765357f4de2dbc27bca6/pyrender-0.1.45.tar.gz", hash = "sha256:284b2432bf6832f05c5216c4b979ceb514ea78163bf53b8ce2bdf0069cb3b92e", size = 1202386, upload-time = "2021-02-18T18:56:28.82Z" }
 wheels = [
@@ -1989,7 +2039,7 @@ name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "six", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "six" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/66/c0/0c8b6ad9f17a802ee498c46e004a0eb49bc148f2fd230864601a86dcf6db/python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3", size = 342432, upload-time = "2024-03-01T18:36:20.211Z" }
 wheels = [
@@ -2010,7 +2060,7 @@ name = "python-engineio"
 version = "4.13.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "simple-websocket", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "simple-websocket" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fb/a0/f75491f942184d9960b15e763270f765fe9f239745ca5f9e16289011aed4/python_engineio-4.13.3.tar.gz", hash = "sha256:572b7783e341fed21edbc7cea297ccd378dad79265fdde96aa4664420a7c06c9", size = 79734, upload-time = "2026-06-20T22:53:52.197Z" }
 wheels = [
@@ -2031,8 +2081,8 @@ name = "python-socketio"
 version = "5.16.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "bidict", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "python-engineio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "bidict" },
+    { name = "python-engineio" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/32/2d/ffce71017c106b75099fea569df6518c63fee5d6202ce0cfe7b01e6f22c3/python_socketio-5.16.3.tar.gz", hash = "sha256:89b136f677ae65607a84cecda9b4d6c5377b40a97582c504c25df89af16d520e", size = 128095, upload-time = "2026-06-15T22:07:04.003Z" }
 wheels = [
@@ -2044,7 +2094,7 @@ name = "python-xlib"
 version = "0.33"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "six", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "six" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/86/f5/8c0653e5bb54e0cbdfe27bf32d41f27bc4e12faa8742778c17f2a71be2c0/python-xlib-0.33.tar.gz", hash = "sha256:55af7906a2c75ce6cb280a584776080602444f75815a7aff4d287bb2d7018b32", size = 269068, upload-time = "2022-12-25T18:53:00.824Z" }
 wheels = [
@@ -2075,7 +2125,7 @@ name = "pyyaml-include"
 version = "1.4.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "pyyaml" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/7f/be/2d07ad85e3d593d69640876a8686eae2c533db8cb7bf298d25c421b4d2d5/pyyaml-include-1.4.1.tar.gz", hash = "sha256:1a96e33a99a3e56235f5221273832464025f02ff3d8539309a3bf00dec624471", size = 20592, upload-time = "2024-03-25T14:56:43.748Z" }
 wheels = [
@@ -2087,7 +2137,7 @@ name = "pyzmq"
 version = "27.1.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "cffi", marker = "implementation_name == 'pypy' and platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "cffi", marker = "implementation_name == 'pypy'" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/04/0b/3c9baedbdf613ecaa7aa07027780b8867f57b6293b6ee50de316c9f3222b/pyzmq-27.1.0.tar.gz", hash = "sha256:ac0765e3d44455adb6ddbf4417dcce460fc40a05978c08efdf2948072f6db540", size = 281750, upload-time = "2025-09-08T23:10:18.157Z" }
 wheels = [
@@ -2103,7 +2153,7 @@ name = "redis"
 version = "5.2.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "async-timeout", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "async-timeout" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/47/da/d283a37303a995cd36f8b92db85135153dc4f7a8e4441aa827721b442cfb/redis-5.2.1.tar.gz", hash = "sha256:16f2e22dff21d5125e8481515e386711a34cbec50f0e44413dd7d9c060a54e0f", size = 4608355, upload-time = "2024-12-06T09:50:41.956Z" }
 wheels = [
@@ -2115,9 +2165,9 @@ name = "referencing"
 version = "0.37.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "attrs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "rpds-py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "attrs" },
+    { name = "rpds-py" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/22/f5/df4e9027acead3ecc63e50fe1e36aca1523e1719559c499951bb4b53188f/referencing-0.37.0.tar.gz", hash = "sha256:44aefc3142c5b842538163acb373e24cce6632bd54bdb01b21ad5863489f50d8", size = 78036, upload-time = "2025-10-13T15:30:48.871Z" }
 wheels = [
@@ -2140,10 +2190,10 @@ name = "requests"
 version = "2.34.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "certifi", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "charset-normalizer", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "idna", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "urllib3", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "certifi" },
+    { name = "charset-normalizer" },
+    { name = "idna" },
+    { name = "urllib3" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
@@ -2151,18 +2201,30 @@ wheels = [
 ]
 
 [[package]]
-name = "rerun-sdk"
-version = "0.22.1"
+name = "requests-toolbelt"
+version = "1.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "attrs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyarrow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "requests" },
+]
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f3/61/d7545dafb7ac2230c70d38d31cbfe4cc64f7144dc41f6e4e4b78ecd9f5bb/requests-toolbelt-1.0.0.tar.gz", hash = "sha256:7681a0a3d047012b5bdc0ee37d7f8f07ebe76ab08caeccfc3921ce23c88d5bc6", size = 206888, upload-time = "2023-05-01T04:11:33.229Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/3f/51/d4db610ef29373b879047326cbf6fa98b6c1969d6f6dc423279de2b1be2c/requests_toolbelt-1.0.0-py2.py3-none-any.whl", hash = "sha256:cccfdd665f0a24fcf4726e690f65639d272bb0637b9b92dfd91a5568ccf6bd06", size = 54481, upload-time = "2023-05-01T04:11:28.427Z" },
+]
+
+[[package]]
+name = "rerun-sdk"
+version = "0.26.2"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "pyarrow" },
+    { name = "typing-extensions" },
 ]
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1e/db/3ce2be017d7d4ac0948fb064bf7417b36c96bc07d1b8a922017606ba03c6/rerun_sdk-0.22.1-cp38-abi3-manylinux_2_31_x86_64.whl", hash = "sha256:b9672412d0cdf57c79c10ca683e59716399da3358df78b985b25093d022ebbaf", size = 51423327, upload-time = "2025-02-20T10:43:48.471Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/f5/86/0b9c8f56398b4fc85f8e99279907c258413a297e5603f8f2537fe5806e51/rerun_sdk-0.26.2-cp39-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:a6f97b60aaa7d4e8c6124a3f6b97ce9dbd09520050955f0e0bdacb72b0eb106a", size = 98768129, upload-time = "2025-10-27T11:34:27.36Z" },
 ]
 
 [[package]]
@@ -2170,8 +2232,8 @@ name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "markdown-it-py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pygments", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "markdown-it-py" },
+    { name = "pygments" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
@@ -2203,10 +2265,10 @@ name = "scikit-learn"
 version = "1.5.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "joblib", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "scipy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "threadpoolctl", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "joblib" },
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "threadpoolctl" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/37/59/44985a2bdc95c74e34fef3d10cb5d93ce13b0e2a7baefffe1b53853b502d/scikit_learn-1.5.2.tar.gz", hash = "sha256:b4237ed7b3fdd0a4882792e68ef2545d5baa50aca3bb45aa7df468138ad8f94d", size = 7001680, upload-time = "2024-09-11T15:50:10.957Z" }
 wheels = [
@@ -2218,7 +2280,7 @@ name = "scipy"
 version = "1.15.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0f/37/6964b830433e654ec7485e45a00fc9a27cf868d622838f6b6d9c5ec0d532/scipy-1.15.3.tar.gz", hash = "sha256:eae3cf522bc7df64b42cad3925c876e1b0b6c35c1337c93e12c0f366f55b0eaf", size = 59419214, upload-time = "2025-05-08T16:13:05.955Z" }
 wheels = [
@@ -2231,14 +2293,14 @@ name = "sentence-transformers"
 version = "2.5.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "huggingface-hub", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "scikit-learn", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "scipy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "transformers", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "transformers" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4d/f8/7bf94c7a6e7b6e23fb09e37028d6d58a0849cf1151c9270a928ef5fd9a98/sentence-transformers-2.5.1.tar.gz", hash = "sha256:754bf2b2623eb46904fd9c72ff89a0f90200fe141a8d45b03e83bc6d51718153", size = 116832, upload-time = "2024-03-01T08:18:34.055Z" }
 wheels = [
@@ -2250,9 +2312,9 @@ name = "sentry-sdk"
 version = "3.0.0a7"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "certifi", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "opentelemetry-sdk", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "urllib3", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "certifi" },
+    { name = "opentelemetry-sdk" },
+    { name = "urllib3" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/66/a5/747ab268f2cf3f4cb50af521e1a85a959411f74cf4a2ecf47782e1981cee/sentry_sdk-3.0.0a7.tar.gz", hash = "sha256:439a858d409b84407560df6b7ebb760acd9ad3d14e05cd919ae36b204e411cb2", size = 329999, upload-time = "2025-10-20T13:50:38.131Z" }
 wheels = [
@@ -2273,7 +2335,7 @@ name = "simple-websocket"
 version = "1.1.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "wsproto", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "wsproto" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/b0/d4/bfa032f961103eba93de583b161f0e6a5b63cebb8f2c7d0c6e6efe1e3d2e/simple_websocket-1.1.0.tar.gz", hash = "sha256:7939234e7aa067c534abdab3a9ed933ec9ce4691b0713c78acb195560aa52ae4", size = 17300, upload-time = "2024-10-10T22:39:31.412Z" }
 wheels = [
@@ -2330,8 +2392,8 @@ name = "sse-starlette"
 version = "3.4.5"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "anyio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "starlette", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "anyio" },
+    { name = "starlette" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d2/1b/bc9e3e7a72dcdad7dc7888758f5d00f56f8909ed5cfdff822bd72bb4c520/sse_starlette-3.4.5.tar.gz", hash = "sha256:83072538bc211a2f68b7b0422226c4af3e9b62e106e07034664b832ca019842a", size = 35249, upload-time = "2026-06-20T17:36:58.322Z" }
 wheels = [
@@ -2343,9 +2405,9 @@ name = "stack-data"
 version = "0.6.3"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "asttokens", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "executing", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pure-eval", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "asttokens" },
+    { name = "executing" },
+    { name = "pure-eval" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707, upload-time = "2023-09-30T13:58:05.479Z" }
 wheels = [
@@ -2357,8 +2419,8 @@ name = "starlette"
 version = "1.3.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "anyio", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "anyio" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
 wheels = [
@@ -2370,7 +2432,7 @@ name = "sympy"
 version = "1.14.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "mpmath", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "mpmath" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
 wheels = [
@@ -2400,7 +2462,7 @@ name = "tinycss2"
 version = "1.5.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "webencodings", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "webencodings" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/a3/ae/2ca4913e5c0f09781d75482874c3a95db9105462a92ddd303c7d285d3df2/tinycss2-1.5.1.tar.gz", hash = "sha256:d339d2b616ba90ccce58da8495a78f46e55d4d25f9fd71dfd526f07e7d53f957", size = 88195, upload-time = "2025-11-23T10:29:10.082Z" }
 wheels = [
@@ -2412,7 +2474,7 @@ name = "tokenizers"
 version = "0.23.0rc0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "huggingface-hub", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "huggingface-hub" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/0b/dc/2ba78324f6c82284f8d3d03bba16e5771d075aa4d5e9b4ecbd87af846af2/tokenizers-0.23.0rc0.tar.gz", hash = "sha256:685c6d269444451a2cf276d3f2bf655f3d7094be20c6553e413ede86b03c637b", size = 361629, upload-time = "2026-04-24T05:37:42.81Z" }
 wheels = [
@@ -2434,27 +2496,27 @@ name = "torch"
 version = "2.7.0+cu128"
 source = { registry = "https://download.pytorch.org/whl/cu128" }
 dependencies = [
-    { name = "filelock", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "fsspec", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "jinja2", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "networkx", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cublas-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cuda-cupti-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cuda-nvrtc-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cuda-runtime-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cudnn-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cufft-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cufile-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-curand-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cusolver-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cusparse-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-cusparselt-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-nccl-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-nvjitlink-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "nvidia-nvtx-cu12", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "sympy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "triton", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "filelock" },
+    { name = "fsspec" },
+    { name = "jinja2" },
+    { name = "networkx" },
+    { name = "nvidia-cublas-cu12" },
+    { name = "nvidia-cuda-cupti-cu12" },
+    { name = "nvidia-cuda-nvrtc-cu12" },
+    { name = "nvidia-cuda-runtime-cu12" },
+    { name = "nvidia-cudnn-cu12" },
+    { name = "nvidia-cufft-cu12" },
+    { name = "nvidia-cufile-cu12" },
+    { name = "nvidia-curand-cu12" },
+    { name = "nvidia-cusolver-cu12" },
+    { name = "nvidia-cusparse-cu12" },
+    { name = "nvidia-cusparselt-cu12" },
+    { name = "nvidia-nccl-cu12" },
+    { name = "nvidia-nvjitlink-cu12" },
+    { name = "nvidia-nvtx-cu12" },
+    { name = "sympy" },
+    { name = "triton" },
+    { name = "typing-extensions" },
 ]
 wheels = [
     { url = "https://download-r2.pytorch.org/whl/cu128/torch-2.7.0%2Bcu128-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:ac1849553ee673dfafb44c610c60cb60a2890f0e117f43599a526cf777eb8b8c", upload-time = "2025-04-22T18:19:25Z" },
@@ -2473,9 +2535,9 @@ name = "torchvision"
 version = "0.22.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pillow", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "torch", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "torch" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/e7/9e/e898a377e674da47e95227f3d7be2c49550ce381eebd8c7831c1f8bb7d39/torchvision-0.22.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:6fbca169c690fa2b9b8c39c0ad76d5b8992296d0d03df01e11df97ce12b4e0ac", size = 7446399, upload-time = "2025-04-23T14:41:49.793Z" },
@@ -2514,16 +2576,16 @@ name = "transformers"
 version = "4.57.6"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "filelock", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "huggingface-hub", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "regex", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "requests", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "safetensors", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tokenizers", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "tqdm", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "filelock" },
+    { name = "huggingface-hub" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pyyaml" },
+    { name = "regex" },
+    { name = "requests" },
+    { name = "safetensors" },
+    { name = "tokenizers" },
+    { name = "tqdm" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c4/35/67252acc1b929dc88b6602e8c4a982e64f31e733b804c14bc24b47da35e6/transformers-4.57.6.tar.gz", hash = "sha256:55e44126ece9dc0a291521b7e5492b572e6ef2766338a610b9ab5afbb70689d3", size = 10134912, upload-time = "2026-01-16T10:38:39.284Z" }
 wheels = [
@@ -2535,7 +2597,7 @@ name = "trimesh"
 version = "5.0.0rc1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "numpy", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "numpy" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/4f/73/1c56a0e3a91dcb36d0957b2d87087cd3300e4b341ee0eb1711f71760d589/trimesh-5.0.0rc1.tar.gz", hash = "sha256:2f48db2cb769ad379dadbee16fcf8c36b4814c72bf237f3c5941076abc829e61", size = 849395, upload-time = "2026-06-24T04:58:35.013Z" }
 wheels = [
@@ -2547,7 +2609,7 @@ name = "triton"
 version = "3.3.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "setuptools", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "setuptools" },
 ]
 wheels = [
     { url = "https://pypi.tuna.tsinghua.edu.cn/packages/76/04/d54d3a6d077c646624dc9461b0059e23fd5d30e0dbe67471e3654aec81f9/triton-3.3.0-cp310-cp310-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:fad99beafc860501d7fcc1fb7045d9496cbe2c882b1674640304949165a916e7", size = 156441993, upload-time = "2025-04-09T20:27:25.107Z" },
@@ -2567,8 +2629,8 @@ name = "typing-inspect"
 version = "0.9.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "mypy-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "mypy-extensions" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/dc/74/1789779d91f1961fa9438e9a8710cdae6bd138c80d7303996933d117264a/typing_inspect-0.9.0.tar.gz", hash = "sha256:b23fc42ff6f6ef6954e4852c1fb512cdd18dbea03134f91f856a95ccc9461f78" }
 wheels = [
@@ -2580,7 +2642,7 @@ name = "typing-inspection"
 version = "0.4.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/55/e3/70399cb7dd41c10ac53367ae42139cf4b1ca5f36bb3dc6c9d33acdb43655/typing_inspection-0.4.2.tar.gz", hash = "sha256:ba561c48a67c5958007083d386c3295464928b01faa735ab8547c5692e87f464", size = 75949, upload-time = "2025-10-01T02:14:41.687Z" }
 wheels = [
@@ -2610,9 +2672,9 @@ name = "uvicorn"
 version = "0.49.0"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "click", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "h11", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "click" },
+    { name = "h11" },
+    { name = "typing-extensions" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c4/1f/fa18009dea8469069cca78a4e877a008ab78f08b064bfc9ab891579077ff/uvicorn-0.49.0.tar.gz", hash = "sha256:ebf4271aa580d9de97f93192d4595176df6e91f9aae919ca73e4fc07df1e66a3", size = 91284, upload-time = "2026-06-03T22:01:30.448Z" }
 wheels = [
@@ -2630,24 +2692,24 @@ wheels = [
 
 [[package]]
 name = "wandb"
-version = "0.28.0"
+version = "0.24.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "click", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "gitpython", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "packaging", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "platformdirs", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "protobuf", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pydantic", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "pyyaml", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "requests", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "sentry-sdk", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "typing-extensions", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "click" },
+    { name = "gitpython" },
+    { name = "packaging" },
+    { name = "platformdirs" },
+    { name = "protobuf" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "sentry-sdk" },
+    { name = "typing-extensions" },
 ]
-sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/5f/a7/683bfbd6cbade3012bc90d3e9c4cfc72dd62566195bf4c30321946d64b77/wandb-0.28.0.tar.gz", hash = "sha256:b20e5af0fe80e2e2a466b0466a1d60cedcc578dce0f036eca04f4a0adcad95b6", size = 40558332, upload-time = "2026-06-23T00:38:50.115Z" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/97/5c/53cf9f74b89e90facc8c7892d1449f7b39527e50e5cd577346baeb97e423/wandb-0.24.2.tar.gz", hash = "sha256:968b5b91d0a164dfb2f8c604cdf69e6fb09de6596b85b9f9d3c916b71ae86198", size = 44237317, upload-time = "2026-02-05T00:12:16.739Z" }
 wheels = [
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/d8/5d/1385ce3c219cb5bd30d4027687e3f8d25969c7dfd09adad1cbd5080e1a72/wandb-0.28.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:325b2d0bd88be6eda5db10542499bad3710927f2569c81a84dc5eeaffc76825c", size = 26764727, upload-time = "2026-06-23T00:38:33.775Z" },
-    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/89/67/9be00fb2db2281063af24a148636d2dd363d337317642ab5d8e93572c794/wandb-0.28.0-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:9fec6c908554c2dad33110c1312bc3028cc2e430f0679f16b84f82c8ea801e3b", size = 27074113, upload-time = "2026-06-23T00:38:38.737Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/70/c8/1b758bd903afee000f023cd03f335ff328a21b3914f9f9deda49b1e57723/wandb-0.24.2-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:38661c666e70d7e1f460fc0a0edab8a393eaaa5f8773c17be534961a7022779d", size = 23026085, upload-time = "2026-02-05T00:12:02.682Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/1e/5c/e9b36ddc9beb2745a4fb1ec67ae7f995c31f7305a6d17837b72b228360ff/wandb-0.24.2-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:33cba098d95fd46720cc9023bd23e4a38e9b11836a836b4a57b8d41cff8985f2", size = 23120819, upload-time = "2026-02-05T00:12:07.487Z" },
 ]
 
 [[package]]
@@ -2669,11 +2731,23 @@ wheels = [
 ]
 
 [[package]]
+name = "websockets"
+version = "15.0.1"
+source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/21/e6/26d09fab466b7ca9c7737474c52be4f76a40301b08362eb2dbc19dcc16c1/websockets-15.0.1.tar.gz", hash = "sha256:82544de02076bafba038ce055ee6412d68da13ab47f0c60cab827346de828dee", size = 177016, upload-time = "2025-03-05T20:03:41.606Z" }
+wheels = [
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/97/3a/5323a6bb94917af13bbb34009fac01e55c51dfde354f63692bf2533ffbc2/websockets-15.0.1-cp310-cp310-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ac1e5c9054fe23226fb11e05a6e630837f074174c4c2f0fe442996112a6de4fb", size = 181631, upload-time = "2025-03-05T20:01:46.104Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c7/b9/828b0bc6753db905b91df6ae477c0b14a141090df64fb17f8a9d7e3516cf/websockets-15.0.1-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:3d00075aa65772e7ce9e990cab3ff1de702aa09be3940d1dc88d5abf1ab8a09c", size = 181360, upload-time = "2025-03-05T20:01:50.938Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/2b/fb/c492d6daa5ec067c2988ac80c61359ace5c4c674c532985ac5a123436cec/websockets-15.0.1-pp310-pypy310_pp73-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b359ed09954d7c18bbc1680f380c7301f92c60bf924171629c5db97febb12f04", size = 174155, upload-time = "2025-03-05T20:03:25.321Z" },
+    { url = "https://pypi.tuna.tsinghua.edu.cn/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl", hash = "sha256:f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f", size = 169743, upload-time = "2025-03-05T20:03:39.41Z" },
+]
+
+[[package]]
 name = "werkzeug"
 version = "3.1.8"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "markupsafe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "markupsafe" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/dd/b2/381be8cfdee792dd117872481b6e378f85c957dd7c5bca38897b08f765fd/werkzeug-3.1.8.tar.gz", hash = "sha256:9bad61a4268dac112f1c5cd4630a56ede601b6ed420300677a869083d70a4c44", size = 875852, upload-time = "2026-04-02T18:49:14.268Z" }
 wheels = [
@@ -2694,7 +2768,7 @@ name = "wsproto"
 version = "1.3.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "h11", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "h11" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/c7/79/12135bdf8b9c9367b8701c2c19a14c913c120b882d50b014ca0d38083c2c/wsproto-1.3.2.tar.gz", hash = "sha256:b86885dcf294e15204919950f666e06ffc6c7c114ca900b060d6e16293528294", size = 50116, upload-time = "2025-11-20T18:18:01.871Z" }
 wheels = [
@@ -2716,9 +2790,9 @@ name = "yarl"
 version = "1.24.2"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
 dependencies = [
-    { name = "idna", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "multidict", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
-    { name = "propcache", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "idna" },
+    { name = "multidict" },
+    { name = "propcache" },
 ]
 sdist = { url = "https://pypi.tuna.tsinghua.edu.cn/packages/79/12/1e8f37460ea0f7eb59c221fdaf0ed75e7ac43e97f8093b9c6f411df50a78/yarl-1.24.2.tar.gz", hash = "sha256:9ac374123c6fd7abf64d1fec93962b0bd4ee2c19751755a762a72dd96c0378f8", size = 210798, upload-time = "2026-05-19T21:31:05.599Z" }
 wheels = [

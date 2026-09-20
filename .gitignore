@@ -35,7 +35,6 @@ __pycache__/
 .vscode/
 .cuda/
 .downloads/
-.venv_feishu/
 integrations/feishu/runtime/
 
 # Runtime traces, experience, media and site data
