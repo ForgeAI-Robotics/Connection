@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from kernel.contracts import StaleWrite
+from kernel.memory import select_window
 
 
 def now_iso():
@@ -152,6 +153,23 @@ class KernelStore:
                 os.fsync(handle.fileno())
             os.replace(tmp_path, self.state_path)
         return incoming
+
+    def read_events(self) -> list:
+        with self.writer():
+            if not self.events_path.is_file():
+                return []
+            rows = []
+            with self.events_path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    text = line.strip()
+                    if not text:
+                        continue
+                    rows.append(json.loads(text))
+            return rows
+
+    def recent_events(self, *, limit: int, ttl_sec: float, now=None) -> list:
+        """Window over the event file. Reading it does not rewrite the file or the ledger."""
+        return select_window(self.read_events(), limit=limit, ttl_sec=ttl_sec, now=now)
 
     def append_event(self, event, **data):
         entry = {"time": now_iso(), "event": event, **data}

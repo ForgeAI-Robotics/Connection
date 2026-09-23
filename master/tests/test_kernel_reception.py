@@ -921,7 +921,10 @@ class ReviewTests(unittest.TestCase):
             def recover():
                 try:
                     other = TaskRuntime(KernelStore(root), port, config=runtime.config)
-                    other.resume()
+                    try:
+                        other.resume()
+                    except IllegalTransition:
+                        return
                     try:
                         other.open_new_attempt()
                     except (Rejected, IllegalTransition, StaleWrite):

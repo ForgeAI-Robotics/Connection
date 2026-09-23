@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from copy import deepcopy
+from datetime import datetime
 
 from kernel.contracts import (
     CONTRACT_VERSION,
@@ -20,6 +21,7 @@ from kernel.contracts import (
     evidence_filename,
     make_command_id,
 )
+from kernel.memory import append_observation, event_window_settings, read_subject
 from kernel.packages.reception import (
     PHASES,
     inspection_body,
@@ -80,6 +82,7 @@ def _blank_record():
         "revision": 0,
         "dispatch_closed": False,
         "control_request": "",
+        "observations": [],
     }
 
 
@@ -634,6 +637,43 @@ class TaskRuntime:
     def _set(self, state: str):
         self.record["state"] = state
 
+    def record_scene(self, *, subject: str, value, source: str, valid_until: str):
+        """Append a scene observation. It does not replace a confirmed location."""
+        with self._exclusive():
+            self._reload_locked()
+            if not self.record.get("task_id"):
+                raise Rejected("没有任务，不能记录现场")
+            append_observation(
+                self.record,
+                subject=subject,
+                value=value,
+                source=source,
+                observed_at=datetime.now().astimezone(),
+                kind="observed",
+                valid_until=valid_until,
+            )
+            self._save("scene_observed")
+
+    def belief(self, subject: str, *, now=None) -> dict:
+        return read_subject(self.record.get("observations") or [], subject, now=now)
+
+    def recent_context(self, *, now=None) -> list:
+        limit, ttl = event_window_settings(self.config)
+        reader = getattr(self.store, "recent_events", None)
+        if not callable(reader):
+            return []
+        return reader(limit=limit, ttl_sec=ttl, now=now)
+
+    def _confirm(self, subject: str, value, source: str):
+        append_observation(
+            self.record,
+            subject=subject,
+            value=value,
+            source=source,
+            observed_at=datetime.now().astimezone(),
+            kind="established",
+        )
+
     def _save(self, event: str):
         saved = self.store.save_state(self.record)
         self.record = saved
@@ -896,6 +936,8 @@ class TaskRuntime:
             self._save("verdict")
             return
         if step.writes == "in_gripper":
+            self._confirm("holding", OBJECT_ID, attempt["attempt_id"])
+            self._confirm("object_location", "in_gripper", attempt["attempt_id"])
             self.record["holding"] = OBJECT_ID
             self.record["object_location"] = "in_gripper"
         if next_step_id and not handoff_ok:
@@ -916,6 +958,8 @@ class TaskRuntime:
             self._save("step_passed")
             return
         if step.writes == "table_1":
+            self._confirm("object_location", "table_1", attempt["attempt_id"])
+            self._confirm("holding", None, attempt["attempt_id"])
             self.record["object_location"] = "table_1"
             self.record["holding"] = None
         self.record["safe_idle"] = True

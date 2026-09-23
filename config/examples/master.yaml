@@ -54,6 +54,9 @@ reception_real:
   # 新内核默认关闭。关闭时「开始接待」仍走 reception_real.py。
   kernel_enabled: false
   kernel_runtime_dir: ./sop/runtime/kernel
+  # 短时上下文窗口。只裁剪读取，不删除任务账本和未核清命令。
+  event_memory_limit: 20
+  event_memory_ttl_sec: 1800
   request_timeout_sec: 10
   dream_poll_interval_sec: 0.5
   vla_poll_interval_sec: 1.0
