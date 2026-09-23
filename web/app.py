@@ -179,6 +179,52 @@ def index():
     return render_template("index.html")
 
 
+# Environment application runs outside the request thread; polling reports progress.
+_SWITCH_POOL = ThreadPoolExecutor(max_workers=1)
+_SWITCH_JOB = None
+import threading
+_SWITCH_GUARD = threading.Lock()
+
+
+@app.get("/api/execution")
+def api_execution():
+    from web.execution import Switcher
+    try:
+        result = Switcher().status()
+        job = _SWITCH_JOB
+        result['applying'] = result['switching'] or bool(job and not job.done())
+        result['error'] = str(job.exception()) if job and job.done() and job.exception() else None
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.post("/api/execution/preview")
+def api_execution_preview():
+    from web.execution import Switcher
+    try:
+        return jsonify(Switcher().preview(request.get_json()))
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@app.post("/api/execution/apply")
+def api_execution_apply():
+    global _SWITCH_JOB
+    from web.execution import Switcher
+    try:
+        config = request.get_json()
+        switcher = Switcher()
+        switcher.preview(config)
+        with _SWITCH_GUARD:
+            if _SWITCH_JOB and not _SWITCH_JOB.done():
+                return jsonify({'error': '正在应用环境，请稍后'}), 409
+            _SWITCH_JOB = _SWITCH_POOL.submit(switcher.apply, config)
+        return jsonify({'accepted': True}), 202
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
 @app.get("/api/status")
 def api_status():
     services = catalog()
@@ -227,16 +273,19 @@ def api_action(service_id: str, action: str):
     allowed = {"start", "stop", "restart"} | set(service.remote_actions)
     if action not in allowed:
         return jsonify({"error": "不支持的操作"}), 400
+    from contextlib import nullcontext
+    from common.execution_profile import admission
     try:
-        if action == "start":
-            _start(service)
-        elif action == "stop":
-            _stop(service)
-        elif action == "restart":
-            _stop(service)
-            _start(service)
-        else:
-            _remote_extra(service, action)
+        with nullcontext() if service.remote_control else admission(check_block=False):
+            if action == "start":
+                _start(service)
+            elif action == "stop":
+                _stop(service)
+            elif action == "restart":
+                _stop(service)
+                _start(service)
+            else:
+                _remote_extra(service, action)
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
     return jsonify({"ok": True, "service": _service_status(service)})

@@ -25,10 +25,12 @@ class StepSpec:
     writes: str = ""
     target_area: str = ""
     deadline_sec: float = 30.0
+    robot_name: str = ""
+    object_id: str = ""
 
     @property
     def body(self) -> bool:
-        return self.kind in {"navigate", "inspect", "pick", "place"}
+        return self.kind not in {"describe", "desk_check", "local", "verify"}
 
 
 # Copied from reception_real.NAVIGATION_LEGS so the request body keeps the same fields.

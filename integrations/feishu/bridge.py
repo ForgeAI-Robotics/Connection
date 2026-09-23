@@ -563,18 +563,16 @@ class FeishuBridge:
                 continue
 
             raw = status.raw
-            if status.active and status.task_id == latest.brain_task_id:
+            if status.task_id == latest.brain_task_id and (status.active or raw.get("terminal") is True):
                 seen_expected = True
-                state = (
-                    "failed"
-                    if status.all_done and raw.get("failed")
-                    else "succeeded"
-                    if status.all_done
-                    else "running"
-                )
+                runtime_state = raw.get("state")
+                if runtime_state in {"succeeded", "failed", "cancelled"}:
+                    state = "canceled" if runtime_state == "cancelled" else runtime_state
+                else:
+                    state = "failed" if status.all_done and raw.get("failed") else "succeeded" if status.all_done else "running"
                 signature = self._status_signature(raw)
                 changed = signature != latest.status_signature or state != latest.state
-                if state in {"succeeded", "failed"}:
+                if state in {"succeeded", "failed", "canceled"}:
                     self.store.transition(
                         message_id,
                         from_states={"confirmed", "submitted", "running"},
@@ -593,7 +591,7 @@ class FeishuBridge:
                     )
                 if changed:
                     await self._update_record_card(message_id)
-                if state in {"succeeded", "failed"}:
+                if state in {"succeeded", "failed", "canceled"}:
                     return
             elif status.active and status.task_id and (status.busy or seen_expected):
                 changed = self.store.transition(
@@ -708,7 +706,7 @@ class FeishuBridge:
 
     @staticmethod
     def _status_text(status: BrainStatus) -> str:
-        if not status.active:
+        if not status.active and not status.task_id:
             return "大脑在线，当前没有任务。"
         raw = status.raw
         task = str(raw.get("task") or "未命名任务")
@@ -717,11 +715,15 @@ class FeishuBridge:
         state = "已完成" if status.all_done else "执行中"
         if raw.get("failed"):
             state = "失败"
+        state = {"paused": "已暂停", "waiting_human": "等待人工", "cancelling": "取消中，停止尚未核清",
+                 "recovery_required": "待恢复", "cancelled": "已取消", "succeeded": "已完成", "failed": "失败"}.get(raw.get("state"), state)
         return f"当前任务：{task}\n状态：{state}\n进度：{completed}/{total}"
 
     @staticmethod
     def _status_signature(status: dict[str, Any]) -> str:
         watched = {
+            "state": status.get("state"),
+            "blocked_reason": status.get("blocked_reason"),
             "reasoning": status.get("reasoning"),
             "completed": status.get("completed"),
             "total": status.get("total"),

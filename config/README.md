@@ -42,3 +42,56 @@ uv pip install --python .venv_3dgs --prerelease allow --index-strategy unsafe-be
 ```
 
 场景资产、Nav2、ROS、遥操作训练等模块内运行配置继续保留原位，例如 `simulation/assets/`、`simulation/nav2/config.yaml`、`simulation/backends/mujoco/scene/config/` 和 `docker/nav2/**/config/`。这些文件与代码使用相对路径耦合，不属于项目级配置模板。
+
+## 统一切换仿真与真机
+
+管理面板 `:5678` 顶部的「运行环境」支持：
+
+- 「一键全仿真／一键全真机」：清除模块覆盖，所有模块跟随全局环境。
+- 「应用当前选择」：保留各模块的独立设置。
+- 「预览选择」：只展示将使用的后端，不停止服务。
+
+本地配置在 `config/execution.yaml`，模板为 `config/examples/execution.yaml`。例如接待选择真机，通用执行选择 Desk，观察和网页画面选择 3DGS：
+
+```yaml
+mode: real
+simulation_backend: desk
+modules:
+  reception:
+    mode: inherit
+  execution:
+    mode: simulation
+  observation:
+    mode: simulation
+    simulation_backend: mujoco_3dgs
+```
+
+模块 `mode` 可选 `inherit / simulation / real / disabled`。执行与观察的 `simulation_backend` 可选 `inherit / desk / mujoco / mujoco_3dgs`。接待的仿真是已有 `reception_mock`，不代表物理仿真器已支持整套接待。观察覆盖只影响现场描述和网页画面；动作核验仍使用执行后端自己的证据。
+
+命令行和面板使用同一个应用过程：
+
+```bash
+# 查看草稿、生效版本、最近一次应用结果及真机动作许可
+.venv/bin/python scripts/execution_mode.py status
+
+# 改完 config/execution.yaml 后预览并应用
+.venv/bin/python scripts/execution_mode.py preview
+.venv/bin/python scripts/execution_mode.py apply
+
+# 一键切到全仿真（清除模块覆盖）
+.venv/bin/python scripts/execution_mode.py apply --mode simulation --sim mujoco_3dgs --reset-overrides
+
+# 接待真机、通用执行 Desk、观察 3DGS
+.venv/bin/python scripts/execution_mode.py apply --mode real --reset-overrides --execution simulation --execution-sim desk --observation simulation --observation-sim mujoco_3dgs
+
+# 全真机：未接入的能力会明确停用，不回落仿真
+.venv/bin/python scripts/execution_mode.py apply --mode real --reset-overrides
+```
+
+应用会检查新旧任务账本和 Master 的任务状态。有运行、暂停、人工等待、取消中、待恢复任务，或命令／资源未核清时拒绝切换。过程中阻止新提交及继续任务，停止入口与执行服务后再次核对账本；启动所需本机仿真服务，重启 Master、Deploy 和原本在运行的 Slaver／飞书（选择需要 Slaver 的执行后端时也会启动它），检查目标地址和服务版本。**不重启或清空 Redis，不启停远端 DREAM／VLA，不发任何任务，也不改变 `kernel_enabled`。** 失败则恢复原配置；恢复未完成时保留阻断标记，拒绝新任务。
+
+已应用的快照保存在 `.runtime/execution.json`。业务进程启动时读取一次，修改草稿不热切换运行中的后端；需要点击应用或运行 `apply`。这份快照优先于旧的 `RECEPTION_MODE`、`ROBOT_API_BACKEND`、`ROBOT_BACKEND`、`ROBOT_API_URL` 和独立导航覆盖。后端基础地址仍在 `robot_api/config.yaml`；修改地址后重新应用。`.runtime` 中的文件由程序维护，不手动改写或删除。
+
+**能力边界：**真机接待仍受原 `kernel_enabled` 和下游闸门约束，切环境不会放行身体动作。通用执行与观察尚无接好的完整真机适配，选择真机时显示不可用并拒绝对应任务。Desk 不提供画面；选择 Desk 作为观察后端时会明确不可用，不自动寻找另一环境的相机。各模块的实际选择可在管理面板及 `:8888` 任务网页查看。
+
+一键离线测试仍使用 `.venv/bin/python scripts/run_tests.py`。测试脚本隔离现场生效配置及切换互斥文件，不受当前全局／模块环境影响，也不改现场生效版本。

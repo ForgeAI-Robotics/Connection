@@ -92,8 +92,17 @@ async function run() {
       body: JSON.stringify({scenario, headcount, reflect})});
     const d = await r.json();
     if (!d.success) throw new Error(d.error || '运行失败');
-    renderTrace(d.trace);
-    $('status').textContent = '';
+    let state = d.status;
+    while (state && state.task_id === d.task_id && ['running', 'verifying', 'cancelling'].includes(state.state)) {
+      renderRuntime(state);
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const response = await fetch('/api/task_status');
+      if (!response.ok) throw new Error('读取任务状态失败');
+      state = await response.json();
+    }
+    if (!state || state.task_id !== d.task_id) throw new Error('当前任务已变化，请到主控台查询');
+    renderRuntime(state);
+    $('status').textContent = state.state === 'succeeded' ? '任务完成' : (state.blocked_reason || state.state);
     loadSop();
   } catch (e) {
     $('status').innerHTML = '<span style="color:#ef4444">出错: ' + esc(e.message) + '</span>';
@@ -101,6 +110,13 @@ async function run() {
 }
 
 function card(html) { const c = document.createElement('div'); c.className='card'; c.style.display='block'; c.innerHTML=html; $('out').appendChild(c); }
+
+function renderRuntime(state) {
+  $('out').innerHTML = '';
+  card(`<h3>接待任务 · ${esc(state.state)}</h3><div>${esc(state.blocked_reason || '')}</div>`);
+  card((state.subtask_list || []).map(step =>
+    `<div class="step">${esc(step.status)} · ${esc(step.subtask)} <span>${esc(step.result || '')}</span></div>`).join(''));
+}
 
 function renderTrace(t) {
   const tr = t.trigger||{}, sb = t.scan_before||{}, g = t.gap||{}, fc = t.final_check||{};

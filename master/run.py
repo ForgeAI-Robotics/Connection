@@ -54,6 +54,13 @@ def send_text_to_forntend(text):
     socketio.emit("text_update", {"data": text}, namespace="/")
 
 
+@app.get("/api/execution_profile")
+def execution_profile_status():
+    from common.execution_profile import applied_profile
+    profile = applied_profile()
+    return jsonify(profile or {"revision": None, "mode": "legacy_config"})
+
+
 @app.route("/system_status", methods=["GET"])
 def system_status():
     """
@@ -106,7 +113,7 @@ def task_status():
 
 @app.route("/api/task_pause", methods=["POST"])
 def task_pause():
-    """暂停当前内核接待。开关关闭时不写旧账本。"""
+    """暂停当前 Runtime 任务。"""
     return jsonify(master_agent.kernel_pause()), 200
 
 
@@ -118,7 +125,7 @@ def task_continue():
 
 @app.route("/api/task_cancel", methods=["POST"])
 def task_cancel():
-    """请求取消当前内核接待。受理不等于已经取消完成。"""
+    """请求取消当前 Runtime 任务。受理不等于已经取消完成。"""
     return jsonify(master_agent.kernel_cancel()), 200
 
 
@@ -248,7 +255,7 @@ def experiences():
 @app.route("/publish_task", methods=["POST", "GET"])
 def publish_task():
     """
-    Publish a task to the Redis channel.
+    Publish a task through the configured brain scheduler.
 
     Request JSON format:
     {
@@ -278,7 +285,8 @@ def publish_task():
             task = task.strip()
             entry = classify_task(task)
             resume = bool(data.get("resume"))
-            if resume and not master_agent._is_reception_task(task):
+            from kernel.flags import scheduler_runtime
+            if resume and not scheduler_runtime(master_agent.config) and not master_agent._is_reception_task(task):
                 return jsonify(
                     {
                         "status": "rejected",
@@ -413,6 +421,37 @@ def publish_task():
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+
+@app.route("/api/reception/run", methods=["POST"])
+def reception_demo():
+    """Same admission, status and controls as every other task; mock execution only."""
+    from kernel.flags import scheduler_runtime
+    import uuid
+    if not scheduler_runtime(master_agent.config):
+        return jsonify({"success": False, "error": "接待演示需要统一 Runtime"}), 409
+    body = request.get_json(silent=True) or {}
+    options = {"mock": True, "headcount": body.get("headcount", 4),
+               "scenario": body.get("scenario", "normal"), "reflect": body.get("reflect", True)}
+    task_id = "task-" + uuid.uuid4().hex
+    result = master_agent.publish_global_task("开始接待", False, task_id, options=options)
+    accepted = result.get("ignored") is not True
+    return jsonify({"success": accepted, "accepted": accepted, "task_id": task_id,
+                    "error": result.get("error"), "status": master_agent.get_task_status()}), 200
+
+
+@app.route("/api/reception/report", methods=["GET"])
+def reception_report():
+    status = master_agent.get_task_status()
+    if status.get("task_type") != "reception":
+        return jsonify({"success": False, "error": "当前没有接待任务"}), 404
+    return jsonify({"success": True, "report": {
+        "task_id": status.get("task_id"), "verdict": status.get("state") == "succeeded",
+        "state": status.get("state"), "checks": [
+            {"name": item["subtask"], "pass": item["status"] == "success", "detail": item["result"]}
+            for item in status.get("subtask_list", [])],
+        "advice": status.get("blocked_reason") or "", "spoken": status.get("state"),
+    }})
 
 
 if __name__ == "__main__":

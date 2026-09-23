@@ -231,3 +231,10 @@ button.disabled:hover {
   font-size: 12px;
 }
 #log.loading { color: var(--muted); }
+
+.execution-settings { margin: 16px 0; padding: 18px; border: 1px solid #364152; border-radius: 10px; }
+.execution-settings h2 { margin: 0 0 8px; }
+.execution-fields { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; align-items: center; }
+.execution-fields label { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.execution-fields select { padding: 7px; max-width: 220px; }
+.execution-settings pre { white-space: pre-wrap; line-height: 1.7; }

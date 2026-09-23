@@ -30,6 +30,7 @@ from kernel.packages.reception import (
     manipulation_body,
     navigation_body,
 )
+from kernel.packages.generic import step_spec_dict, steps_from_specs
 from kernel.packages.registry import phases_for
 from kernel.skills import is_physical
 from kernel.runner import Runner
@@ -94,6 +95,18 @@ def _blank_record():
 def status_from_record(record) -> dict:
     state = (record or {}).get("state")
     terminal = state in TERMINAL_STATES
+    tasks = []
+    for order, spec in enumerate((record or {}).get("phase_specs") or [], 1):
+        attempts = ((record or {}).get("steps", {}).get(spec["step_id"]) or {}).get("attempts") or []
+        latest = attempts[-1] if attempts else {}
+        verdict = latest.get("verdict")
+        evidence = (latest.get("progress") or {}).get("evidence") or {}
+        marker = ((record or {}).get("steps", {}).get(spec["step_id"]) or {}).get("status")
+        done = verdict == "PASS" or marker in {"done", "skipped"}
+        tasks.append({"order": order, "robot_name": spec.get("robot_name") or "FQrobot",
+                      "subtask": spec.get("key") or spec["step_id"], "done": done,
+                      "status": "success" if done else "failure" if verdict == "FAIL" else "unknown" if verdict == "UNKNOWN" else "pending",
+                      "result": evidence.get("text") or evidence.get("detail") or latest.get("outcome") or ""})
     return {
         "active": bool(state) and not terminal,
         "task_id": (record or {}).get("task_id"),
@@ -104,10 +117,15 @@ def status_from_record(record) -> dict:
         "failed": state in {"failed", "recovery_required"},
         "has_failures": state in {"failed", "recovery_required"},
         "blocks_new_motion": bool(state) and not terminal,
-        "can_resume": False,
+        "can_resume": state in {"paused", "waiting_human", "recovery_required"},
         "execution_active": state == "running",
         "source": "kernel",
-        "subtask_list": [],
+        "subtask_list": tasks,
+        "completed": sum(item["done"] for item in tasks),
+        "total": len(tasks),
+        "task_type": (record or {}).get("package"),
+        "execution_backend": (record or {}).get("execution_backend"),
+        "answer": (((record or {}).get("pending_progress") or {}).get("evidence") or {}).get("text", "") if state == "succeeded" else "",
         "blocked_reason": (record or {}).get("blocked_reason") or "",
         "phase": (record or {}).get("phase") or "",
     }
@@ -149,13 +167,25 @@ class TaskRuntime:
         self.runner = Runner()
         self.verifier = Verifier()
         self._lock = threading.RLock()
+        self.planning_done = threading.Event()
+        self.planning_done.set()
         loaded = store.load_state()
         self.record = loaded if isinstance(loaded, dict) else _blank_record()
+        self._owned_task_id = self.record.get("task_id")
         selected = package if package else (self.record.get("package") or "reception")
         self._bind_package(selected)
 
-    def _bind_package(self, name: str):
+    def _bind_package(self, name: str, phases=None):
         self.package_name = name or "reception"
+        if phases is not None:
+            self.phases = list(phases)
+            return
+        if self.record.get("package") == self.package_name and "phase_specs" in self.record:
+            self.phases = steps_from_specs(self.record.get("phase_specs") or [])
+            return
+        if self.package_name in {"generic", "desk"}:
+            self.phases = []
+            return
         self.phases = list(phases_for(self.package_name))
 
     @property
@@ -168,11 +198,13 @@ class TaskRuntime:
             return writer()
         return self._lock
 
-    def _reload_locked(self):
+    def _reload_locked(self, *, check_identity=True):
         if not callable(getattr(self.store, "writer", None)):
             return
         loaded = self.store.load_state()
         if isinstance(loaded, dict):
+            if check_identity and self._owned_task_id and loaded.get("task_id") != self._owned_task_id:
+                raise Rejected("任务已更换，旧 Runtime 不得推进新任务")
             self.record = loaded
 
     def _halted(self) -> bool:
@@ -194,18 +226,31 @@ class TaskRuntime:
     def dispatch_count(self, step_id: str) -> int:
         return int((self.record.get("dispatch_counts") or {}).get(step_id) or 0)
 
-    def open_task(self, task_id: str, *, task_desc: str = "", force_new: bool = False):
+    def open_task(self, task_id: str, *, task_desc: str = "", force_new: bool = False,
+                  phases=None, execution_backend=None, execution_target=None, planning=False, reflection_enabled=True):
         del force_new  # 不能越过未核清资源
         with self._exclusive():
-            self._reload_locked()
+            self._reload_locked(check_identity=False)
             self._reject_if_blocked("拒绝新任务")
+            if phases is not None:
+                self._bind_package(self.package_name, phases)
+            if self.package_name in {"generic", "desk"} and not self.phases and not planning:
+                raise Rejected("通用任务没有计划步骤")
             revision = int(self.record.get("revision") or 0)
             self.record = _blank_record()
             self.record["revision"] = revision
             self.record["task_id"] = str(task_id)
+            self._owned_task_id = str(task_id)
             self.record["task_desc"] = task_desc
             self.record["package"] = self.package_name
             self.record["phase_order"] = [step.step_id for step in self.phases]
+            self.record["phase_specs"] = [step_spec_dict(step) for step in self.phases]
+            self.record["execution_backend"] = execution_backend
+            self.record["execution_target"] = execution_target
+            self.record["plan_ready"] = not planning
+            if planning:
+                self.planning_done.clear()
+            self.record["reflection_enabled"] = reflection_enabled
             bound = bound_release(self.config, self.package_name)
             self.record["release_id"] = bound["version_id"]
             self.record["release_rules"] = bound["rules"]
@@ -216,6 +261,35 @@ class TaskRuntime:
                 self._reload_locked()
                 raise Rejected("并发写入已被拒绝")
         return self.public_status()
+
+    def plan(self, planner):
+        """Own the planning request; a planner supplies steps and never submits them."""
+        try:
+            steps = list(planner())
+            if not steps or len({step.step_id for step in steps}) != len(steps):
+                raise Rejected("计划为空或步骤身份重复")
+            with self._exclusive():
+                self._reload_locked()
+                if self.state not in {"running", "paused"} or self.record.get("control_request") == "cancel":
+                    return
+                self._bind_package(self.package_name, steps)
+                self.record["phase_specs"] = [step_spec_dict(step) for step in steps]
+                self.record["phase_order"] = [step.step_id for step in steps]
+                self.record["plan_ready"] = True
+                self._save("plan_ready")
+        except Exception as exc:
+            self.fail_closed(str(exc))
+        finally:
+            self.planning_done.set()
+
+    def fail_closed(self, reason):
+        with self._exclusive():
+            self._reload_locked()
+            if self.state in {"running", "verifying"}:
+                self.record["blocked_reason"] = reason
+                self.record["command_unknown"] = bool(self.record.get("open_command_id"))
+                self.apply("unknown")
+                self._save("execution_error")
 
     def note_still_waiting(self):
         with self._exclusive():
@@ -460,8 +534,12 @@ class TaskRuntime:
                 self._reload_locked()
                 raise Rejected("并发恢复已被其他写入占用")
 
-    def drive(self, *, limit: int = 40):
+    def drive(self, *, limit: int | None = None):
         self._require_port_version()
+        if self.record.get("plan_ready") is False:
+            self.fail_closed("planning_interrupted")
+            return self.state
+        limit = limit if limit is not None else max(40, len(self.phases) * 3 + 1)
         for _ in range(limit):
             with self._exclusive():
                 self._reload_locked()
@@ -510,7 +588,7 @@ class TaskRuntime:
                     self._reload_locked()
                     if self._halted() or self.state != "running":
                         return self.state
-                    self.record["blocked_reason"] = "navigation_gate"
+                    self.record["blocked_reason"] = getattr(self.port, "gate_reason", "navigation_gate")
                     self.record["breakpoint_phase"] = step.step_id
                     self.apply("gate")
                     self._save("gate")
@@ -783,6 +861,7 @@ class TaskRuntime:
                 "body": {
                     "task_id": self.record["task_id"],
                     "task": self.record.get("task_desc") or "",
+                    "subtask": step.key,
                 },
             }
         attempt_id = f"{step.step_id}-a{number}"
@@ -834,6 +913,13 @@ class TaskRuntime:
             body = manipulation_body(step, task_id, command_id, self._last_command("NAVIGATING_TO_TABLE2"))
         elif step.kind == "place":
             body = manipulation_body(step, task_id, command_id, self._last_command("NAVIGATING_TO_TABLE1"))
+        elif step.body:
+            body = {
+                "command_id": command_id,
+                "task_id": task_id,
+                "subtask": step.key,
+                "robot_name": step.robot_name,
+            }
         else:
             body = {"command_id": command_id, "task_id": task_id}
         return {
@@ -853,7 +939,7 @@ class TaskRuntime:
             step_id=step.step_id,
             attempt_id=attempt_id,
             goal=step.key or step.target_area or step.step_id,
-            object_id="" if not is_physical(step.kind) else OBJECT_ID,
+            object_id=step.object_id or (OBJECT_ID if step.kind in {"navigate", "inspect", "pick", "place"} else ""),
             preconditions=step.handoff_before,
             evidence=step.evidence,
             failure_budget=0,
@@ -1079,6 +1165,7 @@ class TaskRuntime:
         attempt["evidence_ref"] = progress.evidence_ref
         attempt["publisher_stopped"] = progress.publisher_stopped
         attempt["action_ended"] = progress.action_ended
+        attempt["progress"] = progress.as_dict()
 
     def _verify_id(self, step):
         index = self._index(step.step_id)
@@ -1091,12 +1178,11 @@ class TaskRuntime:
             return None
         index = self._index(step.step_id)
         for candidate in self.phases[index + 1:]:
-            if candidate.kind == "verify":
+            if candidate.kind in {"verify", "local"}:
                 continue
             if candidate.optional and not inspection_enabled(self.config):
                 continue
-            if candidate.body:
-                return candidate
+            return candidate
         return None
 
     def _index(self, step_id: str) -> int:

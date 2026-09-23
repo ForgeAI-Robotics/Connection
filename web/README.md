@@ -51,3 +51,7 @@ tmux attach -t gs
 Redis 的启动日志在 `log/YYYY-MM-DD/redis/*.log`。`tmux attach -t redis` 里若只有一行 `[log] redis -> …`，去看这个文件，或重启 Redis 让窗口同步打出 `Ready to accept connections`。
 
 面板重启 Master 前会弹出确认，因为它会中断当前 Master 进程和在处理任务。是否清空 Redis 协作库由 `master/config.yaml` 的 `collaborator.clear` 决定；当前为 `false`，不会主动清空，只有显式改成 `true` 才会在启动时清库。
+
+## 运行环境
+
+面板顶部可统一选择仿真／真机，也可单独覆盖接待、通用执行、观察环境。「一键全…」会清除覆盖；「应用当前选择」保留覆盖。应用会检查在途任务并重启需要加载配置的本机业务服务，不重启 Redis，也不启停远端本体。配置格式、命令行用法与能力边界见 [统一环境配置](../config/README.md#统一切换仿真与真机)。

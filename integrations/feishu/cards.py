@@ -131,12 +131,17 @@ def task_card(
 ) -> dict[str, Any]:
     status = status or record.last_status or {}
     state_label = STATE_LABELS.get(record.state, record.state)
+    state_label = {"paused": "已暂停", "waiting_human": "等待人工", "cancelling": "取消中，停止尚未核清",
+                   "recovery_required": "待恢复", "cancelled": "已取消", "succeeded": "已完成",
+                   "failed": "执行失败"}.get(status.get("state"), state_label)
     elements: list[dict[str, Any]] = [
         _plain(f"任务：{record.task_text}"),
         _plain(f"任务 ID：{record.brain_task_id or '-'}"),
         _plain(f"状态：{state_label}"),
     ]
 
+    if status.get("blocked_reason"):
+        elements.append(_plain(f"原因：{status['blocked_reason']}"))
     answer = str(status.get("answer") or "").strip()
     if not answer:
         for item in status.get("subtask_list") or []:

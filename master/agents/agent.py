@@ -681,6 +681,11 @@ class GlobalAgent:
     def get_task_preflight(self, task) -> Dict:
         """Return a read-only readiness report for a prospective top-level task."""
 
+        from kernel.flags import scheduler_runtime
+        if scheduler_runtime(self.config):
+            # Runtime records readiness/gate failures; HTTP never starts the old driver.
+            return {"ready": True, "required": False, "task_type": "runtime", "blockers": []}
+
         if not self._is_reception_task(task):
             return {
                 "ready": True,
@@ -857,7 +862,29 @@ class GlobalAgent:
         threading.Thread(target=_worker, daemon=True, name="reception_skill").start()
         return {"reasoning_explanation": reasoning, "subtask_list": []}
 
-    def publish_global_task(
+    def _brain(self):
+        from kernel.brain import Brain, _ADMISSION
+        with _ADMISSION:
+            if not hasattr(self, "_brain_instance"):
+                self._brain_instance = Brain(self)
+            return self._brain_instance
+
+    def publish_global_task(self, task, refresh, task_id, force_new_task=False, resume=False, *, options=None):
+        from kernel.flags import scheduler_runtime
+        from kernel.contracts import KernelError, NON_TERMINAL_STATES
+        from kernel.store import load_existing
+        from kernel.switch import runtime_dir
+        if scheduler_runtime(self.config):
+            try:
+                return self._brain().publish(task, task_id, resume=resume, options=options)
+            except (KernelError, ValueError) as exc:
+                return self._reject_unresolved_task(str(exc))
+        existing = load_existing(runtime_dir(self.config)) or {}
+        if existing.get("state") in NON_TERMINAL_STATES or existing.get("command_unknown"):
+            return self._reject_unresolved_task("内核任务未核清，不能切回旧队列派发")
+        return self._publish_legacy_task(task, refresh, task_id, force_new_task, resume)
+
+    def _publish_legacy_task(
         self, task: str, refresh: bool, task_id: str, force_new_task: bool = False,
         resume: bool = False,
     ) -> Dict:
@@ -865,11 +892,6 @@ class GlobalAgent:
         self.logger.info(f"Publishing global task: {task}")
 
         if resume:
-            from kernel.flags import kernel_enabled
-            if kernel_enabled(self.config) and self._is_reception_task(task):
-                return self._publish_kernel_reception(
-                    task, task_id, force_new_task=False, resume=True,
-                )
             if not self._is_reception_task(task):
                 return self._reject_unresolved_task("断点继续只支持开始接待")
             if self._reception_running:
@@ -887,14 +909,14 @@ class GlobalAgent:
             return self._reject_unresolved_task(
                 "已有一次接待正在执行，禁止覆盖未完成动作"
             )
+        kernel_runtime = getattr(self, "_kernel_runtime", None)
+        if kernel_runtime is not None and kernel_runtime.public_status().get("blocks_new_motion"):
+            return self._reject_unresolved_task(
+                "已有内核任务未结束，禁止再开一条调度"
+            )
         if self._dispatch_running and not force_new_task:
             return self._reject_unresolved_task(
                 "已有通用任务正在调度，禁止覆盖未完成动作"
-            )
-        from kernel.flags import kernel_enabled
-        if kernel_enabled(self.config) and self._is_reception_task(task):
-            return self._publish_kernel_reception(
-                task, task_id, force_new_task=force_new_task,
             )
         if not force_new_task:
             persisted = self._unresolved_persisted_reason()
@@ -1370,67 +1392,23 @@ class GlobalAgent:
             return str(value)[:2000]
 
     def _kernel_status_view(self):
-        """开关关闭时返回 None，调用方继续走旧查询。"""
-        from kernel.flags import kernel_enabled
-        if not kernel_enabled(self.config):
-            return None
+        from kernel.flags import scheduler_runtime
         from kernel.switch import peek_status, status_view
-
-        runtime = getattr(self, "_kernel_runtime", None)
-        task_type = getattr(self, "current_task_type", None)
-        if task_type not in (None, "reception") and runtime is None:
-            return None
-        if task_type == "reception" or runtime is not None:
-            return status_view(self.config, runtime)
-        return peek_status(self.config)
-
-    def _drive_kernel(self):
-        try:
-            self._kernel_runtime.drive()
-        except Exception as exc:
-            self.logger.error(f"[kernel] 接待执行异常: {exc}")
-        finally:
-            self._reception_running = False
-
-    def _publish_kernel_reception(self, task, task_id, *, force_new_task=False, resume=False):
-        from kernel.runtime import Rejected
-        from kernel.switch import open_runtime, resume_runtime
-
-        desc = task if isinstance(task, str) else (task[0] if task else "开始接待")
-        port = getattr(self, "_kernel_port", None)
-        try:
-            if resume:
-                runtime = resume_runtime(self.config, port=port)
-            else:
-                runtime = open_runtime(
-                    self.config,
-                    task_id,
-                    task_desc=desc,
-                    port=port,
-                    force_new=force_new_task,
-                )
-        except Rejected as exc:
-            return self._reject_unresolved_task(str(exc))
-        self._kernel_runtime = runtime
-        self.current_task_queue = TaskQueue([])
-        self.current_task_id = runtime.record.get("task_id") or task_id
-        self.current_task_desc = desc
-        self.current_reasoning = (
-            "识别到接待任务 → 交给内核 Runtime。"
-            "旧接待 Runner 不持有这一条任务。"
-        )
-        self.current_task_type = "reception"
-        self._reception_state = None
-        self._reception_running = True
-        self._pending_failure = None
-        self._pending_success = None
-        self.logger.info(f"[kernel] 接待走 Runtime: {self.current_task_desc}")
-        threading.Thread(
-            target=self._drive_kernel, daemon=True, name="kernel_reception",
-        ).start()
-        return {"reasoning_explanation": self.current_reasoning, "subtask_list": []}
+        if scheduler_runtime(self.config):
+            return status_view(self.config, None)
+        persisted = peek_status(self.config)
+        return persisted if persisted and persisted.get("blocks_new_motion") else None
 
     def _kernel_control(self, action: str) -> Dict:
+        from kernel.flags import scheduler_runtime
+        from kernel.contracts import KernelError
+        from kernel.switch import peek_status
+        persisted = peek_status(self.config) or {}
+        if scheduler_runtime(self.config) or persisted.get("blocks_new_motion"):
+            try:
+                return self._brain().control(action)
+            except (KernelError, ValueError) as exc:
+                return {"accepted": False, "error": str(exc)}
         from kernel.switch import control_task
 
         payload, runtime = control_task(

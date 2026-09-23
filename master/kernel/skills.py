@@ -49,6 +49,7 @@ CATALOG = (
         "scene_description",
         False,
     ),
+    SkillEntry("desk_check", "桌面整理最终位置复核", "robot_api.get_objects", "desk_tidy", False),
 )
 
 

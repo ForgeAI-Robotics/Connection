@@ -161,6 +161,27 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertRegex(task_id, re.compile(r"^[A-Za-z0-9]+$"))
         self.assertEqual(task_id, FeishuBridge._brain_task_id("om_复杂/message:id"))
 
+    async def test_runtime_inactive_terminal_is_tracked(self):
+        for terminal, expected in (("succeeded", "succeeded"), ("cancelled", "canceled"), ("failed", "failed")):
+            message_id = "runtime_" + terminal
+            expected_id = FeishuBridge._brain_task_id(message_id)
+            brain = FakeBrain([{"active": False}, {
+                "active": False, "terminal": True, "state": terminal,
+                "task_id": expected_id, "all_done": terminal == "succeeded",
+                "failed": terminal == "failed", "source": "kernel",
+            }])
+            bridge = self.make_bridge(brain)
+            await bridge.handle_message(message(message_id, "查看机器人状态"))
+            await self.wait_for_state(message_id, expected)
+
+    def test_runtime_wait_states_are_visible_and_change_signature(self):
+        for state, label in (("paused", "已暂停"), ("waiting_human", "等待人工"),
+                             ("recovery_required", "待恢复"), ("cancelling", "取消中")):
+            raw = {"active": True, "task_id": "test", "state": state, "task": "整理桌面"}
+            self.assertIn(label, FeishuBridge._status_text(BrainStatus(raw)))
+            self.assertNotEqual(FeishuBridge._status_signature(raw),
+                                FeishuBridge._status_signature(dict(raw, state="running")))
+
     async def test_read_only_task_submits_and_tracks_to_success(self):
         expected_id = FeishuBridge._brain_task_id("m1")
         brain = FakeBrain(

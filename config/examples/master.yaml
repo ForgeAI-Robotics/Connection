@@ -46,6 +46,11 @@ reflection:
   write_sop: false
   # 候选规则发布目录。不设置时，新任务不绑定规则版本。
   # release_dir: ./sop/runtime/releases
+brain:
+  # 所有业务共用 Runtime；legacy 仅用于无在途任务时回退。
+  scheduler: runtime
+  # 通用任务沿用 robot_api 的 active_backend，不强制改成仿真。
+  reception_backend: mock
 reception_real:
   enabled: false
   contract_version: fq/reception-lan/v1
@@ -53,7 +58,7 @@ reception_real:
   vla_base_url: ${VLA_BASE_URL}
   vla_result_policy: hand_state_only
   runtime_dir: ./sop/runtime/reception
-  # 新内核默认关闭。关闭时「开始接待」仍走 reception_real.py。
+  # 真机动作许可，默认关闭。接待仍进 Runtime，在派发前等待，不回落旧流程。
   kernel_enabled: false
   kernel_runtime_dir: ./sop/runtime/kernel
   # 短时上下文窗口。只裁剪读取，不删除任务账本和未核清命令。

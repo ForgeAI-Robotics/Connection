@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import tempfile
 import sys
 from pathlib import Path
 
@@ -34,11 +36,18 @@ SUITES = (
 
 def main() -> int:
     failures: list[str] = []
-    for name, arguments in SUITES:
-        print(f"\n{'=' * 72}\nTEST SUITE: {name}\n{'=' * 72}", flush=True)
-        result = subprocess.run((sys.executable, *arguments), cwd=ROOT, check=False)
-        if result.returncode:
-            failures.append(name)
+    # Offline tests must not inherit the operator's live environment selection or locks.
+    with tempfile.TemporaryDirectory(prefix="connection-tests-") as scratch:
+        env = os.environ.copy()
+        for key, filename in [('FQ_EXECUTION_STATE', 'execution.json'),
+                              ('FQ_EXECUTION_LOCK', 'execution.lock'),
+                              ('FQ_EXECUTION_BLOCK', 'execution.blocked')]:
+            env[key] = str(Path(scratch) / filename)
+        for name, arguments in SUITES:
+            print(f"\n{'=' * 72}\nTEST SUITE: {name}\n{'=' * 72}", flush=True)
+            result = subprocess.run((sys.executable, *arguments), cwd=ROOT, env=env, check=False)
+            if result.returncode:
+                failures.append(name)
 
     if failures:
         print(f"\nFAILED SUITES: {', '.join(failures)}", file=sys.stderr)

@@ -89,7 +89,8 @@
 <body>
     <div class="container">
         <h1>FQPlanner 任务控制台</h1>
-        <div class="subtitle">Master-Slaver 机器人协作系统</div>
+        <div class="subtitle">统一 Runtime 任务系统</div>
+        <div class="card"><h2>当前执行环境</h2><div id="execution-environment" style="white-space:pre-wrap;line-height:1.7">正在读取…</div></div>
 
         <div class="status-bar" id="status"></div>
 
@@ -330,16 +331,18 @@
         }
         async function resumeReception() {
             const result = document.getElementById('task-result');
-            if (!window.confirm('将从上次失败的步骤继续接待（不重开、不重抓）。确认现场已修好？')) {
+            if (!window.confirm('将核对当前任务的原命令并尝试继续，不重开任务。确认继续？')) {
                 result.textContent = '已取消断点继续';
                 return;
             }
             result.textContent = '正在断点继续...';
             try {
+                const current = await (await fetch('/api/task_status')).json();
+                if (!current.task_id || !current.can_resume) throw new Error('当前任务没有可续跑断点');
                 const resp = await fetch('/publish_task', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({task: '开始接待', resume: true, refresh: false})
+                    body: JSON.stringify({task: current.task, task_id: current.task_id, resume: true, refresh: false})
                 });
                 const data = await resp.json();
                 result.textContent = JSON.stringify(data, null, 2);
@@ -478,7 +481,7 @@
                 const data = await resp.json();
                 renderTaskProgress(data);
                 // 任务从「进行中」→「完成」的那一刻:belief 快照 + 拉接待完成确认报告
-                const finished = data.active && data.all_done && data.terminal !== false
+                const finished = !!data.task_id && data.all_done && data.terminal !== false
                     && data.state !== 'RECOVERY_REQUIRED'
                     && data.state !== 'recovery_required';
                 if (finished && !_prevAllDone) {
@@ -497,7 +500,7 @@
             }
         }
 
-        // 接待完成确认报告(reception_loop 生成的 report_card):接待结束时拉来展示
+        // 接待完成确认报告：从 Master 的当前 Runtime 读取。
         async function loadReceptionReport() {
             const el = document.getElementById('report-card');
             const _e = s => (s==null?'':String(s)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -896,5 +899,21 @@
         startLiveQuad();
         loadTimeline();
     </script>
+<script>
+async function loadExecutionEnvironment() {
+    const box = document.getElementById('execution-environment');
+    try {
+        const response = await fetch('/api/execution_profile');
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '读取失败');
+        const labels = {reception:'接待', execution:'通用执行 / 桌面整理', observation:'观察 / 当前画面'};
+        box.textContent = data.routes ? Object.entries(data.routes).map(([key, route]) =>
+            `${labels[key]}：${route.mode === 'real' ? '真机' : route.mode === 'simulation' ? '仿真' : '停用'} / ${route.backend}` +
+            (route.available ? '' : ` — 不可用：${route.reason}`)).join('\n') : '尚未启用统一环境配置';
+    } catch (e) { box.textContent = '环境状态暂不可用：' + e.message; }
+}
+loadExecutionEnvironment();
+setInterval(loadExecutionEnvironment, 5000);
+</script>
 </body>
 </html>

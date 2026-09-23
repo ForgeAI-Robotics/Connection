@@ -74,7 +74,7 @@ class PackageTests(unittest.TestCase):
     def test_catalog_lists_only_existing_executors(self):
         self.assertEqual(
             registered_ids(),
-            ("navigate", "inspect", "pick", "place", "describe"),
+            ("navigate", "inspect", "pick", "place", "describe", "desk_check"),
         )
         self.assertNotIn("voice", registered_ids())
         self.assertNotIn("help", registered_ids())

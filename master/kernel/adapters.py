@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
@@ -492,6 +494,238 @@ class LookAdapter:
             return future.result(timeout=deadline)
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
+
+
+def parse_sim_action(subtask: str):
+    """Map a planner sentence onto the existing sim actions. Unknown text is refused."""
+    text = str(subtask or "").strip()
+    if not text:
+        return None
+    labels = {"clean_trash": "清理垃圾", "tidy_milk": "整理牛奶", "tidy_cola": "整理可乐", "tidy_penholder": "整理笔筒"}
+    for skill_name, label in labels.items():
+        if text in {skill_name, label}:
+            return ("skill", skill_name)
+    import re
+
+    placed = re.search(r"(?:放置|放到|搁到)\s*(\S+?)\s*(?:到|至)\s*(\S+)", text)
+    if placed:
+        return ("place", _sim_token(placed.group(1)), _sim_token(placed.group(2)))
+    grasped = re.search(r"(?:抓取|拿起|取走|拾起|捡起)\s*(\S+(?: \d+)?)", text)
+    if grasped:
+        return ("grasp", _sim_token(grasped.group(1)))
+    moved = re.search(r"(?:导航到|前往|走到|移动到|到达|靠近)\s*(\S+(?: \d+)?)", text)
+    if moved:
+        return ("navigate", _sim_token(moved.group(1)))
+    return None
+
+
+def _sim_token(value: str) -> str:
+    return str(value or "").strip().strip("，。,.、；;")
+
+
+def _effect_holds(action, world, zones) -> bool | None:
+    if not action or not isinstance(world, dict) or world.get("success") is False:
+        return None
+    kind = action[0]
+    if kind == "navigate":
+        return None
+    if kind == "grasp":
+        item = world.get(action[1])
+        if not isinstance(item, dict) or "grasped" not in item:
+            return None
+        return item["grasped"] is True
+    if kind == "place":
+        item = world.get(action[1])
+        zone = (zones or {}).get(action[2]) if isinstance(zones, dict) else None
+        if not isinstance(item, dict) or not isinstance(zone, dict):
+            return None
+        pos, center = item.get("pos"), zone.get("pos")
+        if "grasped" not in item or not pos or not center or len(pos) < 2 or len(center) < 2 or "radius" not in zone:
+            return None
+        dx, dy = float(pos[0]) - float(center[0]), float(pos[1]) - float(center[1])
+        return item["grasped"] is False and (dx * dx + dy * dy) ** 0.5 <= float(zone["radius"]) + 0.05
+    return None
+
+
+def _sim_view(command_id: str, action, raw, world, zones) -> dict:
+    detail = str((raw or {}).get("result") or "") if isinstance(raw, dict) else ""
+    if any(marker in detail for marker in ("连接失败:", "请求错误:", "动作未被任何后端处理")):
+        return _unconfirmed(command_id, detail)
+    reported = isinstance(raw, dict) and raw.get("success") is True
+    holds = _effect_holds(action, world, zones)
+    if action is None or (isinstance(raw, dict) and raw.get("success") is False):
+        terminal, supports, contradicts = "failed", False, True
+    elif holds is None or not reported:
+        terminal, supports, contradicts = "", False, False
+    elif holds:
+        terminal, supports, contradicts = "succeeded", True, False
+    else:
+        terminal, supports, contradicts = "failed", False, True
+    detail = ""
+    if isinstance(raw, dict):
+        detail = str(raw.get("result") or raw.get("fail_reason") or "")
+    return {
+        "command_id": command_id,
+        "terminal": terminal,
+        "timed_out": False,
+        "started": True,
+        "stopped": True,
+        "resources_released": True,
+        "evidence": {
+            "supports": supports,
+            "contradicts": contradicts,
+            "identity_ok": True,
+            "time_ok": True,
+            "grade": "object",
+            "identity": command_id,
+            "detail": detail,
+        },
+    }
+
+
+class SimAdapter:
+    """Run a generic step on the existing simulation client. It does not call DREAM or VLA."""
+
+    contract_version = CONTRACT_VERSION
+
+    def __init__(self, perform=None, world=None, zones=None, api=None):
+        self._perform = perform
+        self._world = world
+        self._zones = zones
+        self.api = api
+        self.commands = {}
+        self.cancelled = set()
+        self.gate_open = True
+        self._commands_lock = threading.RLock()
+
+    def handoff(self, step_id, kind):
+        del step_id, kind
+        return {"available": True, "confirmed": True, "reason": "sim_same_source"}
+
+    def submit(self, command_id, request):
+        with self._commands_lock:
+            stored = self.commands.get(command_id)
+            if stored and stored["request"] != request:
+                raise RuntimeError("command_id 请求不一致")
+            self.commands.setdefault(command_id, {
+                "request": deepcopy(request), "view": None, "started": False,
+                "done": threading.Event(),
+            })
+        return {"accepted": True, "unclear": False, "completed": False, "command_id": command_id}
+
+    def wait(self, command_id, request):
+        with self._commands_lock:
+            stored = self.commands.get(command_id)
+            if stored is None:
+                return _unconfirmed(command_id, "unknown_command")
+            if command_id in self.cancelled and not stored["started"]:
+                stored["view"] = _cancelled_view(command_id)
+                stored["done"].set()
+            if not stored["started"] and not stored["done"].is_set():
+                stored["started"] = True
+                threading.Thread(target=self._perform_once, args=(command_id, request), daemon=True).start()
+        if not stored["done"].wait(float(request.get("deadline_sec") or 120)):
+            return _unconfirmed(command_id, "timeout")
+        return deepcopy(stored["view"])
+
+    def _perform_once(self, command_id, request):
+        try:
+            viewed = self._execute_view(command_id, request)
+        except Exception as exc:
+            viewed = _unconfirmed(command_id, str(exc))
+        with self._commands_lock:
+            stored = self.commands[command_id]
+            stored["view"] = viewed
+            stored["done"].set()
+
+    def _execute_view(self, command_id, request):
+        subtask = ((request or {}).get("body") or {}).get("subtask") or ""
+        action = parse_sim_action(subtask)
+        raw = self._call(action, subtask)
+        return _sim_view(command_id, action, raw, self._read_world(), self._read_zones())
+
+    def query(self, command_id, request):
+        del request
+        with self._commands_lock:
+            stored = self.commands.get(command_id)
+            if stored and stored.get("view"):
+                return deepcopy(stored["view"])
+            if stored and not stored["started"]:
+                if command_id in self.cancelled:
+                    return _cancelled_view(command_id)
+                return {"command_id": command_id, "terminal": "", "started": False,
+                        "stopped": True, "resources_released": True, "evidence": {}}
+        # An empty process-local cache after restart says nothing about remote execution.
+        return _unconfirmed(command_id, "original_command_unavailable")
+
+    def cancel(self, command_id, request):
+        del request
+        with self._commands_lock:
+            stored = self.commands.get(command_id)
+            if stored and not stored["started"]:
+                self.cancelled.add(command_id)
+                stored["view"] = _cancelled_view(command_id)
+                stored["done"].set()
+                return {"accepted": True, "completed": True, "command_id": command_id}
+            if stored and (stored.get("view") or {}).get("terminal"):
+                return {"accepted": True, "completed": True, "command_id": command_id}
+        return {"accepted": False, "completed": False, "command_id": command_id,
+                "error": "stop_unavailable"}
+
+    def _call(self, action, subtask: str):
+        if self._perform is not None:
+            return self._perform(subtask)
+        if action is None:
+            return {"success": False, "result": f"仿真执行不认识这一步: {subtask}"}
+        from robot_api import client
+        api = self.api or client
+
+        kind = action[0]
+        if kind == "grasp":
+            return api.grasp_object(action[1])
+        if kind == "place":
+            return api.place_object(action[1], action[2])
+        if kind == "navigate":
+            return api.navigate_to(action[1])
+        raise RuntimeError("复合桌面技能必须先展开为 Runtime 步骤")
+
+    def _read_world(self):
+        if self._world is not None:
+            return self._world()
+        from robot_api import client
+        api = self.api or client
+
+        world = api.get_objects()
+        return world if isinstance(world, dict) else {}
+
+    def _read_zones(self):
+        if self._zones is not None:
+            return self._zones() if callable(self._zones) else self._zones
+        if self.api is not None:
+            return self.api.get_zones()
+        try:
+            from sop.skill_executor import get_zones
+
+            return get_zones()
+        except Exception:
+            return {}
+
+
+def _cancelled_view(command_id: str) -> dict:
+    return {
+        "command_id": command_id,
+        "terminal": "cancelled",
+        "timed_out": False,
+        "started": False,
+        "stopped": True,
+        "resources_released": True,
+        "evidence": {
+            "supports": False,
+            "contradicts": False,
+            "identity_ok": True,
+            "time_ok": True,
+        },
+    }
 
 
 def load_capture_scene():

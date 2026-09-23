@@ -17,17 +17,21 @@ def runtime_dir(config) -> str:
     return os.path.join(os.path.dirname(__file__), "..", "sop", "runtime", "kernel")
 
 
-def _port(config, port):
+def _port(config, port, record=None, package=None):
     if port is not None:
         return port
-    from kernel.adapters import BodyAdapter
-    return BodyAdapter.from_config(config)
+    from kernel.ports import build_port
+    record = record or {}
+    backend = record.get("execution_backend") or {
+        "generic": "desk", "look": "camera", "desk": "desk",
+    }.get(package or record.get("package"), "reception_real")
+    return build_port(config, backend)
 
 
-def open_runtime(config, task_id, *, task_desc="", port=None, force_new=False):
+def open_runtime(config, task_id, *, task_desc="", port=None, force_new=False, package=None, phases=None):
     store = KernelStore(runtime_dir(config))
-    runtime = TaskRuntime(store, _port(config, port), config=config)
-    runtime.open_task(task_id, task_desc=task_desc, force_new=force_new)
+    runtime = TaskRuntime(store, _port(config, port, package=package), config=config, package=package)
+    runtime.open_task(task_id, task_desc=task_desc, force_new=force_new, phases=phases)
     return runtime
 
 
@@ -35,7 +39,7 @@ def resume_runtime(config, *, port=None):
     from kernel.contracts import Rejected
 
     store = KernelStore(runtime_dir(config))
-    runtime = TaskRuntime(store, _port(config, port), config=config)
+    runtime = TaskRuntime(store, _port(config, port, store.load_state()), config=config)
     if runtime.state is None:
         raise Rejected("没有可续跑的内核任务")
     if runtime.state == "recovery_required":
@@ -47,7 +51,7 @@ def attach_runtime(config, *, port=None):
     from kernel.contracts import Rejected
 
     store = KernelStore(runtime_dir(config))
-    runtime = TaskRuntime(store, _port(config, port), config=config)
+    runtime = TaskRuntime(store, _port(config, port, store.load_state()), config=config)
     if runtime.state is None:
         raise Rejected("没有可操作的内核任务")
     return runtime
@@ -58,8 +62,12 @@ def control_task(config, action, *, port=None, runtime=None):
     from kernel.contracts import IllegalTransition, Rejected
     from kernel.flags import kernel_enabled
 
-    if not kernel_enabled(config):
-        return {"accepted": False, "error": "内核开关关闭", "state": None}, None
+    if runtime is None and not kernel_enabled(config):
+        from kernel.contracts import NON_TERMINAL_STATES
+
+        existing = load_existing(runtime_dir(config)) or {}
+        if existing.get("state") not in NON_TERMINAL_STATES:
+            return {"accepted": False, "error": "内核开关关闭", "state": None}, None
     try:
         if runtime is None:
             runtime = attach_runtime(config, port=port)

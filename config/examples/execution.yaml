@@ -1,0 +1,16 @@
+# 修改后在管理面板应用，或运行 scripts/execution_mode.py apply。
+# 改文件不会热切换在途任务。模块覆盖优先于全局选择。
+mode: simulation
+simulation_backend: desk
+modules:
+  reception:
+    mode: inherit             # inherit / simulation / real / disabled
+  execution:
+    mode: inherit             # 通用任务和桌面整理
+    simulation_backend: inherit
+  observation:
+    mode: inherit             # 现场观察及网页画面
+    simulation_backend: inherit
+# 接待仿真是 reception_mock；Desk 不出图。
+# 真机动作许可仍由 master/config.yaml reception_real.kernel_enabled 控制。
+# 全局 real 下未接入的真机模块会明确不可用，不会偷偷使用仿真。

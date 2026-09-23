@@ -10,25 +10,20 @@ FQPlanner 是任务编排层，不直接控电机。飞书或网页把任务交�
 
 ```mermaid
 flowchart TD
-    U[网页 / 飞书] --> D[Deploy :8888]
-    D --> M[Master :5000]
-    M -->|接待关键词且 real| R[ReceptionRealRunner]
-    R --> N[DREAM :8001]
-    R --> V[VLA :8091]
-    M -->|通用任务| P[LLM 规划]
-    P --> B[Redis :6379]
-    B --> S[Slaver / robot_api]
-    S --> X[Desk / 3DGS / MuJoCo]
+    U[网页 / 飞书 / API] --> M[Master: Planner + Runtime + Runner + Verifier]
+    M --> P[统一运行环境配置 + 模块覆盖]
+    P --> R[接待: mock / DREAM + VLA]
+    P --> E[通用执行: Desk / Slaver + 仿真]
+    P --> O[现场观察与网页画面: 指定观察源]
 ```
 
-两条链不要混：
+所有任务共用 Runtime。运行环境可以全局切换，也可以按接待、通用执行、观察分别覆盖。在管理面板 `:5678` 顶部操作，或编辑 `config/execution.yaml` 后执行：
 
-| | 通用任务 | 公司任务（接待） |
-|---|---|---|
-| 入口 | 网页 / 飞书自然语言 | 飞书或网页触发，Master 判 `reception` |
-| 本机仿真 | Desk `:5008`（无画面） | 看图优先 3DGS `:5002`，否则 MuJoCo `:5001` |
-| 真机 | 无 | DREAM `:8001` + VLA `:8091` |
-| 网页四宫格 | 取决于谁在听；Desk 本身不出图 | 当前仿真后端的四路相机 |
+```bash
+.venv/bin/python scripts/execution_mode.py apply
+```
+
+配置格式、一键命令、应用失败回退和能力边界见 [统一环境配置](config/README.md#统一切换仿真与真机)。切换不修改真机动作许可，不迁移在途任务，也不启停远端身体服务。真机通用执行和真机观察尚未接入；选择后明确不可用，不回落仿真。
 
 接待固定顺序：导航到茶水间（table2）→ 抓瓶装可乐 → 过门 → 导航回工位（table1）→ 放下。VLA 当前是 `hand_state_only`：终态 `COMPLETED_HAND_STATE_ONLY` 只说明左手开合加至少 3 帧证据，**不等于**图像证实可乐在手上或已放到桌面。
 
@@ -70,7 +65,7 @@ python scripts/bootstrap_local.py
 
 本机只维护两套 Python 3.10 环境：`.venv` 运行大脑、网页、飞书和普通工具，`.venv_3dgs` 专用于 CUDA / 3DGS 渲染。不要再创建独立的 `.venv_feishu`；飞书依赖已纳入项目依赖并由 `.venv` 运行。
 
-该命令从 [`config/examples/`](config/examples/) 创建缺失的本地配置，不覆盖已有文件，也不启动服务。飞书、SSH、远端地址从根目录 `.env` 读取。不要提交填写后的 `.env`。公开模板中 `RECEPTION_MODE=mock` 是安全默认值，并且它优先于 `master/config.yaml` 的 `reception_real.enabled`；真机环境必须显式改成 `RECEPTION_MODE=real` 或移除该环境变量。旧地址 `192.168.5.185` 和 `192.168.0.108` 已停用。配置和依赖清单边界见 [`config/README.md`](config/README.md)。
+该命令从 [`config/examples/`](config/examples/) 创建缺失的本地配置，不覆盖已有文件，也不启动服务。飞书、SSH、远端地址从根目录 `.env` 读取。不要提交填写后的 `.env`。未应用统一运行配置时，公开模板中的 `RECEPTION_MODE=mock` 优先于旧接待配置；应用统一运行配置后，接待后端以其生效快照为准，不再被 `RECEPTION_MODE` 覆盖。旧地址 `192.168.5.185` 和 `192.168.0.108` 已停用。配置和依赖清单边界见 [`config/README.md`](config/README.md)。
 
 每个服务一个 tmux session：
 
@@ -84,7 +79,7 @@ tmux attach -t redis|master|deploy|feishu|slaver|desk|mujoco|gs
 
 `:8888` 任务控制台的四宫格不是四个仿真，而是当前一个仿真后端的四路相机。
 
-Deploy 选图顺序：3DGS `:5002` → MuJoCo `:5001`。Desk `:5008` 没有 `/camera/latest`，不会显示在四宫格。
+应用统一配置后，Deploy 只显示观察模块指定的后端，不自动切换来源。Desk `:5008` 不出图；需要画面时，将观察模块显式选为 3DGS 或 MuJoCo。尚未启用统一配置的旧环境保留原来的 3DGS → MuJoCo 选图顺序。
 
 | 后端 | 画面 | 四路相机 |
 |---|---|---|

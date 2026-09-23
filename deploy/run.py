@@ -35,7 +35,7 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 
 MASTER_URL = os.getenv("MASTER_URL", "http://127.0.0.1:5000")
-SIM_URL = os.getenv("ROBOT_API_URL", load_robot_api_config().server_url)
+SIM_URL = load_robot_api_config().server_url
 
 
 def _master_forward_headers():
@@ -71,6 +71,12 @@ def _vision_url():
 
     Execution may still be desk; the 8888 page should show the rendered sim when it exists.
     """
+    config = load_robot_api_config()
+    if config.observation_backend is not None:
+        backend = next((b for b in config.backends if b.name == config.observation_backend), None)
+        if backend is None:
+            raise ValueError('当前观察模块不可用，请在管理面板选择观察环境')
+        return backend.url
     now = time.time()
     cached = _vision_cache["url"]
     if cached and now - _vision_cache["at"] < 5:
@@ -113,6 +119,13 @@ def extract_tools_from_ast(source, filename):
                         "parameters": parameters,
                     })
     return tools
+
+
+@app.get("/api/execution_profile")
+def execution_profile_status():
+    from common.execution_profile import applied_profile
+    profile = applied_profile()
+    return jsonify(profile or {"revision": None, "mode": "legacy_config"})
 
 
 @app.route("/")
@@ -611,37 +624,22 @@ def reception_page():
 
 @app.route("/api/reception/run", methods=["POST"])
 def api_reception_run():
-    """跑一次接待补货闭环(reception_loop),返回结构化 trace(含每步 verify + 反思)。"""
-    import subprocess
-    body = request.get_json(force=True, silent=True) or {}
-    scenario = body.get("scenario", "normal")
-    if scenario not in ("normal", "grasp_fail", "walk_blocked", "place_miss", "label_wrong"):
-        scenario = "normal"
-    headcount = int(body.get("headcount", 4))
-    sop_dir = PROJECT_ROOT / "master" / "sop"
-    cmd = [sys.executable, str(sop_dir / "reception_loop.py"),
-           "--scenario", scenario, "--headcount", str(headcount)]
-    if not body.get("reflect", True):
-        cmd.append("--no-reflect")
+    """The demo uses the Master's Runtime and resource ownership, with a mock body."""
     try:
-        proc = subprocess.run(cmd, cwd=str(sop_dir), capture_output=True,
-                              text=True, timeout=160)
-        trace = json.loads((sop_dir / "last_reception_trace.json").read_text(encoding="utf-8"))
-        return jsonify({"success": True, "trace": trace, "stdout": proc.stdout[-4000:]})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        resp = requests.post(f"{MASTER_URL}/api/reception/run",
+                             json=request.get_json(force=True, silent=True) or {}, timeout=30)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
 
 
 @app.route("/api/reception/report", methods=["GET"])
 def api_reception_report():
-    """接待完成确认报告(reception_loop 生成的 report_card)。主控台在接待 done 后拉它展示。"""
-    p = _sop_dir() / "last_reception_report.json"
-    if not p.exists():
-        return jsonify({"success": False, "error": "尚无报告"}), 404
     try:
-        return jsonify({"success": True, "report": json.loads(p.read_text(encoding="utf-8"))})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        resp = requests.get(f"{MASTER_URL}/api/reception/report", timeout=5)
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.RequestException as exc:
+        return jsonify({"success": False, "error": str(exc)}), 503
 
 
 @app.route("/api/reception/sop", methods=["GET"])
@@ -735,9 +733,10 @@ def get_tool_config():
 
 @app.route("/api/robot_status", methods=["GET"])
 def robot_status():
-    """代理有画面的仿真后端场景信息（机器人坐标、物体、家具）"""
-    url = _vision_url()
+    """代理明确选定的观察后端，不跨环境寻找画面。"""
+    url = ""
     try:
+        url = _vision_url()
         resp = requests.get(f"{url}/scene", timeout=5)
         content_type = (resp.headers.get("content-type") or "").lower()
         if "json" not in content_type:
@@ -745,7 +744,9 @@ def robot_status():
         return jsonify(resp.json()), resp.status_code
     except requests.exceptions.ConnectionError:
         return jsonify({"error": "仿真服务未启动"}), 503
-    except ValueError:
+    except ValueError as exc:
+        if not url:
+            return jsonify({"error": str(exc)}), 503
         return jsonify({"error": f"{url} 返回的不是 JSON"}), 502
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -58,6 +58,7 @@ class RobotRuntime:
             backends=updated,
             active_backend=active_backend,
             navigation=self.config.navigation,
+            observation_backend=self.config.observation_backend,
         )
 
     def get_state(self, name: str, params: dict[str, Any] | None = None):
@@ -84,6 +85,9 @@ class RobotRuntime:
         return self._last_failure_or_disabled("state", failures)
 
     def _vision_backends(self) -> list[BackendConfig]:
+        if self.config.observation_backend is not None:
+            return [b for b in self.config.backends
+                    if b.name == self.config.observation_backend and b.enabled and b.url]
         enabled = [
             backend
             for backend in self.config.backends
@@ -157,6 +161,8 @@ class RobotRuntime:
                 result["_required"] = nav_backend.required
                 return self._merge([result])
 
+        if not self.config.action_backends():
+            return {"success": False, "result": "当前执行模块没有可用后端"}
         results = []
         for backend in self.config.action_backends():
             if backend.name == "real":

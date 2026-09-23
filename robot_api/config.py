@@ -44,6 +44,7 @@ class RobotApiConfig:
     backends: list[BackendConfig]
     active_backend: str | None = None
     navigation: BackendConfig | None = None
+    observation_backend: str | None = None
     policy_services: list[PolicyServiceConfig] | None = None
 
     def _active(self) -> BackendConfig | None:
@@ -57,6 +58,8 @@ class RobotApiConfig:
     @property
     def server_url(self) -> str:
         active = self._active()
+        if self.active_backend and active is None:
+            return ''
         if active is not None and active.url:
             return active.url
         for backend in self.backends:
@@ -83,14 +86,14 @@ class RobotApiConfig:
 
     def state_backends(self) -> list[BackendConfig]:
         active = self._active()
-        if active is not None:
-            return [active] if active.enabled and active.provide_state else []
+        if self.active_backend is not None:
+            return [active] if active is not None and active.enabled and active.provide_state else []
         return [b for b in self.backends if b.enabled and b.provide_state]
 
     def action_backends(self) -> list[BackendConfig]:
         active = self._active()
-        if active is not None:
-            return [active] if active.enabled and active.accept_action else []
+        if self.active_backend is not None:
+            return [active] if active is not None and active.enabled and active.accept_action else []
         return [b for b in self.backends if b.enabled and b.accept_action]
 
     def navigation_backend(self) -> BackendConfig | None:
@@ -203,6 +206,23 @@ def load_robot_api_config() -> RobotApiConfig:
     env_url = os.getenv("ROBOT_API_URL")
     env_nav_url = os.getenv("ROBOT_NAV_URL") or os.getenv("NAV2_API_URL")
     env_timeout = os.getenv("ROBOT_API_TIMEOUT")
+    from common.execution_profile import applied_profile
+    profile = applied_profile()
+    observation_backend = None
+    if profile:
+        import copy
+        backends_cfg = copy.deepcopy(backends_cfg)
+        execution = profile['routes']['execution']
+        observation = profile['routes']['observation']
+        active_backend = execution['backend'] if execution['available'] else '__disabled__'
+        observation_backend = observation['backend'] if observation['available'] else '__disabled__'
+        env_url = None  # An applied profile takes precedence over stale service environments.
+        for route in (execution, observation):
+            if route['available']:
+                raw = backends_cfg.setdefault(route['backend'], {})
+                raw.update(enabled=True, url=route['url'])
+        if execution['available']:
+            backends_cfg[active_backend].update(provide_state=True, accept_action=True)
     backends: list[BackendConfig] = []
 
     for name, raw in backends_cfg.items():
@@ -244,7 +264,7 @@ def load_robot_api_config() -> RobotApiConfig:
 
     nav_cfg = data.get("navigation") or {}
     navigation = None
-    if nav_cfg:
+    if nav_cfg and not profile:
         nav_url = str(env_nav_url or nav_cfg.get("url") or "").rstrip("/")
         navigation = BackendConfig(
             name=str(nav_cfg.get("backend") or "nav2"),
@@ -273,5 +293,5 @@ def load_robot_api_config() -> RobotApiConfig:
 
     return RobotApiConfig(
         backends=backends, active_backend=active_backend,
-        navigation=navigation, policy_services=policy_services,
+        navigation=navigation, policy_services=policy_services, observation_backend=observation_backend,
     )

@@ -9,6 +9,7 @@ id_rsa*
 id_ed25519*
 credentials*
 secrets*
+/config/execution.yaml
 /master/config.yaml
 /slaver/config.yaml
 /robot_api/config.yaml

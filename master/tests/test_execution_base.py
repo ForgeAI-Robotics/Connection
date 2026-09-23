@@ -16,6 +16,12 @@ for path in (MASTER_DIR, REPO_ROOT):
 
 def _install_import_stubs():
     """Allow importing GlobalAgent without the live Redis/OpenAI stack."""
+    import importlib
+    for name in ("dotenv", "openai", "redis"):
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            pass
     if "dotenv" not in sys.modules:
         dotenv_mod = types.ModuleType("dotenv")
         dotenv_mod.load_dotenv = lambda *a, **k: True
@@ -38,18 +44,10 @@ def _install_import_stubs():
         redis_mod.exceptions = exceptions
         sys.modules["redis"] = redis_mod
         sys.modules["redis.exceptions"] = exceptions
-    if "robot_api" not in sys.modules:
-        sys.modules["robot_api"] = types.ModuleType("robot_api")
-    if "robot_api.config" not in sys.modules:
-        cfg_mod = types.ModuleType("robot_api.config")
-        cfg_mod.load_robot_api_config = lambda: types.SimpleNamespace(active_backend="")
-        sys.modules["robot_api.config"] = cfg_mod
-    if "robot_api.client" not in sys.modules:
-        client_mod = types.ModuleType("robot_api.client")
-        client_mod.get_objects = lambda: []
-        client_mod.get_scene = lambda: {}
-        client_mod.check_success = lambda: {}
-        sys.modules["robot_api.client"] = client_mod
+    # These project modules are safe to import and must not be replaced for other
+    # suites collected in the same interpreter (notably the desk HTTP replay).
+    import robot_api.config
+    import robot_api.client
 
 
 _install_import_stubs()
@@ -96,6 +94,7 @@ class ExecutionBaseTests(unittest.TestCase):
         agent.logger = logging.getLogger("execution-base-test")
         agent.logger.addHandler(logging.NullHandler())
         agent.config = {
+            "brain": {"scheduler": "legacy"},
             "execution": {
                 "subtask_wait_timeout_sec": 2,
                 "camera_wait_timeout_sec": 1,
