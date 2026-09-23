@@ -44,6 +44,8 @@ reflection:
   enabled: true
   use_llm: true
   write_sop: false
+  # 候选规则发布目录。不设置时，新任务不绑定规则版本。
+  # release_dir: ./sop/runtime/releases
 reception_real:
   enabled: false
   contract_version: fq/reception-lan/v1

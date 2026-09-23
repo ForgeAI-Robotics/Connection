@@ -75,6 +75,8 @@ class SkillContract:
     requires_object_evidence: bool
     requires_safe_idle: bool
     request: dict = field(default_factory=dict)
+    # 发布规则只留在内核合同里。request.body 仍是 fq/reception-lan/v1，不能加字段。
+    bound_rules: tuple = ()
 
     def as_dict(self) -> dict:
         payload = asdict(self)

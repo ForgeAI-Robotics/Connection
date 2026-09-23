@@ -341,7 +341,25 @@ def maybe_reflect(
         "final": episode.get("final"),
     }
     result["summary"] = format_summary(result)
-    return persist_reflection(episode, result)
+    saved = persist_reflection(episode, result)
+    _ingest_release(config, saved)
+    return saved
+
+
+def _ingest_release(config, result):
+    """When a release directory is configured, file the new rules as unevaluated candidates."""
+    if not isinstance(config, dict) or not isinstance(result, dict):
+        return
+    root = str((config.get("reflection") or {}).get("release_dir") or "").strip()
+    path = str(result.get("path") or "")
+    if not root or not path:
+        return
+    log = os.path.join(os.path.dirname(os.path.dirname(path)), "candidates.jsonl")
+    try:
+        from kernel.releases import ReleaseLedger
+        ReleaseLedger(root).ingest_log(log)
+    except Exception as exc:
+        result["ingest_error"] = str(exc)
 
 
 def template_rules(findings):

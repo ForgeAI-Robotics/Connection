@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 
 from kernel.contracts import CONTRACT_VERSION
 from kernel.memory import DEFAULT_EVENT_TTL_SEC
+from kernel.skills import by_id
 from integrations.http_client import HttpContractError
 
 
@@ -316,6 +317,17 @@ def interpret_observation(command_id, raw, request) -> dict:
         grade = "object"
     else:
         grade = level
+    evidence = {
+        "supports": supports,
+        "contradicts": _contradicts(skill, result),
+        "identity_ok": True,
+        "time_ok": _timestamp_has_timezone(raw.get("completed_at")),
+        "grade": grade,
+        "identity": command_id,
+    }
+    entry = by_id(str(skill or ""))
+    if supports and entry is not None:
+        evidence["effect"] = entry.verifies
     return {
         "command_id": command_id,
         "terminal": terminal,
@@ -323,14 +335,7 @@ def interpret_observation(command_id, raw, request) -> dict:
         "started": _started(raw, result),
         "stopped": bool(stopped),
         "resources_released": bool(resources),
-        "evidence": {
-            "supports": supports,
-            "contradicts": _contradicts(skill, result),
-            "identity_ok": True,
-            "time_ok": _timestamp_has_timezone(raw.get("completed_at")),
-            "grade": grade,
-            "identity": command_id,
-        },
+        "evidence": evidence,
         "raw": raw,
     }
 

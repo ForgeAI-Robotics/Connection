@@ -22,6 +22,7 @@ from kernel.contracts import (
     make_command_id,
 )
 from kernel.memory import append_observation, event_window_settings, read_subject
+from kernel.releases import bound_release
 from kernel.packages.reception import (
     PHASES,
     inspection_body,
@@ -85,6 +86,8 @@ def _blank_record():
         "dispatch_closed": False,
         "control_request": "",
         "observations": [],
+        "release_id": "",
+        "release_rules": [],
     }
 
 
@@ -203,6 +206,9 @@ class TaskRuntime:
             self.record["task_desc"] = task_desc
             self.record["package"] = self.package_name
             self.record["phase_order"] = [step.step_id for step in self.phases]
+            bound = bound_release(self.config, self.package_name)
+            self.record["release_id"] = bound["version_id"]
+            self.record["release_rules"] = bound["rules"]
             self.apply("accept")
             try:
                 self._save("task_opened")
@@ -812,6 +818,12 @@ class TaskRuntime:
             self.record["stopped_confirmed"] = False
         return record
 
+    def _bound_rules(self, skill: str) -> tuple:
+        return tuple(
+            rule for rule in (self.record.get("release_rules") or [])
+            if isinstance(rule, dict) and rule.get("skill") == skill
+        )
+
     def _envelope(self, step, command_id: str) -> dict:
         task_id = self.record["task_id"]
         if step.kind == "navigate":
@@ -854,6 +866,7 @@ class TaskRuntime:
             requires_object_evidence=step.requires_object_evidence,
             requires_safe_idle=step.requires_safe_idle,
             request=request,
+            bound_rules=self._bound_rules(step.kind),
         )
 
     def _prepare_submit(self, step):
