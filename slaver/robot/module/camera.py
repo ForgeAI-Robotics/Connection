@@ -6,13 +6,9 @@ import json
 import os
 import sys
 
-from dotenv import load_dotenv
-from openai import OpenAI
-
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
 _project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-load_dotenv(os.path.join(_project_root, '.env'))
 
 import yaml
 
@@ -57,6 +53,10 @@ def _is_describe_request(context=""):
 
 def _call_vlm(images, context=""):
     """多图 VLM 分析。观察任务描述视野，其它任务判 normal/abnormal。"""
+    from dotenv import load_dotenv
+    from openai import OpenAI
+
+    load_dotenv(os.path.join(_project_root, ".env"))
     try:
         if _is_describe_request(context):
             prompt = f"""你是机器人现场观察助手。用户问：{context or "前面/桌上有什么"}
@@ -124,6 +124,45 @@ def _call_vlm(images, context=""):
         return "normal", f"VLM 调用失败: {e}"
 
 
+def capture_scene(context: str = "", camera_name: str = "") -> str:
+    """现场观察和拍照诊断。返回值与 MCP 工具 capture_image 相同。"""
+    print(f"[camera] 拍照请求 (context: {context}, camera_name: {camera_name})", file=sys.stderr)
+
+    requested = str(camera_name or "").strip()
+    if requested:
+        cams = [requested]
+    elif _is_describe_request(context):
+        cams = cameras_for(context)[:2]
+    else:
+        cams = list(CAMERAS)
+    images = {}
+    for cam in cams:
+        result = backend_capture_image(camera_name=cam)
+        if result.get("success"):
+            images[cam] = result["image"]
+        else:
+            print(f"[camera] {cam} 截图失败: {result.get('result', '')}", file=sys.stderr)
+
+    if not images:
+        msg = "截图失败：所有相机均不可用"
+        print(f"[camera] {msg}", file=sys.stderr)
+        return json.dumps([msg, {"_status": "failure"}])
+
+    n_cams = len(images)
+    print(f"[camera] VLM 分析: {n_cams} 个相机", file=sys.stderr)
+    scene_status, vlm_description = _call_vlm(images, context)
+
+    cam_list = "、".join(images.keys())
+    if scene_status == "described":
+        response = f"视野描述（{cam_list}）：{vlm_description}"
+        return json.dumps([response, {"_status": "success"}])
+    response = (
+        f"截图成功（{cam_list}），"
+        f"VLM 判断: {scene_status}，描述: {vlm_description}"
+    )
+    return json.dumps([response, {"_status": "none"}])
+
+
 def register_tools(mcp):
 
     @mcp.tool()
@@ -139,40 +178,6 @@ def register_tools(mcp):
         Returns:
             截图结果和场景描述。
         """
-        print(f"[camera] 拍照请求 (context: {context}, camera_name: {camera_name})", file=sys.stderr)
-
-        requested = str(camera_name or "").strip()
-        if requested:
-            cams = [requested]
-        elif _is_describe_request(context):
-            cams = cameras_for(context)[:2]
-        else:
-            cams = list(CAMERAS)
-        images = {}
-        for cam in cams:
-            result = backend_capture_image(camera_name=cam)
-            if result.get("success"):
-                images[cam] = result["image"]
-            else:
-                print(f"[camera] {cam} 截图失败: {result.get('result', '')}", file=sys.stderr)
-
-        if not images:
-            msg = "截图失败：所有相机均不可用"
-            print(f"[camera] {msg}", file=sys.stderr)
-            return json.dumps([msg, {"_status": "failure"}])
-
-        n_cams = len(images)
-        print(f"[camera] VLM 分析: {n_cams} 个相机", file=sys.stderr)
-        scene_status, vlm_description = _call_vlm(images, context)
-
-        cam_list = "、".join(images.keys())
-        if scene_status == "described":
-            response = f"视野描述（{cam_list}）：{vlm_description}"
-            return json.dumps([response, {"_status": "success"}])
-        response = (
-            f"截图成功（{cam_list}），"
-            f"VLM 判断: {scene_status}，描述: {vlm_description}"
-        )
-        return json.dumps([response, {"_status": "none"}])
+        return capture_scene(context, camera_name)
 
     print(f"[camera.py] 摄像头模块已注册 ({len(CAMERAS)} 相机 VLM): {CAMERAS}", file=sys.stderr)

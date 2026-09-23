@@ -618,9 +618,9 @@ class GlobalAgent:
             return False
 
     def _is_look_task(self, task) -> bool:
-        from robot_api.look import is_look_task
+        from kernel.packages.look import matches
 
-        return is_look_task(task)
+        return matches(task)
 
     def _plan_look_task(self, task) -> Dict:
         text = task if isinstance(task, str) else (task[0] if task else "")
@@ -644,8 +644,9 @@ class GlobalAgent:
 
     def _is_desk_tidy_task(self, task) -> bool:
         """demo「整理桌面」任务识别 → 走关系判断规划分支(不经通用 planner)。"""
-        t = task if isinstance(task, str) else (task[0] if task else "")
-        return any(k in t for k in ("整理桌面", "桌面整理", "清洁会议室", "整理会议室", "收拾桌"))
+        from kernel.packages.desk import matches
+
+        return matches(task)
 
     def _plan_desk_tidy(self, task) -> Dict:
         """demo 规划:vlm_judge 关系判断(当前图 vs 标准图,关系变了才动) → 技能 subtask_list。
@@ -673,8 +674,9 @@ class GlobalAgent:
 
     def _is_reception_task(self, task) -> bool:
         """会议接待任务识别 → 走接待 skill(自带 SOP+经验的复合技能),不经通用 planner。"""
-        from sop.reception_skill import is_reception_task
-        return is_reception_task(task)
+        from kernel.packages.reception import matches
+
+        return matches(task)
 
     def get_task_preflight(self, task) -> Dict:
         """Return a read-only readiness report for a prospective top-level task."""

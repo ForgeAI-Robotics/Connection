@@ -29,6 +29,8 @@ from kernel.packages.reception import (
     manipulation_body,
     navigation_body,
 )
+from kernel.packages.registry import phases_for
+from kernel.skills import is_physical
 from kernel.runner import Runner
 from kernel.verifier import Verifier
 
@@ -108,6 +110,10 @@ def status_from_record(record) -> dict:
     }
 
 
+def _same_command(left, right) -> bool:
+    return (left or "") == (right or "")
+
+
 def classify_query(result, *, requires_object_evidence: bool) -> str:
     if not isinstance(result, dict):
         return "unknown"
@@ -133,16 +139,21 @@ def classify_query(result, *, requires_object_evidence: bool) -> str:
 
 
 class TaskRuntime:
-    def __init__(self, store, port, *, config=None):
+    def __init__(self, store, port, *, config=None, package: str | None = None):
         self.store = store
         self.port = port
         self.config = config or {}
         self.runner = Runner()
         self.verifier = Verifier()
-        self.phases = list(PHASES)
         self._lock = threading.RLock()
         loaded = store.load_state()
         self.record = loaded if isinstance(loaded, dict) else _blank_record()
+        selected = package if package else (self.record.get("package") or "reception")
+        self._bind_package(selected)
+
+    def _bind_package(self, name: str):
+        self.package_name = name or "reception"
+        self.phases = list(phases_for(self.package_name))
 
     @property
     def state(self):
@@ -190,6 +201,8 @@ class TaskRuntime:
             self.record["revision"] = revision
             self.record["task_id"] = str(task_id)
             self.record["task_desc"] = task_desc
+            self.record["package"] = self.package_name
+            self.record["phase_order"] = [step.step_id for step in self.phases]
             self.apply("accept")
             try:
                 self._save("task_opened")
@@ -542,7 +555,7 @@ class TaskRuntime:
                 self._reload_locked()
                 if self._halted() or self.state != "running":
                     return self.state
-                if self.record.get("open_command_id") != contract.command_id:
+                if not _same_command(self.record.get("open_command_id"), contract.command_id):
                     return self.state
                 self._consume_submit(step, progress)
         raise KernelError("内核推进超过步数上限")
@@ -745,14 +758,29 @@ class TaskRuntime:
         attempt = self._latest(step_id)
         return str((attempt or {}).get("command_id") or "")
 
-    def _append_attempt(self, step):
+    def _append_attempt(self, step, *, physical: bool = True):
         bucket = self.record["steps"].setdefault(step.step_id, {"attempts": []})
         attempts = bucket.setdefault("attempts", [])
         number = len(attempts) + 1
-        command_id = make_command_id(step.prefix, self.record["task_id"], number)
+        if physical:
+            command_id = make_command_id(step.prefix, self.record["task_id"], number)
+            request = self._envelope(step, command_id)
+        else:
+            command_id = ""
+            _, ttl_sec = event_window_settings(self.config)
+            request = {
+                "skill": step.kind,
+                "task_id": self.record["task_id"],
+                "step_id": step.step_id,
+                "deadline_sec": step.deadline_sec,
+                "observation_ttl_sec": ttl_sec,
+                "body": {
+                    "task_id": self.record["task_id"],
+                    "task": self.record.get("task_desc") or "",
+                },
+            }
         attempt_id = f"{step.step_id}-a{number}"
         previous = attempts[-1] if attempts else None
-        request = self._envelope(step, command_id)
         contract = self._contract(step, attempt_id, command_id, request)
         record = AttemptRecord(
             attempt_id=attempt_id,
@@ -773,14 +801,15 @@ class TaskRuntime:
             },
             verdict="",
             outcome="",
-            intent="submit",
+            intent="submit" if physical else "observe",
         ).as_dict()
         record["submitted"] = False
         record["finished"] = False
         attempts.append(record)
-        self.record["open_command_id"] = command_id
-        self.record["not_started_confirmed"] = False
-        self.record["stopped_confirmed"] = False
+        if physical:
+            self.record["open_command_id"] = command_id
+            self.record["not_started_confirmed"] = False
+            self.record["stopped_confirmed"] = False
         return record
 
     def _envelope(self, step, command_id: str) -> dict:
@@ -805,14 +834,14 @@ class TaskRuntime:
 
     def _contract(self, step, attempt_id: str, command_id: str, request: dict) -> SkillContract:
         return SkillContract(
-            package="reception",
+            package=self.package_name,
             skill=step.kind,
             version=CONTRACT_VERSION,
             task_id=self.record["task_id"],
             step_id=step.step_id,
             attempt_id=attempt_id,
             goal=step.key or step.target_area or step.step_id,
-            object_id=OBJECT_ID,
+            object_id="" if not is_physical(step.kind) else OBJECT_ID,
             preconditions=step.handoff_before,
             evidence=step.evidence,
             failure_budget=0,
@@ -830,17 +859,23 @@ class TaskRuntime:
     def _prepare_submit(self, step):
         if self.record.get("dispatch_closed"):
             raise Rejected("新派发已关闭")
+        physical = is_physical(step.kind)
         attempt = self._latest(step.step_id)
         if attempt is None or attempt.get("submitted"):
-            attempt = self._append_attempt(step)
-        counts = self.record.setdefault("dispatch_counts", {})
-        counts[step.step_id] = int(counts.get(step.step_id) or 0) + 1
+            attempt = self._append_attempt(step, physical=physical)
         attempt["submitted"] = True
-        self.record["command_unknown"] = True
-        self.record["resources_cleared"] = False
-        self.record["open_command_id"] = attempt["command_id"]
+        if physical:
+            counts = self.record.setdefault("dispatch_counts", {})
+            counts[step.step_id] = int(counts.get(step.step_id) or 0) + 1
+            self.record["command_unknown"] = True
+            self.record["resources_cleared"] = False
+            self.record["open_command_id"] = attempt["command_id"]
+        else:
+            self.record["command_unknown"] = False
+            self.record["resources_cleared"] = True
+            self.record["open_command_id"] = None
         self.record["phase"] = step.step_id
-        self._save("submit_intent")
+        self._save("submit_intent" if physical else "observe_intent")
         attempt = self._latest(step.step_id)
         return self._contract(
             step,
@@ -852,7 +887,9 @@ class TaskRuntime:
     def _consume_submit(self, step, progress: ProgressEvent):
         if self.state != "running" or self.record.get("dispatch_closed"):
             return
-        if progress.step_id != step.step_id or progress.command_id != self.record.get("open_command_id"):
+        if progress.step_id != step.step_id or not _same_command(
+            progress.command_id, self.record.get("open_command_id"),
+        ):
             self.record["blocked_reason"] = "progress_step_mismatch"
             self._save("progress_ignored")
             return
@@ -862,8 +899,13 @@ class TaskRuntime:
             if attempt is not None:
                 attempt["verdict"] = "UNKNOWN"
             self.record["breakpoint_phase"] = step.step_id
-            self.record["blocked_reason"] = "timeout" if progress.timed_out else "missing_terminal"
-            self.record["command_unknown"] = True
+            if progress.timed_out:
+                self.record["blocked_reason"] = "timeout"
+            elif progress.error:
+                self.record["blocked_reason"] = progress.error
+            else:
+                self.record["blocked_reason"] = "missing_terminal"
+            self.record["command_unknown"] = bool(self.record.get("open_command_id"))
             self.record["pending_progress"] = progress.as_dict()
             self.apply("unknown")
             self._save("unconfirmed")
@@ -902,6 +944,25 @@ class TaskRuntime:
         self.record["requery_hold"] = True
         self._save("requery_stopped_seen")
 
+    def _store_passed_observation(self, progress) -> bool:
+        """Append a generic observation payload after PASS. Steps without one stay unchanged."""
+        payload = (progress.evidence or {}).get("observation")
+        if not isinstance(payload, dict):
+            return True
+        try:
+            append_observation(
+                self.record,
+                subject=str(payload.get("subject") or ""),
+                value=payload.get("value"),
+                source=str(payload.get("source") or ""),
+                observed_at=payload.get("observed_at"),
+                kind="observed",
+                valid_until=payload.get("valid_until"),
+            )
+        except ValueError:
+            return False
+        return True
+
     def _judge(self, *, safe_idle, handoff_ok: bool, next_step_id: str):
         if self.state != "verifying" or self.record.get("dispatch_closed"):
             return
@@ -935,6 +996,13 @@ class TaskRuntime:
             self.apply("fail" if verdict == "FAIL" else "unknown")
             self._save("verdict")
             return
+        if not self._store_passed_observation(progress):
+            self.record["breakpoint_phase"] = step.step_id
+            self.record["blocked_reason"] = "observation_incomplete"
+            self.record["command_unknown"] = bool(self.record.get("open_command_id"))
+            self.apply("unknown")
+            self._save("observation_incomplete")
+            return
         if step.writes == "in_gripper":
             self._confirm("holding", OBJECT_ID, attempt["attempt_id"])
             self._confirm("object_location", "in_gripper", attempt["attempt_id"])
@@ -962,7 +1030,8 @@ class TaskRuntime:
             self._confirm("holding", None, attempt["attempt_id"])
             self.record["object_location"] = "table_1"
             self.record["holding"] = None
-        self.record["safe_idle"] = True
+        if step.writes == "table_1" or step.requires_safe_idle:
+            self.record["safe_idle"] = True
         self.apply("pass_final", safe_idle=True)
         self._finish_cursor()
         self._save("task_succeeded")
@@ -1025,4 +1094,4 @@ class TaskRuntime:
 
     def _finish_cursor(self):
         self.record["cursor"] = len(self.phases)
-        self.record["phase"] = "VERIFYING_PLACE"
+        self.record["phase"] = self.phases[-1].step_id if self.phases else ""

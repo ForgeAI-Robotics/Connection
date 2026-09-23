@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import json
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
+from datetime import datetime, timedelta
 
 from kernel.contracts import CONTRACT_VERSION
+from kernel.memory import DEFAULT_EVENT_TTL_SEC
 from integrations.http_client import HttpContractError
 
 
@@ -329,3 +333,171 @@ def interpret_observation(command_id, raw, request) -> dict:
         },
         "raw": raw,
     }
+
+
+def _observation_ttl(ttl_sec) -> float:
+    try:
+        number = float(ttl_sec)
+    except (TypeError, ValueError):
+        return float(DEFAULT_EVENT_TTL_SEC)
+    if number <= 0:
+        return float(DEFAULT_EVENT_TTL_SEC)
+    return number
+
+
+def parse_capture_scene(raw, *, ttl_sec=None) -> dict | None:
+    """Read the JSON string returned by camera.capture_scene / capture_image."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list) or len(data) < 2 or not isinstance(data[1], dict):
+        return None
+    if data[1].get("_status") != "success":
+        return None
+    text = str(data[0] or "")
+    marker = "视野描述（"
+    if not text.startswith(marker) or "）：" not in text:
+        return None
+    source, body = text[len(marker):].split("）：", 1)
+    source = source.strip()
+    body = body.strip()
+    if not source or not body:
+        return None
+    observed = datetime.now().astimezone()
+    observed_at = observed.isoformat(timespec="milliseconds")
+    valid_until = (observed + timedelta(seconds=_observation_ttl(ttl_sec))).isoformat(
+        timespec="milliseconds"
+    )
+    return {
+        "supports": True,
+        "contradicts": False,
+        "identity_ok": True,
+        "time_ok": True,
+        "grade": "description",
+        "text": body,
+        "source": source,
+        "completed_at": observed_at,
+        "observation": {
+            "subject": "scene_description",
+            "value": body,
+            "source": source,
+            "observed_at": observed_at,
+            "valid_until": valid_until,
+        },
+    }
+
+
+class LookAdapter:
+    """Call camera.capture_scene. This port does not submit DREAM or VLA commands."""
+
+    contract_version = CONTRACT_VERSION
+
+    def __init__(self, capture=None):
+        self.capture = capture or load_capture_scene()
+        self.gate_open = True
+        self._pending = None
+        self._error = ""
+        self._timed_out = False
+
+    def handoff(self, step_id, kind):
+        del step_id, kind
+        return {"available": False, "confirmed": False, "reason": "unavailable"}
+
+    def submit(self, command_id, request):
+        del command_id
+        skill = (request or {}).get("skill")
+        if skill != "describe":
+            raise RuntimeError(f"未知技能: {skill}")
+        deadline = float((request or {}).get("deadline_sec") or 30)
+        task = str(((request or {}).get("body") or {}).get("task") or "")
+        self._pending = None
+        self._error = ""
+        self._timed_out = False
+        try:
+            self._pending = self._run(task, deadline)
+        except FuturesTimeout:
+            self._timed_out = True
+            self._error = "timeout"
+        except TimeoutError:
+            self._timed_out = True
+            self._error = "timeout"
+        except Exception as exc:
+            self._error = str(exc) or "describe_failed"
+        return {
+            "accepted": True,
+            "unclear": False,
+            "completed": False,
+            "command_id": "",
+        }
+
+    def wait(self, command_id, request):
+        del command_id
+        if self._timed_out or self._error:
+            return {
+                "command_id": "",
+                "terminal": None,
+                "timed_out": self._timed_out,
+                "started": True,
+                "stopped": False,
+                "evidence": {},
+                "error": self._error or "describe_failed",
+            }
+        evidence = parse_capture_scene(
+            self._pending,
+            ttl_sec=(request or {}).get("observation_ttl_sec"),
+        )
+        if not evidence:
+            return {
+                "command_id": "",
+                "terminal": None,
+                "timed_out": False,
+                "started": True,
+                "stopped": False,
+                "evidence": {},
+                "error": "describe_incomplete",
+            }
+        return {
+            "command_id": "",
+            "terminal": "succeeded",
+            "timed_out": False,
+            "started": True,
+            "stopped": False,
+            "evidence": evidence,
+        }
+
+    def query(self, command_id, request):
+        del command_id, request
+        return {
+            "command_id": "",
+            "terminal": None,
+            "timed_out": True,
+            "started": None,
+            "stopped": False,
+            "evidence": {},
+            "error": "no_command",
+        }
+
+    def _run(self, task: str, deadline: float):
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(self.capture, task)
+        try:
+            return future.result(timeout=deadline)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+
+
+def load_capture_scene():
+    """Import the slaver camera function without importing it at kernel startup."""
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "slaver" / "robot" / "module" / "camera.py"
+    spec = importlib.util.spec_from_file_location("slaver_camera_scene", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("找不到 camera.capture_scene")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.capture_scene

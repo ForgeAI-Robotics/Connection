@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from kernel.contracts import CONTRACT_VERSION, OBJECT_ID
 
 
+NAME = "reception"
+
+
 @dataclass(frozen=True)
 class StepSpec:
     step_id: str
@@ -132,6 +135,12 @@ PHASES = (
     ),
     StepSpec("VERIFYING_PLACE", "verify", evidence="object_at_target"),
 )
+
+
+def matches(task) -> bool:
+    from sop.reception_skill import is_reception_task
+
+    return is_reception_task(task)
 
 
 def phase_ids():
