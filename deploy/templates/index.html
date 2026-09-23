@@ -151,6 +151,9 @@
             <div class="btn-row" style="margin-top:10px">
                 <button class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
                 <button class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="resumeReception()">断点继续</button>
+                <button class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
+                <button class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
+                <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="controlReception('cancel')">取消</button>
                 <button class="btn btn-outline btn-sm" onclick="refreshTaskStatus()">刷新任务进度</button>
             </div>
         </div>
@@ -351,6 +354,24 @@
                 result.textContent = '断点继续失败: ' + e.message;
             }
         }
+        async function controlReception(action) {
+            const result = document.getElementById('task-result');
+            const path = action === 'pause' ? '/api/task_pause'
+                : (action === 'continue' ? '/api/task_continue' : '/api/task_cancel');
+            result.textContent = '正在发送控制请求...';
+            try {
+                const resp = await fetch(path, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: '{}'
+                });
+                const data = await resp.json();
+                result.textContent = JSON.stringify(data, null, 2);
+                refreshTaskStatus();
+            } catch (e) {
+                result.textContent = '控制请求失败: ' + e.message;
+            }
+        }
         document.getElementById('task').addEventListener('keydown', e => { if (e.key === 'Enter') sendTask(); });
 
         // 任务进度
@@ -358,13 +379,15 @@
 
         function renderTaskProgress(data) {
             const el = document.getElementById('task-progress');
-            if (!data.active) {
+            if (!data.active && !data.all_done && data.state !== 'succeeded' && data.state !== 'cancelled' && data.state !== 'failed') {
                 el.innerHTML = '<div class="no-task">暂无执行中的任务</div>';
                 return;
             }
-            const pct = data.total > 0 ? Math.round(data.completed / data.total * 100) : 0;
+            const completed = Number(data.completed) || 0;
+            const total = Number(data.total) || 0;
+            const pct = total > 0 ? Math.round(completed / total * 100) : 0;
             const taskName = Array.isArray(data.task) ? data.task[0] : (data.task || '');
-            const recovery = data.state === 'RECOVERY_REQUIRED';
+            const recovery = data.state === 'RECOVERY_REQUIRED' || data.state === 'recovery_required';
             const anyFailed = !recovery && (data.failed || (data.subtask_list || []).some(
                 t => t.done && t.status && t.status !== 'success' && t.status !== 'blocked'
             ));
@@ -373,10 +396,25 @@
             const wonSignal = data.hasOwnProperty('won') ? data.won : null;
             let statusLabel, statusCls;
             if (recovery) {
-                const reason = (data.reception_state && data.reception_state.failure_reason) || data.reasoning || '';
+                const reason = (data.reception_state && data.reception_state.failure_reason) || data.blocked_reason || data.reasoning || '';
                 statusLabel = reason ? ('待恢复：' + reason) : '待恢复（未确认远端已停）';
                 statusCls = 'status-recovery';
-            } else if (data.all_done) {
+            } else if (data.state === 'paused') {
+                statusLabel = '已暂停';
+                statusCls = 'status-run';
+            } else if (data.state === 'waiting_human') {
+                statusLabel = '等待人工';
+                statusCls = 'status-run';
+            } else if (data.state === 'cancelling') {
+                statusLabel = '取消中，停止尚未核清';
+                statusCls = 'status-recovery';
+            } else if (data.state === 'cancelled') {
+                statusLabel = '已取消';
+                statusCls = 'status-fail';
+            } else if (data.state === 'failed') {
+                statusLabel = '已失败';
+                statusCls = 'status-fail';
+            } else if (data.all_done || data.state === 'succeeded') {
                 if (anyFailed) {
                     statusLabel = '✕ 任务失败(有子任务失败)';
                     statusCls = 'status-fail';
@@ -390,7 +428,7 @@
             }
             const barCls = recovery ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');
             let html = `<div class="task-progress-header">
-                <span>${taskName} (${data.completed}/${data.total})</span>
+                <span>${taskName} (${completed}/${total})</span>
                 <span class="${statusCls}">${statusLabel}</span>
             </div>
             <div class="task-bar"><div class="${barCls}" style="width:${pct}%"></div></div>`;
@@ -441,7 +479,8 @@
                 renderTaskProgress(data);
                 // 任务从「进行中」→「完成」的那一刻:belief 快照 + 拉接待完成确认报告
                 const finished = data.active && data.all_done && data.terminal !== false
-                    && data.state !== 'RECOVERY_REQUIRED';
+                    && data.state !== 'RECOVERY_REQUIRED'
+                    && data.state !== 'recovery_required';
                 if (finished && !_prevAllDone) {
                     loadBelief('任务结束');
                     loadReceptionReport();
@@ -500,7 +539,7 @@
                 const tid = d.task_id || '';
                 if (_autoSeenTaskId === null) {
                     _autoSeenTaskId = tid;
-                    if (d.state === 'RECOVERY_REQUIRED' || (d.blocks_new_motion && d.active && !d.all_done)) {
+                    if (d.state === 'RECOVERY_REQUIRED' || d.state === 'recovery_required' || (d.blocks_new_motion && d.active && !d.all_done)) {
                         startTaskPolling();
                     }
                     return;

@@ -863,6 +863,11 @@ class GlobalAgent:
         self.logger.info(f"Publishing global task: {task}")
 
         if resume:
+            from kernel.flags import kernel_enabled
+            if kernel_enabled(self.config) and self._is_reception_task(task):
+                return self._publish_kernel_reception(
+                    task, task_id, force_new_task=False, resume=True,
+                )
             if not self._is_reception_task(task):
                 return self._reject_unresolved_task("断点继续只支持开始接待")
             if self._reception_running:
@@ -883,6 +888,11 @@ class GlobalAgent:
         if self._dispatch_running and not force_new_task:
             return self._reject_unresolved_task(
                 "已有通用任务正在调度，禁止覆盖未完成动作"
+            )
+        from kernel.flags import kernel_enabled
+        if kernel_enabled(self.config) and self._is_reception_task(task):
+            return self._publish_kernel_reception(
+                task, task_id, force_new_task=force_new_task,
             )
         if not force_new_task:
             persisted = self._unresolved_persisted_reason()
@@ -1357,8 +1367,94 @@ class GlobalAgent:
         except TypeError:
             return str(value)[:2000]
 
+    def _kernel_status_view(self):
+        """开关关闭时返回 None，调用方继续走旧查询。"""
+        from kernel.flags import kernel_enabled
+        if not kernel_enabled(self.config):
+            return None
+        from kernel.switch import peek_status, status_view
+
+        runtime = getattr(self, "_kernel_runtime", None)
+        task_type = getattr(self, "current_task_type", None)
+        if task_type not in (None, "reception") and runtime is None:
+            return None
+        if task_type == "reception" or runtime is not None:
+            return status_view(self.config, runtime)
+        return peek_status(self.config)
+
+    def _drive_kernel(self):
+        try:
+            self._kernel_runtime.drive()
+        except Exception as exc:
+            self.logger.error(f"[kernel] 接待执行异常: {exc}")
+        finally:
+            self._reception_running = False
+
+    def _publish_kernel_reception(self, task, task_id, *, force_new_task=False, resume=False):
+        from kernel.runtime import Rejected
+        from kernel.switch import open_runtime, resume_runtime
+
+        desc = task if isinstance(task, str) else (task[0] if task else "开始接待")
+        port = getattr(self, "_kernel_port", None)
+        try:
+            if resume:
+                runtime = resume_runtime(self.config, port=port)
+            else:
+                runtime = open_runtime(
+                    self.config,
+                    task_id,
+                    task_desc=desc,
+                    port=port,
+                    force_new=force_new_task,
+                )
+        except Rejected as exc:
+            return self._reject_unresolved_task(str(exc))
+        self._kernel_runtime = runtime
+        self.current_task_queue = TaskQueue([])
+        self.current_task_id = runtime.record.get("task_id") or task_id
+        self.current_task_desc = desc
+        self.current_reasoning = (
+            "识别到接待任务 → 交给内核 Runtime。"
+            "旧接待 Runner 不持有这一条任务。"
+        )
+        self.current_task_type = "reception"
+        self._reception_state = None
+        self._reception_running = True
+        self._pending_failure = None
+        self._pending_success = None
+        self.logger.info(f"[kernel] 接待走 Runtime: {self.current_task_desc}")
+        threading.Thread(
+            target=self._drive_kernel, daemon=True, name="kernel_reception",
+        ).start()
+        return {"reasoning_explanation": self.current_reasoning, "subtask_list": []}
+
+    def _kernel_control(self, action: str) -> Dict:
+        from kernel.switch import control_task
+
+        payload, runtime = control_task(
+            self.config,
+            action,
+            port=getattr(self, "_kernel_port", None),
+            runtime=getattr(self, "_kernel_runtime", None),
+        )
+        if runtime is not None:
+            self._kernel_runtime = runtime
+        return payload
+
+    def kernel_pause(self) -> Dict:
+        return self._kernel_control("pause")
+
+    def kernel_continue(self) -> Dict:
+        return self._kernel_control("continue")
+
+    def kernel_cancel(self) -> Dict:
+        return self._kernel_control("cancel")
+
     def get_task_status(self) -> Dict:
         """返回当前任务的执行状态，供前端查询。"""
+        kernel_view = self._kernel_status_view()
+        if kernel_view is not None:
+            return kernel_view
         snapshot = self._load_reception_snapshot()
         if not self.current_task_queue:
             if snapshot and (

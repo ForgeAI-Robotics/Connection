@@ -285,6 +285,36 @@ def task_status():
         return jsonify({"active": False, "error": str(e)}), 500
 
 
+def _proxy_master_post(path):
+    try:
+        resp = requests.post(
+            f"{MASTER_URL}{path}",
+            json=request.get_json(silent=True) or {},
+            timeout=30,
+            headers=_master_forward_headers(),
+        )
+        return jsonify(resp.json()), resp.status_code
+    except requests.exceptions.ConnectionError:
+        return jsonify({"accepted": False, "error": "Master 服务未启动"}), 503
+    except Exception as exc:
+        return jsonify({"accepted": False, "error": str(exc)}), 500
+
+
+@app.route("/api/task_pause", methods=["POST"])
+def task_pause():
+    return _proxy_master_post("/api/task_pause")
+
+
+@app.route("/api/task_continue", methods=["POST"])
+def task_continue():
+    return _proxy_master_post("/api/task_continue")
+
+
+@app.route("/api/task_cancel", methods=["POST"])
+def task_cancel():
+    return _proxy_master_post("/api/task_cancel")
+
+
 @app.route("/api/task_intent", methods=["POST"])
 def task_intent():
     """入口粗分流：闲聊拦下，公司任务才继续预检/发布。"""

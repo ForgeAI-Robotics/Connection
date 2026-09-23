@@ -1,0 +1,123 @@
+"""Open a kernel reception task. The default switch does not call this."""
+
+from __future__ import annotations
+
+import os
+
+from kernel.contracts import CONTRACT_VERSION
+from kernel.runtime import TaskRuntime, status_from_record
+from kernel.store import KernelStore, load_existing
+
+
+def runtime_dir(config) -> str:
+    real = (config or {}).get("reception_real") or {}
+    configured = real.get("kernel_runtime_dir")
+    if configured:
+        return str(configured)
+    return os.path.join(os.path.dirname(__file__), "..", "sop", "runtime", "kernel")
+
+
+def _port(config, port):
+    if port is not None:
+        return port
+    from kernel.adapters import BodyAdapter
+    return BodyAdapter.from_config(config)
+
+
+def open_runtime(config, task_id, *, task_desc="", port=None, force_new=False):
+    store = KernelStore(runtime_dir(config))
+    runtime = TaskRuntime(store, _port(config, port), config=config)
+    runtime.open_task(task_id, task_desc=task_desc, force_new=force_new)
+    return runtime
+
+
+def resume_runtime(config, *, port=None):
+    from kernel.contracts import Rejected
+
+    store = KernelStore(runtime_dir(config))
+    runtime = TaskRuntime(store, _port(config, port), config=config)
+    if runtime.state is None:
+        raise Rejected("没有可续跑的内核任务")
+    if runtime.state == "recovery_required":
+        runtime.resume()
+    return runtime
+
+
+def attach_runtime(config, *, port=None):
+    from kernel.contracts import Rejected
+
+    store = KernelStore(runtime_dir(config))
+    runtime = TaskRuntime(store, _port(config, port), config=config)
+    if runtime.state is None:
+        raise Rejected("没有可操作的内核任务")
+    return runtime
+
+
+def control_task(config, action, *, port=None, runtime=None):
+    """Pause, continue, or cancel the open kernel task. A closed switch does not touch a ledger."""
+    from kernel.contracts import IllegalTransition, Rejected
+    from kernel.flags import kernel_enabled
+
+    if not kernel_enabled(config):
+        return {"accepted": False, "error": "内核开关关闭", "state": None}, None
+    try:
+        if runtime is None:
+            runtime = attach_runtime(config, port=port)
+        elif port is not None and runtime.port is None:
+            runtime.port = port
+        if action == "pause":
+            runtime.request_pause()
+            paused = runtime.state == "paused"
+            return {
+                "accepted": True,
+                "state": runtime.state,
+                "paused": paused,
+                "error": None if paused else "暂停没有停止回执",
+            }, runtime
+        if action == "continue":
+            if runtime.state == "paused":
+                runtime.resume_paused()
+            elif runtime.state == "waiting_human":
+                runtime.human_continue()
+            else:
+                raise IllegalTransition("当前状态不能继续")
+            return {"accepted": True, "state": runtime.state, "error": None}, runtime
+        if action == "cancel":
+            result = runtime.request_cancel()
+            if runtime.state == "cancelling":
+                runtime.settle_cancel()
+            return {
+                "accepted": bool(result.get("accepted")) or runtime.state == "cancelled",
+                "completed": runtime.state == "cancelled",
+                "state": runtime.state,
+                "error": None if result.get("accepted") else (result.get("error") or "取消未被受理"),
+            }, runtime
+        raise Rejected(f"未知控制动作: {action}")
+    except (Rejected, IllegalTransition) as exc:
+        state = None if runtime is None else runtime.state
+        return {"accepted": False, "error": str(exc), "state": state}, runtime
+
+
+def peek_status(config):
+    record = load_existing(runtime_dir(config))
+    if not record:
+        return None
+    return status_from_record(record)
+
+
+def status_view(config, runtime):
+    if runtime is not None:
+        return runtime.public_status()
+    loaded = peek_status(config)
+    if loaded is not None:
+        return loaded
+    return {
+        "active": False,
+        "terminal": True,
+        "state": None,
+        "blocks_new_motion": False,
+        "can_resume": False,
+        "source": "kernel",
+        "subtask_list": [],
+        "contract_version": CONTRACT_VERSION,
+    }

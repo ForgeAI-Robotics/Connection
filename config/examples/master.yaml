@@ -51,6 +51,9 @@ reception_real:
   vla_base_url: ${VLA_BASE_URL}
   vla_result_policy: hand_state_only
   runtime_dir: ./sop/runtime/reception
+  # 新内核默认关闭。关闭时「开始接待」仍走 reception_real.py。
+  kernel_enabled: false
+  kernel_runtime_dir: ./sop/runtime/kernel
   request_timeout_sec: 10
   dream_poll_interval_sec: 0.5
   vla_poll_interval_sec: 1.0

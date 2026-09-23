@@ -104,6 +104,24 @@ def task_status():
     return jsonify(master_agent.get_task_status()), 200
 
 
+@app.route("/api/task_pause", methods=["POST"])
+def task_pause():
+    """暂停当前内核接待。开关关闭时不写旧账本。"""
+    return jsonify(master_agent.kernel_pause()), 200
+
+
+@app.route("/api/task_continue", methods=["POST"])
+def task_continue():
+    """从暂停或人工等待继续。开关关闭时不写旧账本。"""
+    return jsonify(master_agent.kernel_continue()), 200
+
+
+@app.route("/api/task_cancel", methods=["POST"])
+def task_cancel():
+    """请求取消当前内核接待。受理不等于已经取消完成。"""
+    return jsonify(master_agent.kernel_cancel()), 200
+
+
 @app.route("/api/task_preflight", methods=["POST"])
 def task_preflight():
     """提交前只读预检；不创建任务、不发送 DREAM/VLA 命令。"""
