@@ -1,0 +1,819 @@
+{
+  "captured_at": "2026-09-24",
+  "commit": "f5319d2ff6a9e7357a70eb8dcce9e22c637edda6",
+  "routes": [
+    {
+      "file": "master/run.py",
+      "function": "execution_profile_status",
+      "path": "/api/execution_profile",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "system_status",
+      "path": "/system_status",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "robot_status",
+      "path": "/robot_status",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "task_status",
+      "path": "/api/task_status",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "task_pause",
+      "path": "/api/task_pause",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "task_continue",
+      "path": "/api/task_continue",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "task_cancel",
+      "path": "/api/task_cancel",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "task_preflight",
+      "path": "/api/task_preflight",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "exploration_rate",
+      "path": "/api/exploration_rate",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "success_pending",
+      "path": "/api/success_pending",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "save_success_experience",
+      "path": "/api/save_success_experience",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "failure_pending",
+      "path": "/api/failure_pending",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "save_failure_experience",
+      "path": "/api/save_failure_experience",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "save_experience",
+      "path": "/api/save_experience",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "experiences",
+      "path": "/api/experiences",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "publish_task",
+      "path": "/publish_task",
+      "methods": [
+        "POST",
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "reception_demo",
+      "path": "/api/reception/run",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "master/run.py",
+      "function": "reception_report",
+      "path": "/api/reception/report",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "execution_profile_status",
+      "path": "/api/execution_profile",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "index",
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "target": "web",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "publish_task",
+      "path": "/publish_task",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "validate_config",
+      "path": "/api/validate-config",
+      "methods": [
+        "POST"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "task_status",
+      "path": "/api/task_status",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "task_pause",
+      "path": "/api/task_pause",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "task_continue",
+      "path": "/api/task_continue",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "task_cancel",
+      "path": "/api/task_cancel",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "task_intent",
+      "path": "/api/task_intent",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "task_preflight",
+      "path": "/api/task_preflight",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "failure_pending",
+      "path": "/api/failure_pending",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "save_failure_experience",
+      "path": "/api/save_failure_experience",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "success_pending",
+      "path": "/api/success_pending",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "save_success_experience",
+      "path": "/api/save_success_experience",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "save_experience",
+      "path": "/api/save_experience",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "experiences",
+      "path": "/api/experiences",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "auto_tools",
+      "path": "/api/auto_tools",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "scene_state",
+      "path": "/api/scene_state",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "belief",
+      "path": "/api/belief",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_sop",
+      "path": "/api/sop",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "teach_page",
+      "path": "/teach",
+      "methods": [
+        "GET"
+      ],
+      "target": "web",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_demo_parse",
+      "path": "/api/demo/parse",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_demo_status",
+      "path": "/api/demo/status",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_demo_result",
+      "path": "/api/demo/result",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_demo_save",
+      "path": "/api/demo/save",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.learning",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "reception_page",
+      "path": "/reception",
+      "methods": [
+        "GET"
+      ],
+      "target": "web",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_reception_run",
+      "path": "/api/reception/run",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_reception_report",
+      "path": "/api/reception/report",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "api_reception_sop",
+      "path": "/api/reception/sop",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "update_scene",
+      "path": "/api/update_scene",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "get_tool_config",
+      "path": "/api/get_tool_config",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "robot_status",
+      "path": "/api/robot_status",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "record_start",
+      "path": "/api/record/start",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "record_stop",
+      "path": "/api/record/stop",
+      "methods": [
+        "POST"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "record_status",
+      "path": "/api/record/status",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "record_download",
+      "path": "/api/record/download/<filename>",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "quad_latest",
+      "path": "/api/quad_latest",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "timeline_manifest",
+      "path": "/api/timeline",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "deploy/run.py",
+      "function": "timeline_frame",
+      "path": "/task_timeline/<path:filename>",
+      "methods": [
+        "GET"
+      ],
+      "target": "brain.api",
+      "migration": "preserve external route and response; forward to owner"
+    },
+    {
+      "file": "web/app.py",
+      "function": "index",
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "web/app.py",
+      "function": "api_execution",
+      "path": "/api/execution",
+      "methods": [
+        "GET"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "web/app.py",
+      "function": "api_execution_preview",
+      "path": "/api/execution/preview",
+      "methods": [
+        "POST"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "web/app.py",
+      "function": "api_execution_apply",
+      "path": "/api/execution/apply",
+      "methods": [
+        "POST"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "web/app.py",
+      "function": "api_status",
+      "path": "/api/status",
+      "methods": [
+        "GET"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "web/app.py",
+      "function": "api_logs",
+      "path": "/api/services/<service_id>/logs",
+      "methods": [
+        "GET"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response"
+    },
+    {
+      "file": "web/app.py",
+      "function": "api_action",
+      "path": "/api/services/<service_id>/<action>",
+      "methods": [
+        "POST"
+      ],
+      "target": "ops",
+      "migration": "preserve external route and response"
+    }
+  ],
+  "ports": {
+    "brain": 5000,
+    "web": 8888,
+    "ops": 5678
+  },
+  "preserved_data_paths": [
+    "master/sop/runtime/kernel",
+    "master/sop/runtime/reception",
+    "master/memory",
+    "master/sop",
+    "log",
+    ".runtime"
+  ],
+  "constraints": [
+    "No live configuration values or credentials in fixtures",
+    "Runtime is sole task state authority",
+    "Wire contract fq/reception-lan/v1 unchanged",
+    "No data migration during source relocation",
+    "Real motion permission remains false"
+  ],
+  "source_dependencies": {
+    "master/kernel/brain.py": [
+      "__future__",
+      "agents.dream_route_policy",
+      "common.execution_profile",
+      "copy",
+      "dataclasses",
+      "kernel.adapters",
+      "kernel.contracts",
+      "kernel.packages.desk",
+      "kernel.packages.generic",
+      "kernel.packages.look",
+      "kernel.packages.reception",
+      "kernel.packages.reception_mock",
+      "kernel.packages.registry",
+      "kernel.ports",
+      "kernel.runtime",
+      "kernel.store",
+      "kernel.switch",
+      "sop.episode",
+      "sop.reception_store",
+      "sop.skill_executor",
+      "threading",
+      "uuid"
+    ],
+    "master/kernel/runtime.py": [
+      "__future__",
+      "copy",
+      "datetime",
+      "kernel.contracts",
+      "kernel.memory",
+      "kernel.packages.generic",
+      "kernel.packages.reception",
+      "kernel.packages.registry",
+      "kernel.releases",
+      "kernel.runner",
+      "kernel.skills",
+      "kernel.verifier",
+      "threading"
+    ],
+    "master/agents/agent.py": [
+      "agent.collaboration",
+      "agents.dream_route_policy",
+      "agents.planner",
+      "agents.prompts",
+      "asyncio",
+      "common.brain_journal",
+      "datetime",
+      "dotenv",
+      "episode",
+      "json",
+      "kernel.brain",
+      "kernel.contracts",
+      "kernel.flags",
+      "kernel.packages.desk",
+      "kernel.packages.look",
+      "kernel.packages.reception",
+      "kernel.store",
+      "kernel.switch",
+      "logging",
+      "os",
+      "pathlib",
+      "re",
+      "reflect",
+      "robot_api.client",
+      "robot_api.config",
+      "sop.classify",
+      "sop.episode",
+      "sop.reception_real",
+      "sop.reception_skill",
+      "sop.reception_store",
+      "sop.reflect",
+      "sop.run_loop",
+      "sys",
+      "threading",
+      "typing",
+      "uuid",
+      "yaml"
+    ],
+    "master/agents/planner.py": [
+      "agent.collaboration",
+      "agents.prompts",
+      "datetime",
+      "json",
+      "openai",
+      "os",
+      "re",
+      "robot_api.client",
+      "robot_api.config",
+      "serve_dream.reviewed_targets",
+      "typing",
+      "yaml"
+    ],
+    "deploy/run.py": [
+      "ast",
+      "common.execution_profile",
+      "common.log_setup",
+      "datetime",
+      "flask",
+      "io",
+      "json",
+      "learn_from_demo",
+      "os",
+      "pathlib",
+      "redis",
+      "requests",
+      "robot_api.config",
+      "robot_api.intent",
+      "sys",
+      "threading",
+      "time",
+      "uuid",
+      "video_to_actions",
+      "yaml"
+    ],
+    "web/execution.py": [
+      "__future__",
+      "common.execution_profile",
+      "fcntl",
+      "json",
+      "os",
+      "pathlib",
+      "tempfile",
+      "time",
+      "urllib.request",
+      "uuid",
+      "web.app",
+      "web.services",
+      "yaml"
+    ],
+    "integrations/feishu/brain_client.py": [
+      "__future__",
+      "asyncio",
+      "dataclasses",
+      "requests",
+      "typing"
+    ]
+  },
+  "startup": {
+    "brain": "python master/run.py",
+    "web": "python deploy/run.py",
+    "ops": "python -m web",
+    "feishu": "python -m integrations.feishu"
+  },
+  "configuration_sources": [
+    "master/config.yaml",
+    "config/execution.yaml",
+    ".runtime/execution.json",
+    "robot_api/config.yaml",
+    "slaver/config.yaml",
+    ".env (values excluded)"
+  ]
+}

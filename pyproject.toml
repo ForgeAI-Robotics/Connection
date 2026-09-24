@@ -5,7 +5,20 @@ description = "LLM-driven embodied task planning system with MuJoCo simulation a
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
 dependencies = [
-    # --- Core (与 GS-Playground 一致) ---
+    "flask==3.1.1",
+    "flask-cors==6.0.1",
+    "Flask-SocketIO==5.5.1",
+    "requests>=2.32,<3",
+    "openai==2.15.0",
+    "python-dotenv>=1.1,<2",
+    "PyYAML==6.0.2",
+    "psutil==7.0.0",
+]
+
+[project.optional-dependencies]
+legacy = ["redis==5.2.1", "mcp==1.10.1"]
+feishu = ["lark-channel-sdk==1.0.0"]
+simulation = [
     "motrixsim_core==0.7.1.dev97295",
     "torch==2.7.0+cu128",
     "gaussian_renderer==0.2.0",
@@ -24,39 +37,21 @@ dependencies = [
     "ninja==1.13.0",
     "rich==15.0.0",
     "pyrender>=0.1.45",
-    # --- Web/API ---
-    "flask==3.1.1",
-    "flask-cors==6.0.1",
-    "Flask-SocketIO==5.5.1",
     "mcp==1.10.1",
     "lark-channel-sdk==1.0.0",
-    "requests>=2.32,<3",
-    # --- AI/LLM ---
-    "openai==2.15.0",
-    "python-dotenv>=1.1,<2",
-    # --- ML/Embeddings ---
     "sentence-transformers==2.5.1",
     "scikit-learn==1.5.2",
     "mujoco>=3.2",
-    # --- Data/Config ---
-    "PyYAML==6.0.2",
     "redis==5.2.1",
-    # --- Terminal/UI ---
-    "psutil==7.0.0",
-    # --- Image ---
     "pillow==11.2.1",
-    # --- Core ---
     "pyserial",
-    # --- Motor drivers ---
     "deepdiff",
     "tqdm",
-    # --- ACT training ---
     "einops>=0.8.0",
     "h5py>=3.10.0",
     "opencv-python",
     "socksio>=1.0.0",
     "lerobot>=0.4.4,<0.5",
-    # Pin pydantic stable (alpha breaks mcp import)
     "pydantic>=2.5,<2.14",
 ]
 
@@ -80,8 +75,27 @@ motrixsim_core = { index = "motphys-pypi" }
 torch = { index = "pytorch-cu128" }
 
 [tool.uv]
-package = false
+package = true
 prerelease = "allow"
 environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src", "."]
+include = ["connection*", "common*", "robot_api*", "agent*"]
+namespaces = false
+
+[tool.setuptools.package-dir]
+connection = "src/connection"
+common = "common"
+robot_api = "robot_api"
+agent = "agent"
+
+[tool.setuptools.package-data]
+"connection.entries.web" = ["templates/*.html"]
+"connection.ops" = ["templates/*.html", "static/*", "ssh_askpass.sh"]

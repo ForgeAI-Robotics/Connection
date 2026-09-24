@@ -211,15 +211,18 @@ class ExecutionPanelTests(unittest.TestCase):
         from unittest.mock import Mock
         job = Mock()
         job.done.return_value = False
-        with patch('web.app._SWITCH_JOB', job), patch('web.execution.Switcher') as cls:
+        with patch.dict(app.extensions['switch'], {'job': job}), patch('web.execution.Switcher') as cls:
             cls.return_value.preview.return_value = {'routes': {}}
             response = app.test_client().post('/api/execution/apply', json={'mode': 'real'})
             self.assertEqual(response.status_code, 409)
             cls.return_value.apply.assert_not_called()
 
     def test_bad_configuration_does_not_enqueue_apply(self):
-        from web.app import app
-        with patch('web.execution.Switcher') as cls, patch('web.app._SWITCH_POOL') as pool:
+        from connection.ops.app import create_app
+        from unittest.mock import Mock
+        pool = Mock()
+        app = create_app(switch_pool=pool)
+        with patch('web.execution.Switcher') as cls:
             cls.return_value.preview.side_effect = ValueError('bad config')
             response = app.test_client().post('/api/execution/apply', json={})
             self.assertEqual(response.status_code, 400)
@@ -228,16 +231,13 @@ class ExecutionPanelTests(unittest.TestCase):
 
 class ObservationPageTests(unittest.TestCase):
     def test_unavailable_observation_returns_explicit_error_without_request(self):
-        import ast
-        import requests
-        from flask import Flask, jsonify
-        app = Flask(__name__)
-        source = (Path(__file__).resolve().parents[2] / 'deploy/run.py').read_text()
-        functions = [n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == 'robot_status']
-        def unavailable(): raise ValueError('当前观察模块不可用')
-        namespace = {'app': app, 'jsonify': jsonify, 'requests': requests, '_vision_url': unavailable}
-        exec(compile(ast.Module(body=functions, type_ignores=[]), 'deploy/run.py', 'exec'), namespace)
-        with patch.object(requests, 'get') as get:
+        from unittest.mock import Mock
+        from connection.brain.api.app import create_app
+        application = Mock()
+        application.service.config = {}
+        app = create_app(application)
+        with patch('connection.brain.api.views.observation_url', side_effect=ValueError('当前观察模块不可用')), \
+             patch('connection.brain.api.views.requests.request') as get:
             response = app.test_client().get('/api/robot_status')
             self.assertEqual(response.status_code, 503)
             self.assertIn('不可用', response.json['error'])

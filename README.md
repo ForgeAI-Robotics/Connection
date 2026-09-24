@@ -1,5 +1,32 @@
 # FQPlanner 大脑项目
 
+2026-09-24 工程整理：正常启动使用安装包 `connection`。网页和飞书分别直连大脑，Planner、Runtime 与学习模块已集中；旧脚本只转发，旧调度隔离在 `connection.compat`。2026-09-24 已按授权重启大脑、网页、飞书和运维面板；部署记录见[规划第 15.16 节](docs/规划说明_具身大脑重构.md#1516-工程迁移记录2026-09-24)。这次工程整理不代表原四阶段全部完成，真机动作许可仍关闭。
+
+```text
+网页 :8888 ─┐
+            ├→ Brain API :5000 → Planner / 业务包 → Runtime → Runner → 执行适配器
+飞书 ──────┘                                      ↑ Verifier ← 执行证据
+                                                   └→ 任务账本 → learning（异步反思、评测、发布）
+Ops :5678 → 服务管理、环境切换、健康和日志
+```
+
+安装和启动（Python 3.10；基础安装不包含 GPU 栈）：
+
+```bash
+uv pip install --python .venv/bin/python -e .
+.venv/bin/python -m connection.brain
+.venv/bin/python -m connection.entries.web
+.venv/bin/python -m connection.ops
+# 飞书入口按需安装与启动
+uv pip install --python .venv/bin/python -e '.[feishu]'
+.venv/bin/python -m connection.entries.feishu
+# 离线回归：包含本机假 HTTP 服务，不连接真机
+.venv/bin/python scripts/run_tests.py
+```
+
+以上服务分别运行；生产可由既有运维面板启动。异地安装大脑时设置 `CONNECTION_WORKSPACE` 指向配置和数据根目录；网页只需要 `MASTER_URL`，飞书只需要自身凭据、数据库目录和 `LARK_BRAIN_URL`，不挂载大脑源码或账本。需要 Slaver 时加装 `.[legacy]` 并启动 Redis；GPU 仿真继续使用原 `.venv_3dgs`，不为入口安装整套仿真依赖。
+
+
 面向要在本机把大脑跑起来、从网页或飞书发任务、看仿真画面的人。下文命令默认在项目根目录执行，大脑主机地址为 `192.168.5.35`。
 
 真机接待逐步启动看 [联调说明：三端联调启动](docs/联调说明_三端联调启动.md)。VLA 口径看 [接口说明_操控VLA](docs/接口说明_操控VLA.md)。全部资料见 [文档目录](docs/README.md)。
@@ -27,7 +54,7 @@ flowchart TD
 
 接待固定顺序：导航到茶水间（table2）→ 抓瓶装可乐 → 过门 → 导航回工位（table1）→ 放下。VLA 当前是 `hand_state_only`：终态 `COMPLETED_HAND_STATE_ONLY` 只说明左手开合加至少 3 帧证据，**不等于**图像证实可乐在手上或已放到桌面。
 
-飞书和 8888 网页共用 `robot_api.intent`，只分两类：天气/百科等闲聊不 `publish_task`；「开始接待」「桌上有什么」等交给大脑。认不出、又可能动手的句子按任务处理，避免误聊把真动作吃掉。
+飞书和 8888 网页共用 `connection.contracts.intent`，只分两类：天气/百科等闲聊不 `publish_task`；「开始接待」「桌上有什么」等交给大脑。认不出、又可能动手的句子按任务处理，避免误聊把真动作吃掉。
 
 通用、看图、接待这三类顶层任务，仿真和真机跑完都会做事后复盘。真机接待仍是固定 DREAM → VLA 顺序，复盘不改规划、不重放动作。DeepSeek 根据执行账本写候选经验，调不通就降模板；默认只落到 `master/memory/reflections/`（git 忽略），不改 SOP。只有 mock「开始接待」还兼容原来的 `write_sop`。飞书任务卡会多一行「复盘：」。
 
@@ -39,8 +66,8 @@ flowchart TD
 
 建议顺序：
 
-1. **Redis** `:6379` → **Master** `:5000`；
-2. **Deploy** `:8888`；要发飞书再启动**飞书桥接**，通用任务再启动 **Slaver**；
+1. **Master** `:5000`；Slaver 执行路径需要时先启动 **Redis** `:6379`；
+2. **Deploy** `:8888`；要发飞书再启动**飞书桥接**，MuJoCo / 3DGS 通用执行再启动 **Slaver**（Desk 直连不需要）；
 3. 要看图：先启动 **3DGS** `:5002`，起不来再启动 **MuJoCo** `:5001`；
 4. 真机接待另行启动 DREAM / VLA；面板真机层两张卡片同时绿灯后才发任务。
 
@@ -100,7 +127,7 @@ export https_proxy=http://127.0.0.1:7897
 
 ## 4. 网页和飞书怎么发任务
 
-两个入口最终都进入 Deploy `:8888` → Master `:5000`。
+网页经 Deploy `:8888` 直连 Brain `:5000`；飞书直接连接 Brain `:5000`，不依赖 Deploy。
 
 - **网页**：在任务框提交。闲聊不会发送给大脑，运动类任务先确认；“开始接待”按钮视为已确认；
 - **飞书**：私聊直接发，群聊使用 `@机器人 /task <内容>`；`/help`、`/status` 是桥接命令；
@@ -113,22 +140,22 @@ export https_proxy=http://127.0.0.1:7897
 ```text
 LARK_APP_ID=<应用 ID>
 LARK_APP_SECRET=<应用密钥>
-LARK_BRAIN_URL=http://127.0.0.1:8888
+LARK_BRAIN_URL=http://127.0.0.1:5000
 ```
 
 启动飞书桥接：
 
 ```bash
-.venv/bin/python integrations/feishu/run.py
+.venv/bin/python -m connection.entries.feishu
 ```
 
 同一应用只能运行一个桥接进程，本机需要能访问 `open.feishu.cn`。
 
-Master 在接待任务进入 Pipeline 前执行只读 `task_preflight`。DREAM `:8001` 或 VLA `:8091` 未就绪时返回 `status=rejected`，不会开始真实动作。
+`task_preflight` 不代表真机许可。Runtime 在步骤前检查权限与证据；当前 `kernel_enabled=false` 禁止真机派发，交接能力仍须另行核实。
 
 ## 5. 发任务前 30 秒
 
-1. 面板 Redis / Master 为绿色；
+1. 面板 Master 为绿色；使用 Slaver 时另检查 Redis / Slaver；
 2. 要看图：3DGS 或 MuJoCo 为绿色，四宫格不是持续一两 KB 的黑图；
 3. 要用飞书：飞书卡片为绿色，`LARK_TASK_MODE=active`；
 4. 真机接待：DREAM 与 VLA 两张卡片均为绿色；

@@ -8,7 +8,8 @@ from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from connection.paths import workspace_root
+ROOT = workspace_root()
 DRAFT_PATH = ROOT / 'config' / 'execution.yaml'
 STATE_PATH = ROOT / '.runtime' / 'execution.json'
 LOCK_PATH = ROOT / '.runtime' / 'execution.lock'

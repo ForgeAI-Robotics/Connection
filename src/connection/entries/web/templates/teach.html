@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>人类示范学习 · 上传视频更新 SOP</title>
+<title>人类示范学习 · 上传视频提炼候选</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #0f172a; color: #e2e8f0;
@@ -38,7 +38,7 @@
 <body>
   <div class="wrap">
     <h1>🎥 人类示范学习</h1>
-    <div class="sub">上传一段人类示范视频 → 自动拆解动作 + 提炼记忆/规则 → 确认写进 SOP。<b>换任务只改下面的"任务描述",不用碰代码。</b></div>
+    <div class="sub">上传一段人类示范视频 → 自动拆解动作 + 提炼记忆/规则 → 确认保存为候选，评测发布后生效。<b>换任务只改下面的"任务描述",不用碰代码。</b></div>
 
     <div class="card">
       <label>任务描述(传给 VLM 和提炼器,换任务改这里)</label>
@@ -59,7 +59,7 @@
         <h3>② 分层提炼(learn_from_demo · 只提视频真支持的,反幻觉)</h3>
         <div id="task-specific"></div>
         <div id="global"></div>
-        <button class="btn btn-save" id="save" onclick="save()">确认落盘(写进 Task Specific 记忆 + Global/SOP)</button>
+        <button class="btn btn-save" id="save" onclick="save()">保存候选（未经评测）</button>
         <div id="save-msg" style="margin-top:10px;font-size:13px"></div>
       </div>
     </div>
@@ -104,9 +104,11 @@ function poll() {
   }, 2000);
 }
 
+let displayedJobId = null;
 async function finish() {
   const d = await (await fetch('/api/demo/result')).json();
   if (!d.success) { $('status').innerHTML = '<span class="err">拿不到结果</span>'; return; }
+  displayedJobId = d.job_id;
   $('summary').innerHTML = `<b>任务:</b> ${esc(d.task)}　<b>摘要:</b> ${esc(d.task_summary)}`;
   $('segments').innerHTML = (d.segments||[]).map(s =>
     `<div class="seg"><span class="t">${esc(s.start_time)}~${esc(s.end_time)}s</span>`
@@ -124,11 +126,11 @@ async function finish() {
 async function save() {
   $('save').disabled = true; $('save-msg').innerHTML = '落盘中…';
   try {
-    const d = await (await fetch('/api/demo/save', {method:'POST'})).json();
+    const d = await (await fetch('/api/demo/save', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job_id:displayedJobId})})).json();
     if (!d.success) throw new Error(d.error || '落盘失败');
-    $('save-msg').innerHTML = `<span style="color:#4ade80">✅ 已落盘</span> `
-      + `<span class="muted">Task Specific ${d.task_specific.length} 条 → reception_memory；`
-      + `Global ${d.global_rules.length} 条 → global_memory + SOP</span>`;
+    $('save-msg').innerHTML = `<span style="color:#4ade80">✅ 已保存候选</span> `
+      + `<span class="muted">Task Specific ${d.task_specific.length} 条；`
+      + `Global ${d.global_rules.length} 条。未经评测，尚未发布</span>`;
   } catch (e) {
     $('save-msg').innerHTML = '<span class="err">落盘出错: ' + esc(e.message) + '</span>';
     $('save').disabled = false;

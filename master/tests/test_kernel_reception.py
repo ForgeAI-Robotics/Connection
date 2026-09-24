@@ -761,12 +761,12 @@ class SwitchTests(unittest.TestCase):
             self.assertIs(loaded["reception_real"]["kernel_enabled"], False)
 
     def test_control_routes_are_wired(self):
-        with open(os.path.join(ROOT, "master", "run.py"), encoding="utf-8") as handle:
+        with open(os.path.join(ROOT, "src/connection/brain/api/app.py"), encoding="utf-8") as handle:
             run_text = handle.read()
-        with open(os.path.join(ROOT, "deploy", "run.py"), encoding="utf-8") as handle:
+        with open(os.path.join(ROOT, "src/connection/entries/web/app.py"), encoding="utf-8") as handle:
             deploy_text = handle.read()
         with open(
-            os.path.join(ROOT, "deploy", "templates", "index.html"),
+            os.path.join(ROOT, "src/connection/entries/web/templates/index.html"),
             encoding="utf-8",
         ) as handle:
             page = handle.read()

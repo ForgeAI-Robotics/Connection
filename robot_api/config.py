@@ -13,7 +13,8 @@ except Exception:  # pragma: no cover
     yaml = None
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from connection.paths import workspace_root
+PROJECT_ROOT = workspace_root()
 CONFIG_PATH = PROJECT_ROOT / "robot_api" / "config.yaml"
 DEFAULT_URL = "http://127.0.0.1:5001"
 DEFAULT_TIMEOUT = 120

@@ -5,8 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from web.execution import Switcher, read_yaml
+from connection.ops.execution import Switcher, read_yaml
 
 
 def main():

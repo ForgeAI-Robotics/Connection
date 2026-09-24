@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 SUITES = (
+    ("connection", ("-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v")),
     ("master", ("-m", "unittest", "discover", "-s", "master/tests", "-p", "test_*.py", "-v")),
     ("web", ("-m", "unittest", "discover", "-s", "web/tests", "-p", "test_*.py", "-v")),
     (

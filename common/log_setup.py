@@ -14,7 +14,8 @@ _ATTACHED = False
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    from connection.paths import workspace_root
+    return workspace_root()
 
 
 def log_root() -> Path:

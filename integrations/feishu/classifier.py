@@ -1,17 +1,4 @@
-"""Feishu import path. Shared classifier lives in robot_api.intent."""
-
-from robot_api.intent import (  # noqa: F401
-    CHAT_KEYWORDS,
-    MOTION_KEYWORDS,
-    READ_ONLY_KEYWORDS,
-    ROUTE_SYSTEM,
-    Classification,
-    Intent,
-    RiskLevel,
-    classify_entry,
-    classify_task,
-    needs_llm_route,
-    parse_route_intent,
-    refine_with_llm,
-    route_ambiguous_with_llm,
-)
+"""Compatibility import for the installed package."""
+import importlib as _importlib
+import sys as _sys
+_sys.modules[__name__] = _importlib.import_module('connection.entries.feishu.classifier')

@@ -10,7 +10,7 @@ Group=@GROUP@
 WorkingDirectory=@ROOT@
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=-@ROOT@/.env
-ExecStart=@PYTHON@ @ROOT@/web/app.py
+ExecStart=@PYTHON@ -m connection.ops
 Restart=always
 RestartSec=3
 # Panel only monitors. Restarting this unit must not kill tmux business processes.

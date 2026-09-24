@@ -349,12 +349,8 @@ class HttpRuntimeRoutingTests(unittest.TestCase):
         agent._is_reception_task.return_value = False
         agent.current_task_id = "original"
         agent.publish_global_task.return_value = {"source": "kernel"}
-        tree = ast.parse((ROOT / "master/run.py").read_text())
-        funcs = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "publish_task"]
-        namespace = {"app": app, "jsonify": jsonify, "request": request, "master_agent": agent,
-                     "Intent": Intent, "classify_task": classify_task, "_validated_task_id": lambda x: x,
-                     "_inbound": lambda: {}, "journal_emit": Mock(), "note_task_request": Mock()}
-        exec(compile(ast.Module(body=funcs, type_ignores=[]), "master/run.py", "exec"), namespace)
+        from connection.brain.api.app import create_app
+        app = create_app(Mock(), facade=agent)
         with app.test_client() as client:
             response = client.post("/publish_task", json={"task": "抓取 milk_1", "task_id": "original", "resume": True})
         self.assertTrue(response.json["accepted"])
@@ -367,10 +363,8 @@ class HttpRuntimeRoutingTests(unittest.TestCase):
         agent.config = {"brain": {"scheduler": "runtime"}}
         agent.publish_global_task.return_value = {"source": "kernel"}
         agent.get_task_status.return_value = {"state": "succeeded", "source": "kernel"}
-        tree = ast.parse((ROOT / "master/run.py").read_text())
-        funcs = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "reception_demo"]
-        namespace = {"app": app, "jsonify": jsonify, "request": request, "master_agent": agent}
-        exec(compile(ast.Module(body=funcs, type_ignores=[]), "master/run.py", "exec"), namespace)
+        from connection.brain.api.app import create_app
+        app = create_app(Mock(), facade=agent)
         with app.test_client() as client:
             response = client.post("/api/reception/run", json={"headcount": 3, "scenario": "place_miss"})
         self.assertTrue(response.json["success"])
@@ -379,18 +373,12 @@ class HttpRuntimeRoutingTests(unittest.TestCase):
         self.assertEqual(kwargs["options"]["headcount"], 3)
 
     def test_deploy_demo_proxies_master_without_starting_a_subprocess(self):
-        from flask import Flask, jsonify, request
-        app = Flask(__name__)
-        requests = Mock()
-        requests.exceptions.RequestException = RuntimeError
-        requests.post.return_value.json.return_value = {"success": True, "task_id": "same-task"}
-        requests.post.return_value.status_code = 200
-        tree = ast.parse((ROOT / "deploy/run.py").read_text())
-        funcs = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "api_reception_run"]
-        namespace = {"app": app, "jsonify": jsonify, "request": request, "requests": requests, "MASTER_URL": "http://master"}
-        exec(compile(ast.Module(body=funcs, type_ignores=[]), "deploy/run.py", "exec"), namespace)
-        with app.test_client() as client:
-            response = client.post("/api/reception/run", json={"headcount": 3})
-        self.assertEqual(response.json["task_id"], "same-task")
-        self.assertEqual(requests.post.call_args.args, ("http://master/api/reception/run",))
-        self.assertEqual(requests.post.call_args.kwargs["json"], {"headcount": 3})
+        from connection.entries.web.app import create_app
+        client = Mock()
+        client.request.return_value.content = b'{"success":true,"task_id":"same-task"}'
+        client.request.return_value.status_code = 200
+        client.request.return_value.headers = {'content-type': 'application/json'}
+        response = create_app(client=client).test_client().post('/api/reception/run', json={'headcount': 3})
+        self.assertEqual(response.json['task_id'], 'same-task')
+        self.assertEqual(client.request.call_args.args, ('POST', '/api/reception/run'))
+        self.assertEqual(client.request.call_args.kwargs['json'], {'headcount': 3})

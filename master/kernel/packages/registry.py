@@ -1,24 +1,5 @@
-"""Choose an existing business package. Unknown work stays on the old queue."""
-
-from __future__ import annotations
-
-from kernel.contracts import KernelError
-from kernel.packages import desk, look, reception
-
-
-def match_name(task) -> str:
-    if reception.matches(task):
-        return reception.NAME
-    if look.matches(task):
-        return look.NAME
-    if desk.matches(task):
-        return desk.NAME
-    return ""
-
-
-def phases_for(name: str):
-    if name == "reception":
-        return reception.PHASES
-    if name == "look":
-        return look.PHASES
-    raise KernelError(f"业务包没有可执行相位: {name}")
+"""Compatibility import; implementation lives in the installed connection package."""
+import importlib as _importlib
+import sys as _sys
+_module = _importlib.import_module('connection.brain.packages.registry')
+_sys.modules[__name__] = _module

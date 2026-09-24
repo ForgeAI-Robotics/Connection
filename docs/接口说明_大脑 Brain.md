@@ -5,31 +5,27 @@
 契约版本：`fq/reception-lan/v1`  
 适用范围：单罐接待固定 Pipeline、DREAM/VLA 调用、状态保存、断点继续与可选照片判真。
 
-> 本文是大脑端对外调用和编排行为的唯一维护文档。当前配置为真机接待启用、`hand_state_only`、抓取/放置照片判真关闭。文中的 VLM/LLM 图片判真章节只在对应开关启用时适用。
+> 2026-09-24 工程更新：大脑正常实现迁到 `src/connection/brain`，旧 `master/run.py` 只转发。网页与飞书各自直连 `:5000`。下文 DREAM/VLA 外部报文仍是 `fq/reception-lan/v1`；旧接待的 hand-only 与断点相位示例只适用于保留的历史实现，不是新 Runtime 的成功或续跑标准。新内核证据、状态与恢复以规划第 9–15 节为准。当前 `kernel_enabled=false`。
 
-## 1. 大脑侧职责
+## 1. 大脑侧职责与 API 归属
 
-大脑侧 Master 是唯一任务编排者，负责：
+Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务目标，Verifier 输出 PASS / FAIL / UNKNOWN。接待、通用任务、观察、整理及演示共用 Runtime；真机端口与仿真端口由运行配置选择。大脑不直接实现 L1/L0，不发 NX 裸 START/STOP。交接能力未确认时停止推进。
 
-- 接收网页“开始接待”；
-- 创建并维护一个 `task_id`；
-- 读取 DREAM 世界、关系图和状态；
-- 按顺序提交四段导航并轮询真实终态；
-- 显式提交 VLA 抓取、放置任务并轮询真实终态；
-- 当前按 `hand_state_only` 证据推进；照片开关启用时才从 VLA 获取动作后图片并执行 VLM/LLM 判真；
-- 根据当前证据策略满足对应硬条件后，更新业务状态并进入下一步；
-- 任一步失败立即停止，不调用后续动作；
-- 真机接待失败后，网页「断点继续」可从 `failed_phase` 接着发导航/VLA（见第 9.1 节）。
+| 接口 | 行为 |
+| --- | --- |
+| `POST /publish_task` | 保留 task、task_id、refresh、resume 与 accepted 等现有字段；一次只接受一个顶层任务，拒绝时不自动重发 |
+| `GET /api/task_status` | 读取内核账本，支持 paused、waiting_human、cancelling、recovery_required；不改写旧账本 |
+| `POST /api/task_pause`、`task_continue`、`task_cancel` | 送到 Runtime 所有者线程；取消受理不等于已经停止 |
+| `POST /api/task_preflight` | 只读提示，不等于下游已就绪或已取得真机许可 |
+| `GET /health`、`/api/execution_profile` | 进程工作器状态与已应用配置版本 |
+| `POST /api/reception/run`、`GET /api/reception/report` | 同一 Runtime 的 mock 演示与报告，不另起旧接待循环 |
+| `/api/scene_state`、`belief`、`update_scene` | 大脑侧现场读模型；人工修改写入带来源和有效期的线索，不直接伪造已确认事实 |
+| `/api/experiences`、`save_experience`、成功/失败经验接口 | 读取或人工保存经验，保持既有字段；不自动发布规则 |
+| `/api/demo/parse`、`status`、`result`、`save` | 有界后台示教作业，job_id 关联；保存为未经评测候选，不直接写入生效 SOP |
+| `/api/quad_latest`、`robot_status`、`record/*`、`timeline`、`task_timeline/*` | 严格使用选择的观察源；任务画面采集由大脑负责，网页退出不终止采集 |
+| `/api/task_events`、`task_intent`、`chat`、`chat/route` | 事件查询、共享分流与飞书闲聊服务；没有绕过 Runtime 的观察执行 |
 
-大脑侧不负责：
-
-- 不连接 SONIC 5556；
-- 不发布 ROS goal、cmd_vel 或 Token；
-- 不模拟 DREAM 9882 Approve；
-- 不直接打开 RealSense；
-- 不允许 LLM 改变固定 Pipeline 顺序。
-
-顶层任务结束后，Master 用统一 episode 账本做事后复盘（DeepSeek，失败降模板）。这是读账本写候选经验，不是规划器，不改本轮动作顺序。默认只写入 `master/memory/reflections/`；mock 接待仍可 `write_sop`。飞书任务卡展示「复盘」。当前用法见 [项目 README](../README.md)。
+网页保留原路径，通过 `BrainClient` 转发。配置校验由 Ops `POST /api/validate-config` 提供。反思线程读取任务快照，按任务和账本版本去重；评测、影子和发布继续在学习侧，只有新任务绑定新快照，已开任务保留原版本。
 
 ## 2. 局域网拓扑
 
