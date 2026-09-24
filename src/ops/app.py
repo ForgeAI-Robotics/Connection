@@ -69,6 +69,8 @@ def create_app(*, switch_pool=None):
                 "tmux": tmuxctl.tmux_available(),
                 "attach": "tmux ls",
                 "brain": [item for item in items if item["layer"] == "brain"],
+                "environment": [item for item in items if item["layer"] == "environment"],
+                "support": [item for item in items if item["layer"] == "support"],
                 "robot": [item for item in items if item["layer"] == "robot"],
             }
         )

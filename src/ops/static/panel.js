@@ -15,7 +15,7 @@ const REMOTE_ACTION_LABEL = {
 let selectedLayer = "brain";
 let selected = "master";
 let busy = false;
-let snapshot = { brain: [], robot: [] };
+let snapshot = { brain: [], environment: [], support: [], robot: [] };
 let logToken = 0;
 let logAbort = null;
 let statusInFlight = false;
@@ -32,16 +32,29 @@ function layerItems() {
   return snapshot[selectedLayer] || [];
 }
 
+function logItems() {
+  if (selectedLayer === "brain") return layerItems().filter((item) => item.id === "master");
+  if (selectedLayer === "environment" && $("execution-support").open) {
+    return [...layerItems(), ...(snapshot.support || [])];
+  }
+  return layerItems();
+}
+
+function ensureSelection() {
+  const items = logItems();
+  if (!items.some((item) => item.id === selected)) {
+    selected = items[0]?.id || "";
+    logPath = "";
+  }
+}
+
 function currentItem() {
-  return layerItems().find((item) => item.id === selected) || layerItems()[0];
+  return logItems().find((item) => item.id === selected);
 }
 
 function selectLayer(layer) {
   selectedLayer = layer;
-  const items = layerItems();
-  if (!items.some((item) => item.id === selected)) {
-    selected = items[0] ? items[0].id : "";
-  }
+  ensureSelection();
   logPath = "";
   document.querySelectorAll(".layer").forEach((button) => {
     button.classList.toggle("active", button.dataset.layer === layer);
@@ -53,6 +66,7 @@ function selectLayer(layer) {
 }
 
 function selectService(id) {
+  if (!logItems().some((item) => item.id === id)) return;
   if (selected === id) {
     loadLogs(true);
     return;
@@ -100,9 +114,10 @@ function popReviewPage(robot) {
   if (!ready || known === null || known === true || reviewOpened) return;
   reviewOpened = true;
   const opened = window.open(dream.review_url, "dream-review");
-  const log = $("log");
   if (!opened) {
-    log.textContent =
+    const status = $("action-status");
+    status.hidden = false;
+    status.textContent =
       `9882 审核页已就绪：${dream.review_url}\n` +
       "浏览器拦住了自动弹窗，点卡片上的「打开 9882」。";
   }
@@ -112,7 +127,11 @@ function card(item) {
   const el = document.createElement("article");
   el.className = "card" + (item.id === selected ? " active" : "");
   el.dataset.id = item.id;
-  el.onclick = () => selectService(item.id);
+  el.dataset.state = item.state;
+  el.dataset.review = String(item.review_ok);
+  const entry = item.id === "deploy" || item.id === "feishu";
+  el.classList.toggle("entry-card", entry);
+  if (!entry) el.onclick = () => selectService(item.id);
   const port = item.port ? `端口 ${item.port}` : "无本地端口";
   const line = healthLine(item);
   el.innerHTML = `
@@ -121,7 +140,7 @@ function card(item) {
       <span class="badge ${escapeHtml(item.state)}">${escapeHtml(STATE_LABEL[item.state] || item.state)}</span>
     </div>
     <div class="meta">
-      <div>${escapeHtml(port)}</div>
+      <div>${entry ? "任务入口 · 共用大脑" : escapeHtml(port)}</div>
       ${item.health && item.health.url ? `<div class="detail">${escapeHtml(item.health.url)}</div>` : ""}
       ${item.note ? `<div class="detail">${escapeHtml(item.note)}</div>` : ""}
       <div class="health">${escapeHtml(line)}</div>
@@ -131,10 +150,29 @@ function card(item) {
   actions.className = "actions";
   let hasActions = false;
   if (item.controllable) {
-    actions.append(
-      actionButton("重启", () => act(item, "restart"), item.confirm_restart),
-      actionButton("停止", () => act(item, "stop"), true)
-    );
+    const running = item.state !== "stopped";
+    if (entry) {
+      actions.append(actionButton(running ? "关闭入口" : "开启入口", () => act(item, running ? "stop" : "start"), running));
+      if (item.id === "deploy") {
+        const link = document.createElement("a");
+        const url = new URL(window.location.href);
+        url.port = String(item.port);
+        url.pathname = "/";
+        url.search = "";
+        url.hash = "";
+        link.href = url.href;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.className = "service-link";
+        link.textContent = "打开网页 ↗";
+        actions.append(link);
+      }
+    } else {
+      actions.append(actionButton(running ? "重启" : "启动", () => act(item, running ? "restart" : "start"), running && item.confirm_restart));
+      const stop = actionButton("停止", () => act(item, "stop"), true);
+      stop.disabled = !running;
+      actions.append(stop);
+    }
     hasActions = true;
   }
   (item.remote_actions || []).forEach((action) => {
@@ -202,7 +240,7 @@ function markActive() {
     http: "HTTP 访问日志",
   };
   if (current && current.id === "master") {
-    $("log-title").textContent = `Master ${titles[logKind] || "指挥日志"}`;
+    $("log-title").textContent = `大脑 ${titles[logKind] || "指挥日志"}`;
   } else {
     $("log-title").textContent = current ? `${current.name} 运行日志` : "运行日志";
   }
@@ -224,9 +262,15 @@ function showLogPlaceholder() {
   log.classList.remove("error");
   log.classList.add("loading");
   log.textContent = "加载中…";
+  $("log-pin").hidden = true;
 }
 
 function patchCard(el, item) {
+  // State changes also change the entry toggle and remote review button.
+  if (el.dataset.state !== item.state || el.dataset.review !== String(item.review_ok)) {
+    el.replaceWith(card(item));
+    return;
+  }
   el.classList.toggle("active", item.id === selected);
   const badge = el.querySelector(".badge");
   if (badge) {
@@ -239,10 +283,37 @@ function patchCard(el, item) {
 
 function render(full) {
   const items = layerItems();
-  $("layer-title").textContent = selectedLayer === "brain" ? "大脑层" : "真机层";
-  $("layer-count").textContent = `${items.length} 项`;
-  const cards = $("cards");
+  const environment = selectedLayer === "environment";
+  const brain = selectedLayer === "brain";
+  $("layer-title").textContent = {brain: "大脑层", environment: "运行环境", robot: "真机层"}[selectedLayer];
+  $("layer-count").textContent = brain ? "1 个大脑 · 2 个入口" : `${items.length} 个${environment ? "仿真" : "真机"}服务`;
+  $("layer-hint").textContent = {
+    brain: "任务网页和飞书共用同一个大脑。任务进展统一查看下方大脑日志。",
+    environment: "统一配置仿真与真机，也可按模块单独选择。仿真服务在这里启停。",
+    robot: "DREAM 导航与 VLA 操控。启停服务不会发布「开始接待」任务。",
+  }[selectedLayer];
+  document.querySelector(".workspace").classList.toggle("environment", environment);
+  $("execution-settings").hidden = !environment;
+  $("execution-support").hidden = !environment;
+  $("services-title").hidden = !environment;
+  $("tabs").hidden = brain;
+  renderCards($("cards"), items, full);
+  if (environment) renderCards($("support-cards"), snapshot.support || [], full);
   const tabs = $("tabs");
+  const logs = logItems();
+  const tabIds = logs.map((item) => item.id).join(",");
+  if (full || tabs.dataset.ids !== tabIds) {
+    tabs.replaceChildren(...logs.map(tab));
+    tabs.dataset.ids = tabIds;
+  }
+  markActive();
+  dots(snapshot.brain || [], "brain-dots");
+  dots(snapshot.environment || [], "environment-dots");
+  dots(snapshot.support || [], "support-dots");
+  dots(snapshot.robot || [], "robot-dots");
+}
+
+function renderCards(cards, items, full) {
   const ids = items.map((item) => item.id).join(",");
   const needFull =
     full ||
@@ -250,12 +321,7 @@ function render(full) {
     cards.dataset.ids !== ids ||
     cards.childElementCount !== items.length;
   if (needFull) {
-    cards.innerHTML = "";
-    tabs.innerHTML = "";
-    items.forEach((item) => {
-      cards.appendChild(card(item));
-      tabs.appendChild(tab(item));
-    });
+    cards.replaceChildren(...items.map(card));
     cards.dataset.layer = selectedLayer;
     cards.dataset.ids = ids;
   } else {
@@ -263,13 +329,7 @@ function render(full) {
       const el = cards.querySelector(`[data-id="${item.id}"]`);
       if (el) patchCard(el, item);
     });
-    tabs.querySelectorAll(".tab").forEach((el) => {
-      el.classList.toggle("active", el.dataset.id === selected);
-    });
   }
-  markActive();
-  dots(snapshot.brain || [], "brain-dots");
-  dots(snapshot.robot || [], "robot-dots");
 }
 
 function stickToBottom(node) {
@@ -277,14 +337,15 @@ function stickToBottom(node) {
 }
 
 async function act(item, action) {
+  const status = $("action-status");
   if (busy) {
-    $("log").textContent = "上一次真机操作还在进行，请稍候。";
-    $("log").classList.remove("loading");
+    status.hidden = false;
+    status.textContent = "上一次服务操作还在进行，请稍候。";
     return;
   }
   if (action === "restart" && item.confirm_restart) {
     const ok = window.confirm(
-      "重启 Master 会中断当前进程和正在处理的任务；是否清空 Redis 由 config/brain.yaml 的 collaborator.clear 决定（当前为 false）。确定继续？"
+      "重启大脑会中断当前进程和正在处理的任务。确定继续？"
     );
     if (!ok) return;
   }
@@ -305,32 +366,33 @@ async function act(item, action) {
     if (!window.confirm(extraConfirm)) return;
   }
   busy = true;
-  selected = item.id;
-  markActive();
-  const log = $("log");
-  log.classList.remove("error", "loading");
-  log.textContent =
+  if (selectedLayer !== "brain") selectService(item.id);
+  status.hidden = false;
+  status.classList.remove("error");
+  status.textContent =
     item.id === "dream" && action === "start"
       ? "已收到启动。脚本会跑在导航机 tmux g1_panel_oneclick 里：preflight → READY → SONIC / DREAM / VLA HTTP。出现两次 Enter 提示后必须 10 分钟内按完，否则脚本会锁定导航退出。"
       : item.id === "dream" && action === "stand-enter"
         ? "已向导航机 adapter 窗口发 1 个 Enter，等它回显 …"
       : item.id === "dream" && action === "stop"
         ? "已收到停止。正在关闭 DREAM 与 VLA HTTP/relay，保留 NX SONIC …"
-        : action === "start"
+        : item.id === "vla" && action === "start"
           ? "已收到启动。正在按文档连接 4090：check → 依赖检查 → HTTP 8091 + 导航 relay …"
-          : action === "stop"
+          : item.id === "vla" && action === "stop"
             ? "已收到停止。正在 SSH 4090 关闭 HTTP 与导航 relay …"
-            : `正在执行 ${action} …`;
+            : `正在${{start: "启动", stop: "停止", restart: "重启"}[action] || action} ${item.name} …`;
   try {
     const response = await fetch(`/api/services/${item.id}/${action}`, { method: "POST" });
     const payload = await response.json();
     if (!response.ok) {
-      log.textContent = payload.error || "操作失败";
-      log.classList.add("error");
+      status.textContent = payload.error || "操作失败";
+      status.classList.add("error");
+    } else {
+      status.textContent = `${item.name}：${{start: "启动", stop: "停止", restart: "重启"}[action] || REMOTE_ACTION_LABEL[action] || action}操作已完成。`;
     }
   } catch (error) {
-    log.textContent = String(error);
-    log.classList.add("error");
+    status.textContent = String(error);
+    status.classList.add("error");
   } finally {
     busy = false;
     refresh(true);
@@ -382,9 +444,7 @@ async function refresh(forceCards) {
     snapshot = data;
     popReviewPage(data.robot || []);
     $("attach").textContent = data.attach || "tmux ls";
-    if (!layerItems().some((item) => item.id === selected)) {
-      selected = layerItems()[0] ? layerItems()[0].id : "";
-    }
+    ensureSelection();
     render(Boolean(forceCards));
     updateLogKinds();
     await loadLogs(false);
@@ -398,6 +458,14 @@ async function refresh(forceCards) {
 document.querySelectorAll(".layer").forEach((button) => {
   button.onclick = () => selectLayer(button.dataset.layer);
 });
+
+$("execution-support").ontoggle = () => {
+  if (selectedLayer !== "environment") return;
+  ensureSelection();
+  render(false);
+  showLogPlaceholder();
+  loadLogs(true);
+};
 
 document.querySelectorAll("#log-kinds button").forEach((button) => {
   button.onclick = () => {

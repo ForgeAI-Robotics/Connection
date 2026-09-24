@@ -26,8 +26,13 @@ class PanelAppTests(unittest.TestCase):
         self.assertTrue(payload["tmux"] in (True, False))
         self.assertEqual(
             [item["id"] for item in payload["brain"]],
-            ["redis", "master", "deploy", "feishu", "slaver", "desk", "mujoco", "gs"],
+            ["master", "deploy", "feishu"],
         )
+        self.assertEqual([item["id"] for item in payload["environment"]], ["desk", "mujoco", "gs"])
+        self.assertEqual([item["id"] for item in payload["support"]], ["redis", "slaver"])
+        ids = [item["id"] for group in ("brain", "environment", "support", "robot") for item in payload[group]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(set(ids), {item.id for item in services.catalog()})
         self.assertEqual([item["id"] for item in payload["robot"]], ["dream", "vla"])
         self.assertTrue(all(item["controllable"] for item in payload["brain"]))
         self.assertTrue(all(not item["controllable"] for item in payload["robot"]))

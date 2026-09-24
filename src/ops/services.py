@@ -236,7 +236,7 @@ def catalog() -> list[Service]:
         Service(
             id="redis",
             name="Redis",
-            layer="brain",
+            layer="support",
             controllable=True,
             window="redis",
             port=6379,
@@ -269,7 +269,7 @@ def catalog() -> list[Service]:
         ),
         Service(
             id="feishu",
-            name="飞书桥接",
+            name="飞书入口",
             layer="brain",
             controllable=True,
             window="feishu",
@@ -280,7 +280,7 @@ def catalog() -> list[Service]:
         Service(
             id="slaver",
             name="Slaver",
-            layer="brain",
+            layer="support",
             controllable=True,
             window="slaver",
             match="-m execution.slaver",
@@ -290,7 +290,7 @@ def catalog() -> list[Service]:
         Service(
             id="desk",
             name="Desk 仿真",
-            layer="brain",
+            layer="environment",
             controllable=True,
             window="desk",
             port=5008,
@@ -301,7 +301,7 @@ def catalog() -> list[Service]:
         Service(
             id="mujoco",
             name="MuJoCo 仿真",
-            layer="brain",
+            layer="environment",
             controllable=True,
             window="mujoco",
             port=5001,
@@ -312,7 +312,7 @@ def catalog() -> list[Service]:
         Service(
             id="gs",
             name="3DGS 仿真",
-            layer="brain",
+            layer="environment",
             controllable=True,
             window="gs",
             port=5002,

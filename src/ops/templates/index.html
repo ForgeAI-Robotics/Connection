@@ -4,46 +4,35 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQPlanner 控制面板</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=10">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=11">
 </head>
 <body>
   <div class="app">
     <header>
       <div>
-        <h1>服务器进程监控</h1>
-        <p class="hint">大脑层 / 真机层。重启拉起独立 tmux session。不会发布「开始接待」。Master 默认看指挥日志。无登录。</p>
+        <h1>Connection 控制面板</h1>
+        <p class="hint">大脑与入口 · 运行环境 · 真机服务</p>
       </div>
       <div class="header-right">
         <code id="attach">tmux ls</code>
         <span id="poll">自动刷新 3s</span>
       </div>
     </header>
-    <section class="execution-settings">
-      <h2>运行环境</h2>
-      <p class="hint">全局选择可被模块覆盖。应用时重启本机大脑服务；有未核清任务时拒绝切换。不会启动远端机器人，也不会打开真机动作许可。</p>
-      <div class="execution-fields">
-        <label>全局环境 <select id="exec-mode"><option value="simulation">仿真</option><option value="real">真机</option></select></label>
-        <label>默认仿真器 <select id="exec-sim"><option value="desk">Desk（无画面）</option><option value="mujoco">MuJoCo</option><option value="mujoco_3dgs">3DGS</option></select></label>
-      </div>
-      <div id="exec-modules" class="execution-fields"></div>
-      <div class="execution-fields">
-        <button type="button" id="exec-preview">预览选择</button>
-        <button type="button" id="exec-apply">应用当前选择</button>
-        <button type="button" id="exec-all-sim">一键全仿真</button>
-        <button type="button" id="exec-all-real">一键全真机</button>
-      </div>
-      <p class="hint">“一键全…”会清除模块覆盖。真机通用执行和真机观察尚未接入，选择后会显示不可用；接待仿真使用 mock 流程。</p>
-      <pre id="exec-preview-text" hidden></pre>
-      <pre id="exec-status">正在读取生效环境…</pre>
-    </section>
     <div class="shell">
       <nav>
         <button type="button" class="layer active" data-layer="brain">
           <span>大脑层</span>
+          <small>日志与两个入口</small>
           <span id="brain-dots" class="dots"></span>
+        </button>
+        <button type="button" class="layer" data-layer="environment">
+          <span>运行环境</span>
+          <small>环境配置与仿真</small>
+          <span id="environment-dots" class="dots"></span>
         </button>
         <button type="button" class="layer" data-layer="robot">
           <span>真机层</span>
+          <small>导航与操控</small>
           <span id="robot-dots" class="dots"></span>
         </button>
       </nav>
@@ -52,7 +41,33 @@
           <h2 id="layer-title">大脑层</h2>
           <span id="layer-count"></span>
         </div>
+        <p id="layer-hint" class="hint layer-hint"></p>
+        <p id="action-status" role="status" hidden></p>
+        <section id="execution-settings" class="execution-settings" hidden>
+          <h3>环境配置</h3>
+          <p class="hint">全局选择可被模块覆盖。应用时重启本机大脑服务；有未核清任务时拒绝切换。不会启动远端机器人，也不会打开真机动作许可。</p>
+          <div class="execution-fields">
+            <label>全局环境 <select id="exec-mode"><option value="simulation">仿真</option><option value="real">真机</option></select></label>
+            <label>默认仿真器 <select id="exec-sim"><option value="desk">Desk（无画面）</option><option value="mujoco">MuJoCo</option><option value="mujoco_3dgs">3DGS</option></select></label>
+          </div>
+          <div id="exec-modules" class="execution-fields"></div>
+          <div class="execution-fields execution-actions">
+            <button type="button" id="exec-preview">预览选择</button>
+            <button type="button" id="exec-apply">应用当前选择</button>
+            <button type="button" id="exec-all-sim">一键全仿真</button>
+            <button type="button" id="exec-all-real">一键全真机</button>
+          </div>
+          <p class="hint">“一键全…”会清除模块覆盖。真机通用执行和真机观察尚未接入，选择后会显示不可用；接待仿真使用 mock 流程。</p>
+          <pre id="exec-preview-text" hidden></pre>
+          <pre id="exec-status">正在读取生效环境…</pre>
+        </section>
+        <h3 id="services-title" class="section-title" hidden>仿真服务</h3>
         <div id="cards" class="cards"></div>
+        <details id="execution-support" hidden>
+          <summary>高级：仿真执行依赖 <span id="support-dots" class="dots"></span></summary>
+          <p class="hint">MuJoCo / 3DGS 的动作执行仍使用 Slaver 和 Redis。Desk 直连，不需要这两个执行依赖。</p>
+          <div id="support-cards" class="cards"></div>
+        </details>
         <div id="tabs" class="tabs"></div>
         <div class="log-wrap">
           <div class="log-head">
@@ -70,7 +85,7 @@
       </section>
     </div>
   </div>
-  <script src="{{ url_for('static', filename='panel.js') }}?v=10"></script>
+  <script src="{{ url_for('static', filename='panel.js') }}?v=11"></script>
   <script src="{{ url_for('static', filename='execution.js') }}?v=1"></script>
 </body>
 </html>

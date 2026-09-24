@@ -5,11 +5,19 @@ from ops.services import catalog, format_http_health_detail, start_shell
 
 
 class CatalogTests(unittest.TestCase):
-    def test_brain_and_robot_ids(self):
+    def test_services_are_grouped_by_operator_workspace(self):
         items = catalog()
         self.assertEqual(
             [item.id for item in items if item.layer == "brain"],
-            ["redis", "master", "deploy", "feishu", "slaver", "desk", "mujoco", "gs"],
+            ["master", "deploy", "feishu"],
+        )
+        self.assertEqual(
+            [item.id for item in items if item.layer == "environment"],
+            ["desk", "mujoco", "gs"],
+        )
+        self.assertEqual(
+            [item.id for item in items if item.layer == "support"],
+            ["redis", "slaver"],
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "robot"],
