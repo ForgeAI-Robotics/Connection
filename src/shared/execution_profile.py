@@ -14,7 +14,7 @@ DRAFT_PATH = ROOT / 'config' / 'execution.yaml'
 STATE_PATH = ROOT / 'data' / 'system' / 'execution.json'
 LOCK_PATH = ROOT / 'data' / 'system' / 'execution.lock'
 BLOCK_PATH = ROOT / 'data' / 'system' / 'execution.blocked'
-SIM_BACKENDS = {'desk', 'mujoco', 'mujoco_3dgs'}
+SIM_BACKENDS = {'desk', 'mujoco', 'mujoco_3dgs', 'simple_o7'}
 DEFAULT = {'mode': 'simulation', 'simulation_backend': 'desk', 'modules': {}}
 
 
@@ -62,6 +62,8 @@ def resolve(value, robot_config):
                          reason=f'{name} 尚无已接入的完整真机适配；不会回落仿真')
         elif name == 'observation' and backend == 'desk':
             route.update(available=False, reason='Desk 不提供图像；可将观察模块显式指定为 3DGS 或 MuJoCo')
+        elif name == 'observation' and backend == 'simple_o7':
+            route.update(available=False, reason='SIMPLE O7 当前提供物理状态证据，尚未接入现场描述和网页相机')
         else:
             raw = (robot_config.get('backends') or {}).get(backend) or {}
             # Applied profiles explicitly enable the chosen simulation backend.

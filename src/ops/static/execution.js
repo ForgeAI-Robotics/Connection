@@ -15,7 +15,7 @@
     if (key !== 'reception') {
       const backend = document.createElement('select');
       backend.id = 'exec-' + key + '-sim';
-      for (const [value, text] of Object.entries({inherit: '跟随默认仿真器', desk: 'Desk（无画面）', mujoco: 'MuJoCo', mujoco_3dgs: '3DGS'})) {
+      for (const [value, text] of Object.entries({inherit: '跟随默认仿真器', desk: 'Desk（无画面）', mujoco: 'MuJoCo', mujoco_3dgs: '3DGS', simple_o7: 'SIMPLE O7（远端）'})) {
         backend.add(new Option(text, value));
       }
       row.append(backend);

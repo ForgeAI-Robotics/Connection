@@ -2,6 +2,14 @@
 active_backend: desk
 robot: xlerobot
 backends:
+  simple_o7:
+    enabled: 0               # 只有显式选择此环境才启用；不经过 Slaver
+    provide_state: 1
+    accept_action: 1
+    required: 1
+    url: http://192.168.5.21:18770
+    timeout: 900
+    launch_hint: 远端独立服务，参见 docs/联调说明_SIMPLE_O7仿真.md
   mujoco:
     enabled: 1
     provide_state: 1

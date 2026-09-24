@@ -123,6 +123,8 @@ class PlanningInputs:
         self.transport = transport
 
     def snapshot(self, task, backend, port, experiences="", rules=()):
+        if backend == 'simple_o7':
+            return port.planning_input(task, experiences, rules)
         from execution.robot_api.client import get_objects, get_scene as _get_scene
         if backend.startswith("slaver:"):
             transport = self.transport()

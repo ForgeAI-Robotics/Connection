@@ -34,6 +34,9 @@ class PlanningService:
             if runtime.record["execution_backend"] == "slaver:dream":
                 from brain.packages.navigation_policy import enforce_dream_route_plan
                 planned = enforce_dream_route_plan(text, planned)
+        if runtime.record["execution_backend"] == "simple_o7":
+            from brain.adapters.simple_o7 import plan_steps
+            return plan_steps(planned, runtime.port.deadline)
         from brain.packages.generic import steps_from_subtasks
         kind = "sim" if runtime.record["execution_backend"] == "desk" else "slaver"
         subtasks = planned.get("subtask_list") or []

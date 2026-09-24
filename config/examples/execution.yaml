@@ -2,6 +2,7 @@
 # 改文件不会热切换在途任务。模块覆盖优先于全局选择。
 mode: simulation
 simulation_backend: desk
+# 可选 desk / mujoco / mujoco_3dgs / simple_o7（远端抓可乐实验）
 modules:
   reception:
     mode: inherit             # inherit / simulation / real / disabled

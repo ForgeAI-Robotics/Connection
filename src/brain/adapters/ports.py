@@ -228,6 +228,10 @@ def select_backend(config, package, *, mock=False):
         if package == 'reception':
             return 'reception_mock' if mock else route['backend']
         if name == 'execution':
+            if route['backend'] == 'simple_o7':
+                if package != 'generic':
+                    raise Rejected('simple_o7 当前仅支持通用任务中的单步抓取可乐，不支持桌面整理')
+                return 'simple_o7'
             return 'desk' if route['backend'] == 'desk' else 'slaver:' + route['backend']
     if package == "look":
         return "camera"
@@ -244,12 +248,19 @@ def select_backend(config, package, *, mock=False):
     backend = client._RUNTIME.config.active_backend
     if not backend:
         raise Rejected("没有配置执行后端")
+    if backend == 'simple_o7':
+        if package != 'generic':
+            raise Rejected('simple_o7 当前仅支持通用任务中的单步抓取可乐')
+        return backend
     return "desk" if backend == "desk" else "slaver:" + backend
 
 
 def target_identity(config, backend):
     from shared.execution_profile import applied_profile
     profile = applied_profile()
+    if backend == 'simple_o7':
+        from brain.adapters.simple_o7 import settings, WIRE_VERSION
+        return {'backend': backend, 'url': settings().url, 'contract_version': WIRE_VERSION}
     if backend == 'camera' and profile:
         return {'backend': 'camera', 'observation': profile['routes']['observation']}
     if backend == "reception_real":
@@ -265,6 +276,9 @@ def target_identity(config, backend):
 
 def build_port(config, backend, *, agent=None):
     from brain.config_flags import kernel_enabled
+    if backend == 'simple_o7':
+        from brain.adapters.simple_o7 import SimpleO7Adapter
+        return SimpleO7Adapter.from_config()
     if backend == "camera":
         return LookAdapter()
     if backend == "reception_real":

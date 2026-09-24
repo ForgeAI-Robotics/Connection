@@ -1,0 +1,8 @@
+{
+  "host": "0.0.0.0",
+  "port": 18770,
+  "source": "/mnt/simple",
+  "runtime": "/opt/connection-simple-o7/runtime",
+  "python": "/workspace/simple/.venv/bin/python",
+  "stage_timeout_sec": 300
+}

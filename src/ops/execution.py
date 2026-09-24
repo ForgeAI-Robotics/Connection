@@ -63,8 +63,16 @@ class LocalServices:
     def targets_healthy(self, routes):
         for route in routes.values():
             if route['available'] and route['mode'] == 'simulation' and route['url']:
-                endpoint = '/health' if route['backend'] == 'desk' else '/camera/status'
-                self.get(route['url'] + endpoint)
+                endpoint = '/health' if route['backend'] in {'desk', 'simple_o7'} else '/camera/status'
+                if route['backend'] == 'simple_o7':
+                    from urllib.request import build_opener, ProxyHandler
+                    with build_opener(ProxyHandler({})).open(route['url'] + endpoint, timeout=3) as response:
+                        result = json.load(response)
+                else:
+                    result = self.get(route['url'] + endpoint)
+                if route['backend'] == 'simple_o7' and (
+                        result.get('contract_version') != 'connection/simple-o7/v1' or result.get('ready') is not True):
+                    raise ValueError('SIMPLE O7 远端服务未就绪或合同不匹配')
 
     def healthy(self, names, revision=None, timeout=90):
         from ops.control import _service_status
@@ -161,7 +169,7 @@ class Switcher:
         desired = list(dict.fromkeys(original + ['master']))
         routes = profile['routes']
         execution = routes['execution']
-        if execution['available'] and execution['backend'] != 'desk' and 'slaver' not in desired:
+        if execution['available'] and execution['backend'] not in {'desk', 'simple_o7'} and 'slaver' not in desired:
             desired.append('slaver')
         if 'slaver' in desired and not services.running('redis'):
             raise ValueError('Slaver 路径需要先启动 Redis；环境切换不重启或清空 Redis')
