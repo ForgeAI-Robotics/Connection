@@ -25,7 +25,7 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from robot_api.client import get_base_status, get_map_data
+from execution.robot_api.client import get_base_status, get_map_data
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 CONFIG_DIR = os.path.dirname(__file__)

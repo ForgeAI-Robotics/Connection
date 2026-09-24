@@ -4,10 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from connection.brain.app import create_service
-from connection.brain.adapters.ports import DeskAdapter
-from connection.brain.packages.reception_mock import MockAdapter
-from connection.brain.adapters.execution import LookAdapter
+from brain.app import create_service
+from brain.adapters.ports import DeskAdapter
+from brain.packages.reception_mock import MockAdapter
+from brain.adapters.execution import LookAdapter
 
 
 class IndependentBrainTests(unittest.TestCase):
@@ -37,9 +37,9 @@ class IndependentBrainTests(unittest.TestCase):
             {'robot_name': 'FQrobot', 'subtask': '放置 milk_1 到 milk_area'}]})
         self.service = create_service(self.config, model=model, port_factory=factory)
         self.service._launch = self.service._drive
-        select = patch('connection.brain.service.select_backend',
+        select = patch('brain.service.select_backend',
                        side_effect=lambda config, package, mock=False: 'reception_mock' if mock else 'camera' if package == 'look' else 'desk')
-        identity = patch('connection.brain.service.target_identity', side_effect=lambda c, b: {'backend': b})
+        identity = patch('brain.service.target_identity', side_effect=lambda c, b: {'backend': b})
         select.start(); identity.start()
         self.addCleanup(select.stop); self.addCleanup(identity.stop)
 

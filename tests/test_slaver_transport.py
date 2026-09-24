@@ -2,7 +2,7 @@ import json
 import queue
 import unittest
 from unittest.mock import Mock, patch
-from connection.brain.adapters.slaver import SlaverTransport
+from brain.adapters.slaver import SlaverTransport
 
 
 class SlaverTransportTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class SlaverTransportTests(unittest.TestCase):
         collaborator = Mock()
         collaborator._get_conn.return_value.pubsub.return_value = pubsub
         collaborator.read_all_agents_name.return_value = ['FQrobot']
-        with patch('agent.collaboration.Collaborator.from_config', return_value=collaborator) as factory:
+        with patch('execution.collaboration.Collaborator.from_config', return_value=collaborator) as factory:
             transport = SlaverTransport({'collaborator': {'clear': True}})
             self.assertIs(factory.call_args.args[0]['clear'], False)
         try:

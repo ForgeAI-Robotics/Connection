@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from robot_api.scene_metadata import load_camera_config
+from execution.robot_api.scene_metadata import load_camera_config
 
 from tools.arm import (
     get_arm_info, get_obj_pos,
@@ -84,12 +84,12 @@ _pi05_config = {"url": None, "task": None, "loaded": False}
 
 
 def _ensure_pi05_config():
-    """Lazily load PI0.5 service url + default task from robot_api/config.yaml."""
+    """Lazily load PI0.5 service url + default task from config/robot_api.yaml."""
     if _pi05_config["loaded"]:
         return
     _pi05_config["loaded"] = True
     try:
-        from robot_api.config import load_robot_api_config
+        from execution.robot_api.config import load_robot_api_config
         svc = load_robot_api_config().policy_service("pi05")
         if svc is not None:
             _pi05_config["url"] = svc.url or None
@@ -205,9 +205,9 @@ def get_lock():
 
 
 def set_act_config(url: str | None):
-    """Set ACT inference config. Reads url + max_steps from robot_api/config.yaml."""
+    """Set ACT inference config. Reads url + max_steps from config/robot_api.yaml."""
     try:
-        from robot_api.config import load_robot_api_config
+        from execution.robot_api.config import load_robot_api_config
         cfg = load_robot_api_config()
         svc = cfg.policy_service("act")
     except Exception as exc:
@@ -224,7 +224,7 @@ def set_act_config(url: str | None):
     if _act_config["url"]:
         print(f"[service] 🔮 ACT 推理服务: {_act_config['url']} (max_steps={_act_config['max_steps']})")
     else:
-        print("[service] ACT 推理服务: 未配置 (在 robot_api/config.yaml 中设置 policy_services.act.enabled: 1)")
+        print("[service] ACT 推理服务: 未配置 (在 config/robot_api.yaml 中设置 policy_services.act.enabled: 1)")
 
 
 def has_active_base_command():

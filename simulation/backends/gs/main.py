@@ -95,7 +95,7 @@ def main():
     root = _PROJECT_ROOT
     if root not in sys.path:
         sys.path.insert(0, root)
-    from common.log_setup import attach_process_log
+    from shared.log_setup import attach_process_log
 
     attach_process_log("gs")
     parser = argparse.ArgumentParser(description="MotrixSim + 3DGS backend")
@@ -120,7 +120,7 @@ def main():
     parser.add_argument("--robot", type=str, default="",
                         help="Robot name override (default: read from simulation/assets/config.yaml)")
     parser.add_argument("--act-url", type=str, default=None,
-                        help="ACT service URL override (default: read from robot_api/config.yaml)")
+                        help="ACT service URL override (default: read from config/robot_api.yaml)")
     args = parser.parse_args()
 
     from backend.gs_config import GSConfig

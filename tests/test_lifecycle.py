@@ -6,11 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from connection.brain.app import create_service
-from connection.brain.application import BrainApplication
-from connection.brain.adapters.ports import DeskAdapter
-from connection.brain.workers import WorkerPool
-from connection.contracts.tasks import Rejected
+from brain.app import create_service
+from brain.application import BrainApplication
+from brain.adapters.ports import DeskAdapter
+from brain.workers import WorkerPool
+from contracts.tasks import Rejected
 
 
 class LifecycleTests(unittest.TestCase):
@@ -22,7 +22,7 @@ class LifecycleTests(unittest.TestCase):
             'runtime_dir': str(Path(self.temp.name) / 'old'), 'kernel_enabled': False}}
         for target, fn in [('select_backend', lambda *a, **kw: 'desk'),
                            ('target_identity', lambda *a: {'backend': 'desk'})]:
-            patcher = patch('connection.brain.service.' + target, side_effect=fn)
+            patcher = patch('brain.service.' + target, side_effect=fn)
             patcher.start(); self.addCleanup(patcher.stop)
         self.apps = []
         self.addCleanup(lambda: [app.close(2) for app in self.apps])
@@ -131,7 +131,7 @@ class LifecycleTests(unittest.TestCase):
             release.set(); pool.close(1)
 
     def test_all_task_writes_use_the_runtime_owner_thread(self):
-        from connection.brain.kernel.runtime import TaskRuntime
+        from brain.kernel.runtime import TaskRuntime
         original = TaskRuntime._save
         writers = []
         def save(runtime, event):
@@ -162,10 +162,10 @@ class LifecycleTests(unittest.TestCase):
         release.set()
 
     def test_reflection_persistence_deduplicates_after_restart(self):
-        from connection.brain.learning.reflection import persist_reflection
+        from brain.learning.reflection import persist_reflection
         root = Path(self.temp.name) / 'reflections'
         episode = {'task_id': 'durable-work', 'task': '观察现场', '_work_id': 'a' * 64}
-        with patch('connection.brain.learning.reflection._reflection_root', return_value=root):
+        with patch('brain.learning.reflection._reflection_root', return_value=root):
             first = persist_reflection(episode, {'summary': 'first', 'new_rules': []})
             second = persist_reflection(episode, {'summary': 'late regenerated output', 'new_rules': []})
         self.assertEqual(first, second)
@@ -173,7 +173,7 @@ class LifecycleTests(unittest.TestCase):
 
 class GateWaitTests(unittest.TestCase):
     def test_control_is_serviced_while_navigation_gate_query_is_blocked(self):
-        from connection.brain.workers import RuntimeOwner, CooperativePort
+        from brain.workers import RuntimeOwner, CooperativePort
         entered, release = threading.Event(), threading.Event()
         class Gate:
             @property

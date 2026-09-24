@@ -12,8 +12,8 @@ FIXTURES = Path(__file__).parent / "contracts"
 
 class PackageCompatibilityTests(unittest.TestCase):
     def test_frozen_reception_wire_bodies(self):
-        from connection.brain.packages import reception as r
-        from connection.contracts.tasks import make_command_id
+        from brain.packages import reception as r
+        from contracts.tasks import make_command_id
         specs = {step.step_id: step for step in r.PHASES}
         for sample in json.loads((FIXTURES / "reception_wire.json").read_text()):
             step = specs[sample["step_id"]]
@@ -27,8 +27,8 @@ class PackageCompatibilityTests(unittest.TestCase):
             self.assertEqual(body, sample["body"])
 
     def test_pre_migration_ledger_keeps_identity_and_history(self):
-        from connection.brain.app import create_runtime
-        from connection.brain.adapters.execution import LookAdapter
+        from brain.app import create_runtime
+        from brain.adapters.execution import LookAdapter
         raw = (FIXTURES / "open_look_ledger.json").read_text()
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "current_task.json"
@@ -45,10 +45,10 @@ from unittest.mock import patch
 with patch.object(socket.socket, 'connect', side_effect=AssertionError('network')), \\
      patch.object(threading.Thread, 'start', side_effect=AssertionError('thread')), \\
      patch.object(os, 'chdir', side_effect=AssertionError('cwd')):
-    import connection.brain.app
-    import connection.brain.kernel.runtime
-    import connection.brain.adapters.execution
-    import connection.brain.learning.reflection
+    import brain.app
+    import brain.kernel.runtime
+    import brain.adapters.execution
+    import brain.learning.reflection
 '''
         with tempfile.TemporaryDirectory() as cwd:
             result = subprocess.run([sys.executable, "-c", code], cwd=cwd,
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
 class ConfigurationTests(unittest.TestCase):
     def test_environment_placeholder_survives_yaml_special_characters(self):
-        from connection.config import load_config
+        from shared.config import load_config
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / 'config.yaml'

@@ -13,25 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 SUITES = (
-    ("connection", ("-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py", "-v")),
-    ("master", ("-m", "unittest", "discover", "-s", "master/tests", "-p", "test_*.py", "-v")),
-    ("web", ("-m", "unittest", "discover", "-s", "web/tests", "-p", "test_*.py", "-v")),
-    (
-        "feishu",
-        (
-            "-m",
-            "unittest",
-            "discover",
-            "-s",
-            "integrations/feishu/tests",
-            "-p",
-            "test_*.py",
-            "-v",
-        ),
-    ),
-    ("robot_api", ("-m", "unittest", "discover", "-s", "robot_api", "-p", "test_*.py", "-v")),
-    ("dream_http", ("-m", "unittest", "serve_dream.test_agent_http", "-v")),
-    ("dream_selftest", ("serve_dream/selftest.py",)),
+    ("unit_and_integration", ("-m", "unittest", "discover", "-s", "tests", "-t", ".", "-p", "test_*.py", "-v")),
+    ("dream_selftest", ("-m", "tests.dream.selftest")),
 )
 
 

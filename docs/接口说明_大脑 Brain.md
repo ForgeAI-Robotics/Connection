@@ -5,7 +5,7 @@
 契约版本：`fq/reception-lan/v1`  
 适用范围：单罐接待固定 Pipeline、DREAM/VLA 调用、状态保存、断点继续与可选照片判真。
 
-> 2026-09-24 工程更新：大脑正常实现迁到 `src/connection/brain`，旧 `master/run.py` 只转发。网页与飞书各自直连 `:5000`。下文 DREAM/VLA 外部报文仍是 `fq/reception-lan/v1`；旧接待的 hand-only 与断点相位示例只适用于保留的历史实现，不是新 Runtime 的成功或续跑标准。新内核证据、状态与恢复以规划第 9–15 节为准。当前 `kernel_enabled=false`。
+> 2026-09-24 工程更新：大脑正常实现迁到 `src/brain`，旧 `src/brain/__main__.py` 只转发。网页与飞书各自直连 `:5000`。下文 DREAM/VLA 外部报文仍是 `fq/reception-lan/v1`；旧接待的 hand-only 与断点相位示例只适用于保留的历史实现，不是新 Runtime 的成功或续跑标准。新内核证据、状态与恢复以规划第 9–15 节为准。当前 `kernel_enabled=false`。
 
 ## 1. 大脑侧职责与 API 归属
 
@@ -494,7 +494,7 @@ LLM固定输出：
 ## 9. 本地状态保存，不使用数据库
 
 ```text
-master/sop/runtime/reception/
+data/retired/reception/
   current_task.json
   events.jsonl
   verification.jsonl
@@ -542,16 +542,16 @@ master/sop/runtime/reception/
 
 ```text
 master/agents/agent.py                 # “开始接待”入口；resume 续跑；顶层任务收尾触发复盘
-master/run.py                          # publish_task 支持 resume，续跑时跳过新任务预检
+src/brain/__main__.py                          # publish_task 支持 resume，续跑时跳过新任务预检
 deploy/templates/index.html            # 「断点继续」按钮
 master/sop/reception_skill.py          # mock/real；透传 resume
 master/sop/reception_real.py           # 固定单链路；resume 从 failed_phase 切入
 master/sop/episode.py                  # 仿真/真机共用的复盘账本
-master/sop/reflect.py                  # 事后复盘（默认只落 candidates，不改 SOP）
+src/brain/learning/reflection.py                  # 事后复盘（默认只落 candidates，不改 SOP）
 master/integrations/dream_client.py    # DREAM HTTP客户端
 master/integrations/vla_client.py      # VLA任务与相机HTTP客户端
 master/integrations/reception_verify.py# VLM + LLM判真
-master/sop/runtime/reception/          # JSON/JSONL/图片证据
+data/retired/reception/          # JSON/JSONL/图片证据
 ```
 
 真机入口逻辑：

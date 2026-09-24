@@ -33,9 +33,8 @@ import sys as _sys
 _PROJECT_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')
 )
-_sys.path.insert(0, os.path.join(_PROJECT_ROOT, 'slaver', 'robot'))
 try:
-    from path_planner import is_line_clear as _astar_line_clear, plan_path as _astar_plan
+    from execution.slaver.robot.path_planner import is_line_clear as _astar_line_clear, plan_path as _astar_plan
     _ASTAR_AVAILABLE = True
 except Exception as _e:
     _ASTAR_AVAILABLE = False
@@ -304,7 +303,7 @@ _container_contents = {}  # container → [objs] 藏进去的物体;open_contain
 
 
 def _learning_mode():
-    """学习测试台开关 = slaver/config.yaml 的 perception.use_realtime_coords 取反。
+    """学习测试台开关 = config/slaver.yaml 的 perception.use_realtime_coords 取反。
 
     True  → 部分可观测:reset_home 起空 belief、inject_move 不更新 belief(漂移可检测)。
     False → 全可观测:belief 直接 = 真值(原行为不变)。
@@ -312,7 +311,7 @@ def _learning_mode():
     """
     try:
         import yaml as _yaml
-        cfg_path = os.path.join(_PROJECT_ROOT, "slaver", "config.yaml")
+        cfg_path = os.path.join(_PROJECT_ROOT, "config", "slaver.yaml")
         with open(cfg_path, "r", encoding="utf-8") as f:
             cfg = _yaml.safe_load(f) or {}
         return not bool(cfg.get("perception", {}).get("use_realtime_coords", True))

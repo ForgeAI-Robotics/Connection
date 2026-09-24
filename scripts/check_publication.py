@@ -7,9 +7,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LIVE_CONFIGS = {f'{x}/config.yaml' for x in ('master','slaver','robot_api','serve_dream')}
-LIVE_CONFIGS.add('extensions/serve_real/config.yaml')
-LIVE_CONFIGS.add('serve_dream/dream_navigation_sop.yaml')
+LIVE_CONFIGS = {f'config/{name}.yaml' for name in ('brain','slaver','robot_api','dream','serve_real','dream_navigation_sop','execution')}
 RULES = {
     'credential-token': re.compile(r'\b(?:sk-[A-Za-z0-9_.-]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|hf_[A-Za-z0-9]{20,})'),
     'private-key': re.compile(r'-----BEGIN (?:OPENSSH |RSA |EC |DSA )?PRIVATE KEY-----'),

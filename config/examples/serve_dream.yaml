@@ -4,7 +4,7 @@ exchange:
   protocol: agent_http_v1
   base_url: http://192.0.2.20:8001
   nav_url: http://192.0.2.20:8001
-  dir: serve_dream/sample
+  dir: src/execution/dream/sample
   map_yaml: map.yaml
   scene_graph: total_scene_graph_latest.json
   pose_file: nav_map_latest.json
@@ -19,6 +19,6 @@ safety:
   real_control_enabled: false
   ack_env: FQPLANNER_DREAM_REAL_CONTROL_ACK
   ack_value: AGENT_HTTP_NAVIGATION_AUTHORIZED
-navigation_sop: serve_dream/dream_navigation_sop.yaml
+navigation_sop: config/dream_navigation_sop.yaml
 server:
   port: 5006

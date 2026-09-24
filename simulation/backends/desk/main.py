@@ -165,7 +165,7 @@ if __name__ == "__main__":
     root = Path(__file__).resolve().parents[3]
     if str(root) not in sys.path:
         sys.path.insert(0, str(root))
-    from common.log_setup import attach_process_log
+    from shared.log_setup import attach_process_log
 
     attach_process_log("desk")
     parser = argparse.ArgumentParser()

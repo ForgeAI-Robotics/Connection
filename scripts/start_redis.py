@@ -1,6 +1,6 @@
 """Compatibility launcher for the operations Redis helper."""
 import sys
-from connection.ops import redis_service as _impl
+from ops import redis_service as _impl
 if __name__ == '__main__':
     _impl.main()
 else:

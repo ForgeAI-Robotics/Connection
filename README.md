@@ -1,215 +1,98 @@
-# FQPlanner 大脑项目
+# Connection 具身大脑
 
-2026-09-24 工程整理：正常启动使用安装包 `connection`。网页和飞书分别直连大脑，Planner、Runtime 与学习模块已集中；旧脚本只转发，旧调度隔离在 `connection.compat`。2026-09-24 已按授权重启大脑、网页、飞书和运维面板；部署记录见[规划第 15.16 节](docs/规划说明_具身大脑重构.md#1516-工程迁移记录2026-09-24)。这次工程整理不代表原四阶段全部完成，真机动作许可仍关闭。
+生产代码统一在 `src/`。任务网页、飞书分别直连大脑；所有业务任务使用同一个 Runtime。旧调度、旧接待循环及导入兼容层已退出，历史代码可在 Git 提交 `c2a98ab` 查看。
 
 ```text
 网页 :8888 ─┐
-            ├→ Brain API :5000 → Planner / 业务包 → Runtime → Runner → 执行适配器
-飞书 ──────┘                                      ↑ Verifier ← 执行证据
-                                                   └→ 任务账本 → learning（异步反思、评测、发布）
-Ops :5678 → 服务管理、环境切换、健康和日志
+飞书 ──────┼→ Brain API :5000 → Runtime ⇄ Planner / 业务包
+外部 API ──┘                     ↓ Runner → 执行适配器 → 身体 / 仿真
+                                ↑ Verifier ← 执行证据
+                                └→ 账本与记忆 → 异步反思、评测、发布
+Ops :5678 → 服务启停、健康、日志、运行环境切换
 ```
 
-安装和启动（Python 3.10；基础安装不包含 GPU 栈）：
+## 目录
+
+| 目录 | 用途 |
+|---|---|
+| `src/brain/` | 大脑应用、内核、业务包、技能、适配、账本、学习、API |
+| `src/entries/` | 独立网页与飞书入口；不持有大脑账本 |
+| `src/ops/` | 运维面板、受控环境切换与服务管理 |
+| `src/execution/` | 机器人语义接口、Slaver、协作通信、DREAM 服务及可选扩展 |
+| `src/contracts/`、`src/clients/` | 数据合同与大脑 HTTP 客户端 |
+| `src/shared/` | 配置加载、路径、日志与环境配置基础设施 |
+| `config/` | 公开模板、业务规则、场景配置及忽略提交的本机 YAML |
+| `data/` | 任务账本、经验、示教、媒体、飞书数据库与运行环境快照 |
+| `logs/` | 按日期、服务保存日志 |
+| `tests/` | 机制、应用、入口、执行、运维及进程集成回归 |
+| `scripts/` | 配置初始化、测试、环境切换、一次性数据迁移 |
+| `simulation/` | Desk、MuJoCo、3DGS 后端及资产 |
+| `infra/` | systemd 与 Docker/ROS 部署设施 |
+| `docs/` | 架构、接口、实施与联调记录 |
+
+`src` 是源码根，不是 Python 包名。项目只有根目录这一份 `pyproject.toml`；启动和导入直接使用 `brain`、`entries`、`ops` 等包。
+
+## 安装和启动
+
+Python 3.10；普通服务用 `.venv`，GPU 仿真继续用 `.venv_3dgs`。
 
 ```bash
 uv pip install --python .venv/bin/python -e .
-.venv/bin/python -m connection.brain
-.venv/bin/python -m connection.entries.web
-.venv/bin/python -m connection.ops
-# 飞书入口按需安装与启动
-uv pip install --python .venv/bin/python -e '.[feishu]'
-.venv/bin/python -m connection.entries.feishu
-# 离线回归：包含本机假 HTTP 服务，不连接真机
-.venv/bin/python scripts/run_tests.py
+python3 scripts/bootstrap_local.py
+# 飞书 / Slaver 按实际需要安装
+uv pip install --python .venv/bin/python -e '.[feishu,execution]'
+
+.venv/bin/python -m brain
+.venv/bin/python -m entries.web
+.venv/bin/python -m entries.feishu
+.venv/bin/python -m ops
+# 使用 Slaver 执行路径时另起 Redis 和 Slaver
+.venv/bin/python -m execution.slaver
 ```
 
-以上服务分别运行；生产可由既有运维面板启动。异地安装大脑时设置 `CONNECTION_WORKSPACE` 指向配置和数据根目录；网页只需要 `MASTER_URL`，飞书只需要自身凭据、数据库目录和 `LARK_BRAIN_URL`，不挂载大脑源码或账本。需要 Slaver 时加装 `.[legacy]` 并启动 Redis；GPU 仿真继续使用原 `.venv_3dgs`，不为入口安装整套仿真依赖。
+网页 `:8888` 使用 `MASTER_URL` 连接大脑 `:5000`；飞书使用 `LARK_BRAIN_URL` 直连 `:5000`。运维面板 `:5678` 独立运行。沿用的面板服务 ID `master` / `deploy` 只是既有管理 API 标识，启动的都是新模块。
 
+从仓库外部署时设置 `CONNECTION_WORKSPACE` 指向配置和数据根目录。配置不会从进程工作目录猜测。入口可独立部署，无需挂载大脑的数据。
 
-面向要在本机把大脑跑起来、从网页或飞书发任务、看仿真画面的人。下文命令默认在项目根目录执行，大脑主机地址为 `192.168.5.35`。
+安装系统级面板：`sudo bash infra/systemd/install_panel.sh`。服务单元直接运行 `python -m ops`，不经过旧脚本。
 
-真机接待逐步启动看 [联调说明：三端联调启动](docs/联调说明_三端联调启动.md)。VLA 口径看 [接口说明_操控VLA](docs/接口说明_操控VLA.md)。全部资料见 [文档目录](docs/README.md)。
+## 日常配置与数据
 
-## 1. 大脑做什么
+- `config/brain.yaml`：大脑模型、任务与反思设置。
+- `config/execution.yaml`：接待、通用执行、观察各模块的仿真／真机选择。
+- `config/robot_api.yaml`、`config/slaver.yaml`、`config/dream.yaml`：执行配置。
+- `config/business/`、`config/scene/`：业务规则和静态场景。
+- `.env`：凭据与本机环境变量；不入 Git。
+- `data/tasks/`：唯一任务账本，包含步骤尝试和原 command_id。
+- `data/memory/`、`data/business/`：经验、反思、示教、观测输入输出。
+- `data/timelines/`、`data/feishu/`：任务回放和入口数据库。
+- `data/system/execution.json`：已经应用的环境快照。
+- `data/retired/`：只读保存的历史数据，不运行旧程序。
+- `logs/YYYY-MM-DD/<服务>/`：服务日志。
 
-FQPlanner 是任务编排层，不直接控电机。飞书或网页把任务交给 Master；导航走 DREAM，抓放走 VLA。
+网页、飞书、外部 API 以及接待演示共用 Runtime。通用任务由 Planner 生成步骤；接待与观察使用业务包；桌面整理通过现有规则展开。Runner 不改路线；Verifier 只输出 PASS / FAIL / UNKNOWN。反思读取任务快照，不改正在执行的任务，也不自动改内核代码。
 
-```mermaid
-flowchart TD
-    U[网页 / 飞书 / API] --> M[Master: Planner + Runtime + Runner + Verifier]
-    M --> P[统一运行环境配置 + 模块覆盖]
-    P --> R[接待: mock / DREAM + VLA]
-    P --> E[通用执行: Desk / Slaver + 仿真]
-    P --> O[现场观察与网页画面: 指定观察源]
-```
+## 仿真与真机
 
-所有任务共用 Runtime。运行环境可以全局切换，也可以按接待、通用执行、观察分别覆盖。在管理面板 `:5678` 顶部操作，或编辑 `config/execution.yaml` 后执行：
+在面板顶部选择运行环境，或修改配置后执行：
 
 ```bash
+.venv/bin/python scripts/execution_mode.py preview
 .venv/bin/python scripts/execution_mode.py apply
 ```
 
-配置格式、一键命令、应用失败回退和能力边界见 [统一环境配置](config/README.md#统一切换仿真与真机)。切换不修改真机动作许可，不迁移在途任务，也不启停远端身体服务。真机通用执行和真机观察尚未接入；选择后明确不可用，不回落仿真。
+配置支持接待、通用执行、观察分别覆盖。运行环境变化仍检查在途任务，失败回退配置，不重置任务账本。Desk 直连不依赖 Redis/Slaver，MuJoCo/3DGS 执行继续使用现有底座。
 
-接待固定顺序：导航到茶水间（table2）→ 抓瓶装可乐 → 过门 → 导航回工位（table1）→ 放下。VLA 当前是 `hand_state_only`：终态 `COMPLETED_HAND_STATE_ONLY` 只说明左手开合加至少 3 帧证据，**不等于**图像证实可乐在手上或已放到桌面。
+`reception_real.kernel_enabled=false` 仍表示真机派发许可关闭，所有任务照常进入新 Runtime。DREAM/VLA HTTP 合同与 command_id 不变，交接能力未核实时不会假装接管成功。本次工程替换不等于真机验收，也不代表原四阶段的剩余范围完成。
 
-飞书和 8888 网页共用 `connection.contracts.intent`，只分两类：天气/百科等闲聊不 `publish_task`；「开始接待」「桌上有什么」等交给大脑。认不出、又可能动手的句子按任务处理，避免误聊把真动作吃掉。
-
-通用、看图、接待这三类顶层任务，仿真和真机跑完都会做事后复盘。真机接待仍是固定 DREAM → VLA 顺序，复盘不改规划、不重放动作。DeepSeek 根据执行账本写候选经验，调不通就降模板；默认只落到 `master/memory/reflections/`（git 忽略），不改 SOP。只有 mock「开始接待」还兼容原来的 `write_sop`。飞书任务卡会多一行「复盘：」。
-
-关闭复盘：`master/config.yaml` 中设置 `reflection.enabled: false`，或设置环境变量 `REFLECTION_ENABLED=0`。只用模板、不调用模型：`FQPLANNER_REFLECTION_LLM=off`。
-
-## 2. 冷机怎么开
-
-面板：`http://192.168.5.35:5678`（`web/app.py`，systemd `fqplanner-panel`）。无登录，只能在可信网络使用。冷机只有面板自启，业务进程默认全停。
-
-建议顺序：
-
-1. **Master** `:5000`；Slaver 执行路径需要时先启动 **Redis** `:6379`；
-2. **Deploy** `:8888`；要发飞书再启动**飞书桥接**，MuJoCo / 3DGS 通用执行再启动 **Slaver**（Desk 直连不需要）；
-3. 要看图：先启动 **3DGS** `:5002`，起不来再启动 **MuJoCo** `:5001`；
-4. 真机接待另行启动 DREAM / VLA；面板真机层两张卡片同时绿灯后才发任务。
-
-当前 `master/config.yaml` 为 `collaborator.clear: false`，重启 Master **不会主动清空** Redis 协作库；但会中断当前 Master 进程和正在处理的任务，因此面板仍会先确认。只有显式改成 `true` 时，启动 Master 才清空对应协作库。面板启停的是本机 tmux，不会替你发布任务。
-
-| 服务 | 地址 |
-|---|---|
-| 面板 | `http://192.168.5.35:5678` |
-| 任务网页 | `http://192.168.5.35:8888` |
-| Master | `http://127.0.0.1:5000` |
-| 3DGS | `http://127.0.0.1:5002` |
-| MuJoCo | `http://127.0.0.1:5001` |
-| Desk | `http://127.0.0.1:5008`（无画面） |
-| DREAM | `192.168.5.18:8001`；9882 仅绑定导航机回环地址，由大脑面板转发 |
-| VLA | `192.168.5.194:8091` |
-
-首次配置：
+## 验证与迁移
 
 ```bash
-python scripts/bootstrap_local.py
+.venv/bin/python scripts/run_tests.py
 ```
 
-本机只维护两套 Python 3.10 环境：`.venv` 运行大脑、网页、飞书和普通工具，`.venv_3dgs` 专用于 CUDA / 3DGS 渲染。不要再创建独立的 `.venv_feishu`；飞书依赖已纳入项目依赖并由 `.venv` 运行。
+测试使用临时账本和本机假服务，不连接真实机器人。旧实现专属测试的退出及替代覆盖记录在 `tests/contracts/retired_test_coverage.json`，不以测试数量相同代替行为验收。
 
-该命令从 [`config/examples/`](config/examples/) 创建缺失的本地配置，不覆盖已有文件，也不启动服务。飞书、SSH、远端地址从根目录 `.env` 读取。不要提交填写后的 `.env`。未应用统一运行配置时，公开模板中的 `RECEPTION_MODE=mock` 优先于旧接待配置；应用统一运行配置后，接待后端以其生效快照为准，不再被 `RECEPTION_MODE` 覆盖。旧地址 `192.168.5.185` 和 `192.168.0.108` 已停用。配置和依赖清单边界见 [`config/README.md`](config/README.md)。
+一次性迁移工具 `scripts/migrate_layout_data.py` 默认只预览；应用前必须停止写入者、核清旧任务。它拒绝未核清命令和不同内容的目标文件，先备份再复制并验证哈希，不把旧接待账本转换成新任务。之后旧源码目录才可以退出。
 
-每个服务一个 tmux session：
-
-```bash
-tmux attach -t redis|master|deploy|feishu|slaver|desk|mujoco|gs
-```
-
-日志位于 `log/YYYY-MM-DD/<服务>/`。
-
-## 3. 仿真后端和网页四宫格
-
-`:8888` 任务控制台的四宫格不是四个仿真，而是当前一个仿真后端的四路相机。
-
-应用统一配置后，Deploy 只显示观察模块指定的后端，不自动切换来源。Desk `:5008` 不出图；需要画面时，将观察模块显式选为 3DGS 或 MuJoCo。尚未启用统一配置的旧环境保留原来的 3DGS → MuJoCo 选图顺序。
-
-| 后端 | 画面 | 四路相机 |
-|---|---|---|
-| 3DGS `:5002` | 扫描高斯场景 | 俯视、头、右腕、左腕 |
-| MuJoCo `:5001` | 几何厨房 / 轻量台面 | 俯视、正面、腕部、中心视角 |
-| Desk `:5008` | 无画面 | — |
-
-直播是实时渲染；回放是任务逐步截取的 JPEG。3DGS 首次出图会执行 CUDA JIT，可能需要一分多钟；期间 `/camera/latest` 返回一两 KB 的黑图属于正常初始化现象。
-
-需要代理时：
-
-```bash
-export http_proxy=http://127.0.0.1:7897
-export https_proxy=http://127.0.0.1:7897
-```
-
-真机接待不经过 3DGS / MuJoCo，机器人执行走 DREAM 和 VLA。
-
-## 4. 网页和飞书怎么发任务
-
-网页经 Deploy `:8888` 直连 Brain `:5000`；飞书直接连接 Brain `:5000`，不依赖 Deploy。
-
-- **网页**：在任务框提交。闲聊不会发送给大脑，运动类任务先确认；“开始接待”按钮视为已确认；
-- **飞书**：私聊直接发，群聊使用 `@机器人 /task <内容>`；`/help`、`/status` 是桥接命令；
-- `LARK_TASK_MODE=dry_run` 只发送卡片，不提交任务；`active` 才会真实发布。
-
-真机接待中途失败并修好现场后，使用网页的**断点继续**，不要重新点击“开始接待”触发空手预检。
-
-飞书配置：
-
-```text
-LARK_APP_ID=<应用 ID>
-LARK_APP_SECRET=<应用密钥>
-LARK_BRAIN_URL=http://127.0.0.1:5000
-```
-
-启动飞书桥接：
-
-```bash
-.venv/bin/python -m connection.entries.feishu
-```
-
-同一应用只能运行一个桥接进程，本机需要能访问 `open.feishu.cn`。
-
-`task_preflight` 不代表真机许可。Runtime 在步骤前检查权限与证据；当前 `kernel_enabled=false` 禁止真机派发，交接能力仍须另行核实。
-
-## 5. 发任务前 30 秒
-
-1. 面板 Master 为绿色；使用 Slaver 时另检查 Redis / Slaver；
-2. 要看图：3DGS 或 MuJoCo 为绿色，四宫格不是持续一两 KB 的黑图；
-3. 要用飞书：飞书卡片为绿色，`LARK_TASK_MODE=active`；
-4. 真机接待：DREAM 与 VLA 两张卡片均为绿色；
-5. 确认现场支撑、肩带、急停及人工闸门已经按联调说明完成。
-
-查看执行过程：
-
-- 面板日志区；
-- `log/YYYY-MM-DD/master/` 中的 `[task]` / `[reception]`；
-- DREAM / VLA 探测和 SSH 输出位于当天 `monitor.log`。
-
-## 6. 排障速查
-
-| 现象 | 先看 |
-|---|---|
-| 网页提交没反应 | Master / Redis 是否监听；Deploy 日志是否调用 Master |
-| 网页提示闲聊 | 改用明确任务表达，如“开始接待”“桌上有什么” |
-| 四宫格持续黑图 | 3DGS 是否仍在首次 JIT；渲染日志是否异常 |
-| 四宫格是几何块面 | 3DGS `:5002` 未启动，已回退 MuJoCo `:5001` |
-| 飞书能聊天但不发任务 | `LARK_TASK_MODE` 及运动任务确认状态 |
-| 接待立即 `rejected` | 检查 `task_preflight` 中 DREAM 8001 / VLA 8091 |
-| 预检提示仍持有 `cola_can_1` | 抓取后失败，应使用“断点继续” |
-| 导航失败但原因不清楚 | Master 日志中的 `未满足:`、`code` 和 `reason` |
-| 飞书任务卡没有复盘 | 任务是否结束、复盘开关和模型配置 |
-| CUDA / 3DGS 无法启动 | `nvidia-smi`；使用 `.venv_3dgs`，不要使用 nouveau |
-
-## 7. 测试
-
-在仓库根目录运行全部离线测试：
-
-```bash
-python3 scripts/run_tests.py
-```
-
-该入口汇总 Master、Web、飞书、Robot API 和 DREAM 测试。需要在线服务或真实机器人
-的验收测试不会被自动执行。
-
-## 8. 深入阅读
-
-| 文档 / 文件 | 用途 |
-|---|---|
-| [文档目录](docs/README.md) | 架构、接口、联调、规划和排障索引 |
-| [公共模块](common/README.md) | 进程日志和大脑业务流水账等共享基础设施 |
-| [仿真目录](simulation/README.md) | Desk、MuJoCo、3DGS 及后续仿真工具的归类入口 |
-| [非主链扩展](extensions/README.md) | PBD、NX 语音和旧式真机直连能力 |
-| [架构说明：三端架构](docs/架构说明_三端架构.md) | 当前系统全局架构 |
-| [联调说明：三端联调启动](docs/联调说明_三端联调启动.md) | 大脑、导航、VLA/NX 启动、人工闸门、预检和收工 |
-| [接口说明：大脑 Brain](docs/接口说明_大脑%20Brain.md) | Master 编排、状态、断点继续和证据策略 |
-| [接口说明：导航 NAV](docs/接口说明_导航NAV.md) | DREAM 世界、状态和四段导航合同 |
-| [接口说明_操控VLA](docs/接口说明_操控VLA.md) | 抓放接口和证据等级 |
-| [Linux 控制面板](web/README.md) | 面板启停、一键脚本和站立 Enter |
-| `master/sop/reception_real.py` | 真机接待阶段 |
-| `master/sop/episode.py`、`master/sop/reflect.py` | 任务账本和事后复盘 |
-| `master/run.py`、`deploy/run.py` | 网页如何转到 Master |
-| `robot_api/intent.py` | 闲聊和任务如何分流 |
-| `robot_api/look.py` | 飞书看图 |
-| `web/app.py` | 面板进程管理 |
+详见 [文档索引](docs/README.md)、[当前架构](docs/架构说明_三端架构.md)、[实施规划第 16 节](docs/规划说明_具身大脑重构.md)。

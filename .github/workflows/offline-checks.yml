@@ -11,7 +11,7 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install offline test dependencies
-        run: python3 -m pip install PyYAML Flask -r config/dependencies/requirements-feishu.txt
+        run: python3 -m pip install -e '.[execution,feishu]' numpy rich
       - name: Create safe local test configuration
         run: python3 scripts/bootstrap_local.py
       - name: Run all offline tests

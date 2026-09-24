@@ -5,7 +5,7 @@ import json
 import sys
 from pathlib import Path
 
-from connection.ops.execution import Switcher, read_yaml
+from ops.execution import Switcher, read_yaml
 
 
 def main():

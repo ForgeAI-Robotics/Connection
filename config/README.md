@@ -21,10 +21,10 @@ python scripts/bootstrap_local.py
 
 ```text
 config/examples/env.example                 -> .env
-config/examples/master.yaml                 -> master/config.yaml
-config/examples/slaver.yaml                 -> slaver/config.yaml
-config/examples/robot_api.yaml              -> robot_api/config.yaml
-config/examples/serve_dream.yaml             -> serve_dream/config.yaml
+config/examples/brain.yaml                 -> config/brain.yaml
+config/examples/slaver.yaml                 -> config/slaver.yaml
+config/examples/robot_api.yaml              -> config/robot_api.yaml
+config/examples/serve_dream.yaml             -> config/dream.yaml
 config/examples/serve_real.yaml              -> extensions/serve_real/config.yaml
 config/examples/dream_navigation_sop.yaml    -> serve_dream/dream_navigation_sop.yaml
 ```
@@ -88,15 +88,15 @@ modules:
 .venv/bin/python scripts/execution_mode.py apply --mode real --reset-overrides
 ```
 
-应用会检查新旧任务账本和大脑状态。有运行、暂停、人工等待、取消中、待恢复任务，或命令／资源未核清时拒绝切换。事务持有准入互斥，停止大脑及需要重载的 Slaver 后再次核对账本；启动所需本机仿真服务，重启大脑及 Slaver，验证目标和配置版本。网页、飞书保留运行，每次通过大脑读取生效配置。Desk 直连且未运行 Slaver 时无需 Redis。**不重启或清空 Redis，不启停远端 DREAM／VLA，不发任何任务，也不改变 `kernel_enabled`。** 失败恢复原配置；回退未完成时保留阻断标记。
+应用会检查唯一的 Runtime 任务账本和大脑状态。有运行、暂停、人工等待、取消中、待恢复任务，或命令／资源未核清时拒绝切换。事务持有准入互斥，停止大脑及需要重载的 Slaver 后再次核对账本；启动所需本机仿真服务，重启大脑及 Slaver，验证目标和配置版本。网页、飞书保留运行，每次通过大脑读取生效配置。Desk 直连且未运行 Slaver 时无需 Redis。**不重启或清空 Redis，不启停远端 DREAM／VLA，不发任何任务，也不改变 `kernel_enabled`。** 失败恢复原配置；回退未完成时保留阻断标记。
 
-已应用的快照保存在 `.runtime/execution.json`。业务进程启动时读取一次，修改草稿不热切换运行中的后端；需要点击应用或运行 `apply`。这份快照优先于旧的 `RECEPTION_MODE`、`ROBOT_API_BACKEND`、`ROBOT_BACKEND`、`ROBOT_API_URL` 和独立导航覆盖。后端基础地址仍在 `robot_api/config.yaml`；修改地址后重新应用。`.runtime` 中的文件由程序维护，不手动改写或删除。
+已应用的快照保存在 `data/system/execution.json`。业务进程启动时读取一次，修改草稿不热切换运行中的后端；需要点击应用或运行 `apply`。这份快照优先于旧的 `RECEPTION_MODE`、`ROBOT_API_BACKEND`、`ROBOT_BACKEND`、`ROBOT_API_URL` 和独立导航覆盖。后端基础地址仍在 `config/robot_api.yaml`；修改地址后重新应用。`data/system` 中的文件由程序维护，不手动改写或删除。
 
 **能力边界：**真机接待仍受原 `kernel_enabled` 和下游闸门约束，切环境不会放行身体动作。通用执行与观察尚无接好的完整真机适配，选择真机时显示不可用并拒绝对应任务。Desk 不提供画面；选择 Desk 作为观察后端时会明确不可用，不自动寻找另一环境的相机。各模块的实际选择可在管理面板及 `:8888` 任务网页查看。
 
 一键离线测试仍使用 `.venv/bin/python scripts/run_tests.py`。测试脚本隔离现场生效配置及切换互斥文件，不受当前全局／模块环境影响，也不改现场生效版本。
 
 
-工程入口：`python -m connection.brain`、`python -m connection.entries.web`、`python -m connection.entries.feishu`、`python -m connection.ops`。`LARK_BRAIN_URL` 应直接指向大脑 `:5000`。既有 `master/run.py`、`deploy/run.py` 是薄启动器，需要先安装本项目。
+工程入口：`python -m brain`、`python -m entries.web`、`python -m entries.feishu`、`python -m ops`。`LARK_BRAIN_URL` 应直接指向大脑 `:5000`。启动前安装本项目；不再提供旧脚本或导入转发。
 
-大脑工作器配置位于 `master/config.yaml` 的 `brain`：`queue_limit` 默认 32、`io_workers` 默认 4（最少 2）、`shutdown_timeout_sec` 默认 10、`capture_timeline` 默认 true。规划 1 个工作线程，Runtime 1 个所有者线程，控制 I/O 2 个，反思 1 个；媒体及示教工作器按需启动。关闭超时不会假写“已停止”，原命令保留在账本。`brain.scheduler=legacy` 不再由新启动器动态切回旧执行；回退须停准入、核清任务后切回上一代码版本。
+大脑工作器配置位于 `config/brain.yaml` 的 `brain`：`queue_limit` 默认 32、`io_workers` 默认 4（最少 2）、`shutdown_timeout_sec` 默认 10、`capture_timeline` 默认 true。规划 1 个工作线程，Runtime 1 个所有者线程，控制 I/O 2 个，反思 1 个；媒体及示教工作器按需启动。关闭超时不会假写“已停止”，原命令保留在账本。`brain.scheduler=legacy` 不再由新启动器动态切回旧执行；回退须停准入、核清任务后切回上一代码版本。

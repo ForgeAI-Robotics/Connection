@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-legacy = ["redis==5.2.1", "mcp==1.10.1"]
+execution = ["redis==5.2.1", "mcp==1.10.1", "numpy==2.2.6", "rich==15.0.0"]
 feishu = ["lark-channel-sdk==1.0.0"]
 simulation = [
     "motrixsim_core==0.7.1.dev97295",
@@ -86,16 +86,13 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src", "."]
-include = ["connection*", "common*", "robot_api*", "agent*"]
+where = ["src"]
 namespaces = false
 
 [tool.setuptools.package-dir]
-connection = "src/connection"
-common = "common"
-robot_api = "robot_api"
-agent = "agent"
+"" = "src"
 
 [tool.setuptools.package-data]
-"connection.entries.web" = ["templates/*.html"]
-"connection.ops" = ["templates/*.html", "static/*", "ssh_askpass.sh"]
+"entries.web" = ["templates/*.html"]
+"ops" = ["templates/*.html", "static/*", "ssh_askpass.sh"]
+"execution.dream" = ["sample/*", "templates/*"]

@@ -7,12 +7,12 @@ EXAMPLES = ROOT / 'config' / 'examples'
 PAIRS = [
     ('execution.yaml', 'config/execution.yaml'),
     ('env.example', '.env'),
-    ('master.yaml', 'master/config.yaml'),
-    ('slaver.yaml', 'slaver/config.yaml'),
-    ('robot_api.yaml', 'robot_api/config.yaml'),
-    ('serve_real.yaml', 'extensions/serve_real/config.yaml'),
-    ('serve_dream.yaml', 'serve_dream/config.yaml'),
-    ('dream_navigation_sop.yaml', 'serve_dream/dream_navigation_sop.yaml'),
+    ('brain.yaml', 'config/brain.yaml'),
+    ('slaver.yaml', 'config/slaver.yaml'),
+    ('robot_api.yaml', 'config/robot_api.yaml'),
+    ('serve_real.yaml', 'config/serve_real.yaml'),
+    ('serve_dream.yaml', 'config/dream.yaml'),
+    ('dream_navigation_sop.yaml', 'config/dream_navigation_sop.yaml'),
 ]
 
 def main():

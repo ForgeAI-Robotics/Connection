@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from robot_api.config import load_robot_api_config
+from execution.robot_api.config import load_robot_api_config
 
 app = Flask(__name__)
 API_URL = os.getenv("ROBOT_API_URL", load_robot_api_config().server_url)

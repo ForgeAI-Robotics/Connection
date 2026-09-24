@@ -573,9 +573,11 @@ dependencies = [
 feishu = [
     { name = "lark-channel-sdk" },
 ]
-legacy = [
+execution = [
     { name = "mcp" },
+    { name = "numpy" },
     { name = "redis" },
+    { name = "rich" },
 ]
 simulation = [
     { name = "deepdiff" },
@@ -629,13 +631,14 @@ requires-dist = [
     { name = "lark-channel-sdk", specifier = "==1.0.0", marker = "extra == 'simulation'" },
     { name = "lerobot", specifier = ">=0.4.4,<0.5", marker = "extra == 'simulation'" },
     { name = "matplotlib", specifier = "==3.10.9", marker = "extra == 'simulation'" },
-    { name = "mcp", specifier = "==1.10.1", marker = "extra == 'legacy'" },
+    { name = "mcp", specifier = "==1.10.1", marker = "extra == 'execution'" },
     { name = "mcp", specifier = "==1.10.1", marker = "extra == 'simulation'" },
     { name = "mediapy", specifier = "==1.2.6", marker = "extra == 'simulation'" },
     { name = "motrixsim-core", specifier = "==0.7.1.dev97295", index = "https://pypi.motphys.com/simple/", marker = "extra == 'simulation'" },
     { name = "mujoco", specifier = ">=3.2", marker = "extra == 'simulation'" },
     { name = "nbconvert", specifier = ">=7.16", marker = "extra == 'simulation'" },
     { name = "ninja", specifier = "==1.13.0", marker = "extra == 'simulation'" },
+    { name = "numpy", specifier = "==2.2.6", marker = "extra == 'execution'" },
     { name = "numpy", specifier = "==2.2.6", marker = "extra == 'simulation'" },
     { name = "onnxruntime", specifier = "==1.22.1", marker = "extra == 'simulation'" },
     { name = "openai", specifier = "==2.15.0" },
@@ -649,9 +652,10 @@ requires-dist = [
     { name = "pyserial", marker = "extra == 'simulation'" },
     { name = "python-dotenv", specifier = ">=1.1,<2" },
     { name = "pyyaml", specifier = "==6.0.2" },
-    { name = "redis", specifier = "==5.2.1", marker = "extra == 'legacy'" },
+    { name = "redis", specifier = "==5.2.1", marker = "extra == 'execution'" },
     { name = "redis", specifier = "==5.2.1", marker = "extra == 'simulation'" },
     { name = "requests", specifier = ">=2.32,<3" },
+    { name = "rich", specifier = "==15.0.0", marker = "extra == 'execution'" },
     { name = "rich", specifier = "==15.0.0", marker = "extra == 'simulation'" },
     { name = "scikit-learn", specifier = "==1.5.2", marker = "extra == 'simulation'" },
     { name = "scipy", specifier = "==1.15.3", marker = "extra == 'simulation'" },
@@ -662,7 +666,7 @@ requires-dist = [
     { name = "tqdm", marker = "extra == 'simulation'" },
     { name = "wheel", specifier = "==0.45.1", marker = "extra == 'simulation'" },
 ]
-provides-extras = ["feishu", "legacy", "simulation"]
+provides-extras = ["execution", "feishu", "simulation"]
 
 [[package]]
 name = "freetype-py"

@@ -11,7 +11,7 @@ import time
 import unittest
 import requests
 import yaml
-from connection.clients.brain import BrainClient
+from clients.brain import BrainClient
 
 
 def free_port():
@@ -51,9 +51,9 @@ class ProcessIntegrationTests(unittest.TestCase):
             try:
                 brain_url = f'http://127.0.0.1:{brain_port}'
                 web_url = f'http://127.0.0.1:{web_port}'
-                start('connection.brain', '--config', str(config), '--port', str(brain_port), '--host', '127.0.0.1')
+                start('brain', '--config', str(config), '--port', str(brain_port), '--host', '127.0.0.1')
                 ready(brain_url + '/health')
-                web = start('connection.entries.web', '--brain-url', brain_url, '--port', str(web_port), '--host', '127.0.0.1')
+                web = start('entries.web', '--brain-url', brain_url, '--port', str(web_port), '--host', '127.0.0.1')
                 ready(web_url + '/')
                 response = requests.post(web_url + '/api/reception/run', json={'headcount': 2}, timeout=10)
                 self.assertTrue(response.json()['accepted'], response.text)
@@ -81,7 +81,7 @@ class ProcessIntegrationTests(unittest.TestCase):
                 log.close()
 
     def test_bad_ledger_never_becomes_an_empty_task(self):
-        from connection.brain.storage.tasks import KernelStore, load_existing
+        from brain.storage.tasks import KernelStore, load_existing
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'current_task.json'
             for raw in ('[]', '{}', '{broken'):

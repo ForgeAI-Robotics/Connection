@@ -124,7 +124,7 @@ if __name__ == "__main__":
     root = os.path.dirname(os.path.dirname(os.path.dirname(SERVE_DIR)))
     if root not in sys.path:
         sys.path.insert(0, root)
-    from common.log_setup import attach_process_log
+    from shared.log_setup import attach_process_log
 
     attach_process_log("mujoco")
     parser = argparse.ArgumentParser()

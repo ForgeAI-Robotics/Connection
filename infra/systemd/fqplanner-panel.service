@@ -1,0 +1,20 @@
+[Unit]
+Description=FQPlanner Linux control panel
+After=network.target
+Documentation=file://@ROOT@/docs/运维面板.md
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+WorkingDirectory=@ROOT@
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-@ROOT@/.env
+ExecStart=@PYTHON@ -m ops
+Restart=always
+RestartSec=3
+# Panel only monitors. Restarting this unit must not kill tmux business processes.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

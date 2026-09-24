@@ -1,0 +1,57 @@
+{
+  "baseline_commit": "c2a98ab",
+  "retired": [
+    {
+      "file": "master/tests/test_execution_base.py",
+      "reason": "Old GlobalAgent/TaskQueue removed",
+      "coverage": [
+        "tests/test_slaver_transport.py",
+        "tests/brain/test_kernel_brain.py",
+        "tests/test_lifecycle.py",
+        "tests/test_layout_migration.py"
+      ]
+    },
+    {
+      "file": "master/tests/test_reception_real.py",
+      "reason": "Old ReceptionRealRunner removed; uncertain HTTP request test retained as RealClientContractTests",
+      "coverage": [
+        "tests/brain/test_kernel_reception.py",
+        "tests/brain/test_reception_real.py",
+        "tests/test_packaging.py"
+      ]
+    },
+    {
+      "file": "integrations/feishu/tests/test_scene.py",
+      "reason": "Feishu no longer performs local observation or backend fallback; all look tasks use the brain",
+      "coverage": [
+        "tests/brain/test_kernel_packages.py",
+        "tests/robot_api/test_look.py",
+        "tests/test_entries.py"
+      ]
+    },
+    {
+      "file": "master/tests/test_kernel_brain.py",
+      "reason": "Application scenarios now invoke BrainService; old rollback/old-ledger admission cases replaced by migration guards",
+      "coverage": [
+        "tests/brain/test_kernel_brain.py",
+        "tests/test_layout_migration.py"
+      ]
+    },
+    {
+      "file": "web/tests/test_execution.py",
+      "reason": "Retired ledger is checked once during migration; live switching checks the sole task ledger",
+      "coverage": [
+        "tests/ops/test_execution.py",
+        "tests/test_layout_migration.py"
+      ]
+    },
+    {
+      "file": "master/tests/test_log_setup.py",
+      "reason": "Old ReceptionStore-only output test retired with that store",
+      "coverage": [
+        "tests/brain/test_brain_journal.py",
+        "tests/brain/test_kernel_reception.py"
+      ]
+    }
+  ]
+}

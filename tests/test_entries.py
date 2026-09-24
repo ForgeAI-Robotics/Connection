@@ -6,11 +6,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 from werkzeug.datastructures import FileStorage
-from connection.entries.web.app import create_app as create_web
-from connection.brain.api.app import create_app
-from connection.brain.app import create_service
-from connection.brain.application import BrainApplication
-from connection.brain.learning.demo import DemoLearning
+from entries.web.app import create_app as create_web
+from brain.api.app import create_app
+from brain.app import create_service
+from brain.application import BrainApplication
+from brain.learning.demo import DemoLearning
 
 
 class EntryTests(unittest.TestCase):
@@ -67,11 +67,11 @@ class EntryTests(unittest.TestCase):
 import importlib.abc, sys
 class Deny(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, *args):
-        if fullname.startswith(('connection.brain', 'robot_api', 'redis', 'master')):
+        if fullname.startswith(('brain', 'robot_api', 'redis', 'master')):
             raise RuntimeError(fullname)
 sys.meta_path.insert(0, Deny())
-from connection.entries.web.app import create_app
-from connection.entries.feishu.bridge import FeishuBridge
+from entries.web.app import create_app
+from entries.feishu.bridge import FeishuBridge
 create_app()
 '''
         result = subprocess.run([sys.executable, '-c', script], cwd='/tmp', text=True, capture_output=True)
