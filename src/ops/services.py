@@ -61,11 +61,11 @@ class Service:
 
 
 def _venv_python() -> Path:
-    return ROOT / ".venv" / "bin" / "python"
+    return ROOT / "venv" / "core" / "bin" / "python"
 
 
 def _3dgs_python() -> Path:
-    candidate = ROOT / ".venv_3dgs" / "bin" / "python"
+    candidate = ROOT / "venv" / "gpu" / "bin" / "python"
     return candidate if candidate.exists() else _venv_python()
 
 

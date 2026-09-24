@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 UNIT_SRC="$ROOT/infra/systemd/fqplanner-panel.service"
 UNIT_DST="/etc/systemd/system/fqplanner-panel.service"
-PYTHON="${PANEL_PYTHON:-$ROOT/.venv/bin/python}"
+PYTHON="${PANEL_PYTHON:-$ROOT/venv/core/bin/python}"
 if [[ -n "${PANEL_USER:-}" ]]; then
   USER_NAME="$PANEL_USER"
 else
@@ -48,4 +48,4 @@ echo
 echo "面板已开机自启: http://0.0.0.0:5678"
 echo "业务进程不会随开机启动，请在面板里按需点启动。"
 echo "systemctl restart fqplanner-panel 只重拉监视进程，不会停止 Redis/Master 等业务。"
-echo "本机查看日志: log/YYYY-MM-DD/<服务>/"
+echo "本机查看日志: logs/YYYY-MM-DD/<服务>/"

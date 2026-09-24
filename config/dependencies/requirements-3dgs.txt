@@ -1,8 +1,8 @@
 # Dedicated simulation/backends/gs environment: MotrixSim physics + 3DGS rendering.
-# Python 3.10 environment with CUDA 12.8 PyTorch. Install into .venv_3dgs.
+# Python 3.10 environment with CUDA 12.8 PyTorch. Install into venv/gpu.
 # torch comes from https://download.pytorch.org/whl/cu128 (or Aliyun pytorch-wheels/cu128).
 # motrixsim_core / gaussian_renderer come from https://pypi.motphys.com/simple/
-# Use: uv pip install --python .venv_3dgs --prerelease allow --index-strategy unsafe-best-match -r config/dependencies/requirements-3dgs.txt
+# Use: uv pip install --python venv/gpu --prerelease allow --index-strategy unsafe-best-match -r config/dependencies/requirements-3dgs.txt
 motrixsim_core==0.7.1.dev97295
 torch==2.7.0+cu128
 gaussian_renderer==0.2.0

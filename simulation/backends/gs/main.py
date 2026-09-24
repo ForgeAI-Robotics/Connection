@@ -16,10 +16,10 @@ def _detect_cuda_home(project_root: str) -> str:
     if env and os.path.isdir(env):
         return env
     candidates = (
-        os.path.join(project_root, ".cuda", "v12.8", "usr", "local", "cuda-12.8"),
-        os.path.join(project_root, ".cuda", "v12.8"),
-        os.path.join(project_root, ".cuda", "v12.4", "usr", "local", "cuda-12.4"),
-        os.path.join(project_root, ".cuda", "v12.4"),
+        os.path.join(project_root, "venv", "cuda", "v12.8", "usr", "local", "cuda-12.8"),
+        os.path.join(project_root, "venv", "cuda", "v12.8"),
+        os.path.join(project_root, "venv", "cuda", "v12.4", "usr", "local", "cuda-12.4"),
+        os.path.join(project_root, "venv", "cuda", "v12.4"),
         "/usr/local/cuda-12.8",
         "/usr/local/cuda-12.4",
         "/usr/local/cuda",

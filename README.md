@@ -21,6 +21,7 @@ Ops :5678 → 服务启停、健康、日志、运行环境切换
 | `src/execution/` | 机器人语义接口、Slaver、协作通信、DREAM 服务及可选扩展 |
 | `src/contracts/`、`src/clients/` | 数据合同与大脑 HTTP 客户端 |
 | `src/shared/` | 配置加载、路径、日志与环境配置基础设施 |
+| `venv/` | 本机 Python 环境、CUDA 和下载依赖；整个目录不入 Git |
 | `config/` | 公开模板、业务规则、场景配置及忽略提交的本机 YAML |
 | `data/` | 任务账本、经验、示教、媒体、飞书数据库与运行环境快照 |
 | `logs/` | 按日期、服务保存日志 |
@@ -34,20 +35,23 @@ Ops :5678 → 服务启停、健康、日志、运行环境切换
 
 ## 安装和启动
 
-Python 3.10；普通服务用 `.venv`，GPU 仿真继续用 `.venv_3dgs`。
+Python 3.10；普通服务用 `venv/core`，GPU 仿真用 `venv/gpu`。两套依赖分开安装，避免 GPU 工具链影响普通服务。`venv/cuda` 存本机 CUDA 工具链，`venv/deps` 存下载的第三方源码与资源；整个 `venv/` 不入 Git。可复现的依赖声明仍保留在 `pyproject.toml`、`uv.lock` 和 `config/dependencies/`。
+
+`__pycache__/` 是 Python 自动缓存，已被 Git 忽略，可删除并自动重建；`.github/workflows/` 是自动测试配置，保留原位置并提交 Git。
 
 ```bash
-uv pip install --python .venv/bin/python -e .
+uv venv --python 3.10 venv/core
+uv pip install --python venv/core/bin/python -e .
 python3 scripts/bootstrap_local.py
 # 飞书 / Slaver 按实际需要安装
-uv pip install --python .venv/bin/python -e '.[feishu,execution]'
+uv pip install --python venv/core/bin/python -e '.[feishu,execution]'
 
-.venv/bin/python -m brain
-.venv/bin/python -m entries.web
-.venv/bin/python -m entries.feishu
-.venv/bin/python -m ops
+venv/core/bin/python -m brain
+venv/core/bin/python -m entries.web
+venv/core/bin/python -m entries.feishu
+venv/core/bin/python -m ops
 # 使用 Slaver 执行路径时另起 Redis 和 Slaver
-.venv/bin/python -m execution.slaver
+venv/core/bin/python -m execution.slaver
 ```
 
 网页 `:8888` 使用 `MASTER_URL` 连接大脑 `:5000`；飞书使用 `LARK_BRAIN_URL` 直连 `:5000`。运维面板 `:5678` 独立运行。沿用的面板服务 ID `master` / `deploy` 只是既有管理 API 标识，启动的都是新模块。
@@ -77,8 +81,8 @@ uv pip install --python .venv/bin/python -e '.[feishu,execution]'
 在面板顶部选择运行环境，或修改配置后执行：
 
 ```bash
-.venv/bin/python scripts/execution_mode.py preview
-.venv/bin/python scripts/execution_mode.py apply
+venv/core/bin/python scripts/execution_mode.py preview
+venv/core/bin/python scripts/execution_mode.py apply
 ```
 
 配置支持接待、通用执行、观察分别覆盖。运行环境变化仍检查在途任务，失败回退配置，不重置任务账本。Desk 直连不依赖 Redis/Slaver，MuJoCo/3DGS 执行继续使用现有底座。
@@ -88,7 +92,7 @@ uv pip install --python .venv/bin/python -e '.[feishu,execution]'
 ## 验证与迁移
 
 ```bash
-.venv/bin/python scripts/run_tests.py
+venv/core/bin/python scripts/run_tests.py
 ```
 
 测试使用临时账本和本机假服务，不连接真实机器人。旧实现专属测试的退出及替代覆盖记录在 `tests/contracts/retired_test_coverage.json`，不以测试数量相同代替行为验收。

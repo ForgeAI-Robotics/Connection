@@ -31,17 +31,21 @@ config/examples/dream_navigation_sop.yaml    -> serve_dream/dream_navigation_sop
 
 ## 依赖边界
 
-- 通用 `.venv`：安装 `dependencies/requirements-core.txt`；需要飞书时再安装 `dependencies/requirements-feishu.txt`。
+- 通用 `venv/core`：安装 `dependencies/requirements-core.txt`；需要飞书时再安装 `dependencies/requirements-feishu.txt`。
 - 飞书组件或 CI：`dependencies/requirements-feishu.txt`。
-- CUDA / 3DGS 专用 `.venv_3dgs`：`dependencies/requirements-3dgs.txt`。
+- CUDA / 3DGS 专用 `venv/gpu`：`dependencies/requirements-3dgs.txt`。
 
 ```bash
-uv pip install --python .venv -r config/dependencies/requirements-core.txt
-uv pip install --python .venv -r config/dependencies/requirements-feishu.txt
-uv pip install --python .venv_3dgs --prerelease allow --index-strategy unsafe-best-match -r config/dependencies/requirements-3dgs.txt
+uv venv --python 3.10 venv/core
+uv venv --python 3.10 venv/gpu
+uv pip install --python venv/core -r config/dependencies/requirements-core.txt
+uv pip install --python venv/core -r config/dependencies/requirements-feishu.txt
+uv pip install --python venv/gpu --prerelease allow --index-strategy unsafe-best-match -r config/dependencies/requirements-3dgs.txt
+uv pip install --python venv/core -e .
+uv pip install --python venv/gpu -e .
 ```
 
-场景资产、Nav2、ROS、遥操作训练等模块内运行配置继续保留原位，例如 `simulation/assets/`、`simulation/nav2/config.yaml`、`simulation/backends/mujoco/scene/config/` 和 `docker/nav2/**/config/`。这些文件与代码使用相对路径耦合，不属于项目级配置模板。
+场景资产、Nav2、ROS、遥操作训练等模块内运行配置继续保留原位，例如 `simulation/assets/`、`simulation/nav2/config.yaml`、`simulation/backends/mujoco/scene/config/` 和 `infra/docker/nav2/**/config/`。这些文件与代码使用相对路径耦合，不属于项目级配置模板。
 
 ## 统一切换仿真与真机
 
@@ -72,20 +76,20 @@ modules:
 
 ```bash
 # 查看草稿、生效版本、最近一次应用结果及真机动作许可
-.venv/bin/python scripts/execution_mode.py status
+venv/core/bin/python scripts/execution_mode.py status
 
 # 改完 config/execution.yaml 后预览并应用
-.venv/bin/python scripts/execution_mode.py preview
-.venv/bin/python scripts/execution_mode.py apply
+venv/core/bin/python scripts/execution_mode.py preview
+venv/core/bin/python scripts/execution_mode.py apply
 
 # 一键切到全仿真（清除模块覆盖）
-.venv/bin/python scripts/execution_mode.py apply --mode simulation --sim mujoco_3dgs --reset-overrides
+venv/core/bin/python scripts/execution_mode.py apply --mode simulation --sim mujoco_3dgs --reset-overrides
 
 # 接待真机、通用执行 Desk、观察 3DGS
-.venv/bin/python scripts/execution_mode.py apply --mode real --reset-overrides --execution simulation --execution-sim desk --observation simulation --observation-sim mujoco_3dgs
+venv/core/bin/python scripts/execution_mode.py apply --mode real --reset-overrides --execution simulation --execution-sim desk --observation simulation --observation-sim mujoco_3dgs
 
 # 全真机：未接入的能力会明确停用，不回落仿真
-.venv/bin/python scripts/execution_mode.py apply --mode real --reset-overrides
+venv/core/bin/python scripts/execution_mode.py apply --mode real --reset-overrides
 ```
 
 应用会检查唯一的 Runtime 任务账本和大脑状态。有运行、暂停、人工等待、取消中、待恢复任务，或命令／资源未核清时拒绝切换。事务持有准入互斥，停止大脑及需要重载的 Slaver 后再次核对账本；启动所需本机仿真服务，重启大脑及 Slaver，验证目标和配置版本。网页、飞书保留运行，每次通过大脑读取生效配置。Desk 直连且未运行 Slaver 时无需 Redis。**不重启或清空 Redis，不启停远端 DREAM／VLA，不发任何任务，也不改变 `kernel_enabled`。** 失败恢复原配置；回退未完成时保留阻断标记。
@@ -94,7 +98,7 @@ modules:
 
 **能力边界：**真机接待仍受原 `kernel_enabled` 和下游闸门约束，切环境不会放行身体动作。通用执行与观察尚无接好的完整真机适配，选择真机时显示不可用并拒绝对应任务。Desk 不提供画面；选择 Desk 作为观察后端时会明确不可用，不自动寻找另一环境的相机。各模块的实际选择可在管理面板及 `:8888` 任务网页查看。
 
-一键离线测试仍使用 `.venv/bin/python scripts/run_tests.py`。测试脚本隔离现场生效配置及切换互斥文件，不受当前全局／模块环境影响，也不改现场生效版本。
+一键离线测试仍使用 `venv/core/bin/python scripts/run_tests.py`。测试脚本隔离现场生效配置及切换互斥文件，不受当前全局／模块环境影响，也不改现场生效版本。
 
 
 工程入口：`python -m brain`、`python -m entries.web`、`python -m entries.feishu`、`python -m ops`。`LARK_BRAIN_URL` 应直接指向大脑 `:5000`。启动前安装本项目；不再提供旧脚本或导入转发。

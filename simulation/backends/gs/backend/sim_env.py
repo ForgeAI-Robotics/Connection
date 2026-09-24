@@ -13,10 +13,10 @@ def _detect_cuda_home() -> str:
         return env
     project_root = Path(__file__).resolve().parents[4]
     candidates = (
-        project_root / ".cuda" / "v12.8" / "usr" / "local" / "cuda-12.8",
-        project_root / ".cuda" / "v12.8",
-        project_root / ".cuda" / "v12.4" / "usr" / "local" / "cuda-12.4",
-        project_root / ".cuda" / "v12.4",
+        project_root / "venv" / "cuda" / "v12.8" / "usr" / "local" / "cuda-12.8",
+        project_root / "venv" / "cuda" / "v12.8",
+        project_root / "venv" / "cuda" / "v12.4" / "usr" / "local" / "cuda-12.4",
+        project_root / "venv" / "cuda" / "v12.4",
         Path("/usr/local/cuda-12.8"),
         Path("/usr/local/cuda-12.4"),
         Path("/usr/local/cuda"),
