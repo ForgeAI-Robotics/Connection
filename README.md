@@ -78,7 +78,7 @@ venv/core/bin/python -m execution.slaver
 
 ## 仿真与真机
 
-在面板顶部选择运行环境，或修改配置后执行：
+在面板侧栏「运行环境」选择配置，或修改配置后执行：
 
 ```bash
 venv/core/bin/python scripts/execution_mode.py preview
@@ -99,4 +99,4 @@ venv/core/bin/python scripts/run_tests.py
 
 一次性迁移工具 `scripts/migrate_layout_data.py` 默认只预览；应用前必须停止写入者、核清旧任务。它拒绝未核清命令和不同内容的目标文件，先备份再复制并验证哈希，不把旧接待账本转换成新任务。之后旧源码目录才可以退出。
 
-详见 [文档索引](docs/README.md)、[当前架构](docs/架构说明_三端架构.md)、[实施规划第 16 节](docs/规划说明_具身大脑重构.md)。
+详见 [文档索引](docs/README.md)、[当前架构](docs/架构说明_三端架构.md)、[重构前后对比](docs/架构说明_重构前后对比.md)、[实施规划第 16 节](docs/规划说明_具身大脑重构.md)。
