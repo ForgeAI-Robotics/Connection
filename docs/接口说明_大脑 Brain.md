@@ -5,7 +5,7 @@
 契约版本：`fq/reception-lan/v1`  
 适用范围：单罐接待固定 Pipeline、DREAM/VLA 调用、状态保存、断点继续与可选照片判真。
 
-> 2026-09-24 工程更新：大脑正常实现迁到 `src/brain`，旧 `src/brain/__main__.py` 只转发。网页与飞书各自直连 `:5000`。下文 DREAM/VLA 外部报文仍是 `fq/reception-lan/v1`；旧接待的 hand-only 与断点相位示例只适用于保留的历史实现，不是新 Runtime 的成功或续跑标准。新内核证据、状态与恢复以规划第 9–15 节为准。当前 `kernel_enabled=false`。
+> 2026-09-24 工程更新：大脑实现位于 `src/brain`，旧执行循环和兼容启动器已退出。网页与飞书各自直连 `:5000`。下文第 8 节保留早期接待报文和流程说明，其中 hand-only 终态不适用于当前 Runtime。当前任务状态与恢复见第 1、9 节；工程与有效约束统一见[重构规划第 16–17 节](规划说明_具身大脑重构.md)。`kernel_enabled=false`，真机动作许可仍关闭。
 
 ## 1. 大脑侧职责与 API 归属
 
@@ -491,40 +491,24 @@ LLM固定输出：
 
 该终态只证明当前手状态证据和接口终态满足，不证明物体已被视觉确认放到桌面。
 
-## 9. 本地状态保存，不使用数据库
+## 9. 本地状态保存
 
-```text
-data/retired/reception/
-  current_task.json
-  events.jsonl
-  verification.jsonl
-  images/pick_after.jpg
-  images/place_after.jpg
-```
+任务状态由 Runtime 单写，当前账本位于 `data/tasks/`。`KernelStore` 使用目录互斥、版本检查和原子文件替换，保存每一步的尝试、不可变请求、原 `command_id` 及证据。旧接待记录在 `data/retired/reception/` 仅作历史留存，不作为新内核的续跑入口。
 
-- 内存对象用于网页实时显示；
-- `current_task.json` 使用临时文件写入后原子替换；
-- 调用 DREAM/VLA 前先保存对应 `command_id`；
-- `events.jsonl` 记录请求、轮询终态和状态切换；
-- `verification.jsonl` 记录图片元数据、VLM结果和LLM结果；
-- Master 重启发现非终态任务时标记 `RECOVERY_REQUIRED`，本轮不自动补发动作；
-- 操作员修好现场后，可用「断点继续」人工续跑（见下节），不要用「开始接待」+ `force_new_task` 覆盖，除非确认要整单重开。
+动作发送前记录意图；重启或丢回包时优先核查原命令。未知结果不转换为成功，也不靠删除账本、清 holding 或 `force_new_task` 放行新动作。
 
-## 9.1 真机接待断点继续（联调 MVP，已落地）
+## 9.1 同一 Runtime 的断点继续
 
-范围只覆盖真机「开始接待」单链路，不改导航/VLA 下游协议，也不做通用 LLM 任务续跑。
+| 项 | 当前行为 |
+| --- | --- |
+| 入口 | `POST /publish_task` 的 `resume: true`，以及 `/api/task_continue`，均进入大脑的原任务控制通路 |
+| 任务身份 | 沿用原 `task_id`，附着账本记录的业务包、执行后端和目标地址；不重新发布一整单 |
+| `recovery_required` | 先查询原 `command_id`；结果未核清时不生成新物理命令 |
+| `paused` / `waiting_human` | 按各自状态继续，重新经过相应条件检查；继续不等于已取得身体动作许可 |
+| 新尝试 | 旧尝试核清、条件与预算允许后才可创建；只读重查不增加 `-r{n}` 计数 |
+| 取消与新任务 | 取消受理和停止完成分别记录；`force_new_task` 不绕过未知命令或资源隔离 |
 
-| 项 | 行为 |
-|---|---|
-| 网页 | `:8888`「断点继续」按钮，确认后 `POST /publish_task` 带 `resume: true`、`task: "开始接待"` |
-| Master | 跳过新任务空手预检；读 `current_task.json` 的 `failed_phase`，**沿用同一 `task_id`** |
-| 编排 | `reception_real.run(..., resume=True)` 从失败相位起继续发 DREAM/VLA；已完成步骤不重发 |
-| 持物 | 续跑预检允许 VLA `holding`（例如抓取后停在 relay2 时的 `cola_can_1`） |
-| 命令 ID | 重试步使用 `…-rN` 后缀，避免与上次失败指令撞车 |
-| 状态 | `GET /api/task_status` 在存在 `failed_phase` 且未在跑时可 `can_resume: true` |
-| 放弃本轮 | 仍用确认后的 `force_new_task` 整单重开（会清空 holding/commands） |
-
-已知限制：DREAM/VLA 进程重启导致历史成功记录丢失时，续跑可能仍失败，只能 `force_new_task` 或从更早步重试。完整跨重启恢复见 [规划说明：中断恢复与断点续跑](规划说明_中断恢复与断点续跑.md)，该文其余接口仍属设计稿。
+当前不承诺下游跨重启一定保留历史命令。若原命令不可查，保持 `recovery_required`，不以强制新建或从更早步骤重做来替代核查。控制交接、效果证据、取消确认及未完成范围统一见[重构规划第 17 节](规划说明_具身大脑重构.md#17-统一规划口径控制交接与断点恢复2026-09-24)。
 
 ## 9.2 DREAM HTTP 不确定事务处理
 
@@ -538,40 +522,18 @@ data/retired/reception/
 
 这套规则只避免重复执行，不把未知事务改写为成功或失败。
 
-## 10. 建议代码落点
+## 10. 当前代码落点
 
-```text
-master/agents/agent.py                 # “开始接待”入口；resume 续跑；顶层任务收尾触发复盘
-src/brain/__main__.py                          # publish_task 支持 resume，续跑时跳过新任务预检
-deploy/templates/index.html            # 「断点继续」按钮
-master/sop/reception_skill.py          # mock/real；透传 resume
-master/sop/reception_real.py           # 固定单链路；resume 从 failed_phase 切入
-master/sop/episode.py                  # 仿真/真机共用的复盘账本
-src/brain/learning/reflection.py                  # 事后复盘（默认只落 candidates，不改 SOP）
-master/integrations/dream_client.py    # DREAM HTTP客户端
-master/integrations/vla_client.py      # VLA任务与相机HTTP客户端
-master/integrations/reception_verify.py# VLM + LLM判真
-data/retired/reception/          # JSON/JSONL/图片证据
-```
+| 位置 | 职责 |
+| --- | --- |
+| `src/brain/api/app.py` | 大脑 API 路由，提交与控制任务 |
+| `src/brain/service.py` | 附着原任务、规划与调度的应用入口 |
+| `src/brain/kernel/runtime.py` | 状态迁移、原命令核查与恢复、取消收尾 |
+| `src/brain/storage/tasks.py` | 任务和尝试账本 |
+| `src/brain/packages/reception.py` | 接待相位与合同 |
+| `src/brain/adapters/execution.py` | 真机 / 仿真执行适配，真实交接缺失时明确不可用 |
+| `src/entries/web/`、`src/entries/feishu/` | 独立入口，通过大脑接口操作任务 |
 
-真机入口逻辑：
+## 11. 验收边界
 
-```python
-if reception_mode == "mock":
-    run_reception_mock(...)
-else:
-    run_reception_real(..., resume=resume)
-```
-
-`run_reception_real()` 位于现有 Master 进程内，不新增独立服务。
-
-## 11. 大脑侧完成判据
-
-- 可以配置并访问 DREAM、VLA 两个局域网基址；
-- 严格按固定 Pipeline 提交动作；
-- 每个外部动作均保存并轮询 `command_id`；
-- VLA 失败时不取图、不调用后续导航；
-- `hand_state_only` 下抓取/放置必须满足左手状态、连续帧、策略停止和通路归还；
-- 对应照片开关开启时，每个动作只取一张动作后新图，且 VLM/LLM 判真前不写入视觉成功；
-- 照片开关关闭时终态为 `COMPLETED_HAND_STATE_ONLY`，不得对外表述为视觉验收成功；
-- 真机接待失败后可用「断点继续」从 `failed_phase` 接着发，且不重做已成功的抓取。
+软件回放及工程部署记录见[重构规划第 16 节](规划说明_具身大脑重构.md#16-最终目录替换2026-09-24)。当前状态、三态核验、取消确认和原命令恢复必须符合该规划第 6、9、17 节；手部开合证据不等于物体实际到位。DREAM/VLA 报文仍为 `fq/reception-lan/v1`，真机派发仍需单独完成第 9.7 节的放行核查。
