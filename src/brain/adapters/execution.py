@@ -54,6 +54,47 @@ class BodyAdapter:
         del step_id, kind
         return {"available": False, "confirmed": False, "reason": "unavailable"}
 
+    def handoff_with_context(self, context):
+        """Read the deployed status APIs. Transport readiness is not controller takeover."""
+        answer = {"available": False, "confirmed": False, "kind": context["kind"],
+                  "task_id": context["task_id"], "source_command_id": context.get("source_command_id"),
+                  "reason": "source_command_unavailable"}
+        command_id, request = context.get("source_command_id"), context.get("source_request")
+        if not command_id or not request:
+            return answer
+        source = self.query(command_id, request)
+        answer["source"] = source
+        evidence = source.get("evidence") or {}
+        if (evidence.get("identity_ok") is not True or evidence.get("time_ok") is not True
+                or source.get("terminal") != "succeeded" or source.get("stopped") is not True
+                or source.get("resources_released") is not True):
+            answer["reason"] = "source_stop_unconfirmed"
+            return answer
+        try:
+            nav, vla = self.dream.status(), self.vla.control_status()
+        except HttpContractError as exc:
+            answer.update(reason="control_status_unavailable", error=str(exc))
+            return answer
+        answer.update(navigation_status=nav, manipulation_status=vla)
+        nav_idle = ("active_command_id" in nav and nav["active_command_id"] in (None, "")
+                    and "active_command_state" in nav and nav["active_command_state"] is None
+                    and nav.get("navigation_transport_ready") is True)
+        vla_idle = ("active_command_id" in vla and vla["active_command_id"] in (None, "")
+                    and vla.get("policy_running") is False
+                    and (vla.get("action_port") or {}).get("navigation_port_ready") is True)
+        answer["transport_ready"] = nav_idle and vla_idle
+        answer["reason"] = "controller_receipt_unavailable" if answer["transport_ready"] else "transport_not_ready"
+        if answer["transport_ready"]:
+            from contracts.control_receipt import valid_receipt
+            target = nav if context["kind"] == "to_nav" else vla
+            receipt = target.get("control_receipt")
+            if receipt is not None:
+                answer["controller_receipt"] = receipt
+                answer["reason"] = "controller_receipt_invalid"
+                if valid_receipt(receipt, context, completed_at=(source.get("raw") or {}).get("completed_at")):
+                    answer.update(available=True, confirmed=True, reason="controller_confirmed")
+        return answer
+
     def submit(self, command_id, request):
         body = request["body"]
         skill = request.get("skill")
@@ -73,6 +114,7 @@ class BodyAdapter:
                 "completed": False,
                 "command_id": command_id,
                 "error": str(exc),
+                "raw": exc.payload,
             }
         return {
             "accepted": True,
@@ -90,7 +132,7 @@ class BodyAdapter:
             else:
                 raw = self.vla.task(command_id)
         except HttpContractError as exc:
-            return _unconfirmed(command_id, str(exc))
+            return _unconfirmed(command_id, str(exc), raw=exc.payload)
         return interpret_observation(command_id, raw, request)
 
     def wait(self, command_id, request):
@@ -110,7 +152,7 @@ class BodyAdapter:
                     poll_interval_sec=float(request.get("poll_interval_sec") or 1.0),
                 )
         except HttpContractError as exc:
-            return _unconfirmed(command_id, str(exc))
+            return _unconfirmed(command_id, str(exc), raw=exc.payload)
         viewed = interpret_observation(command_id, raw, request)
         viewed["timed_out"] = False
         return viewed
@@ -150,7 +192,7 @@ class BodyAdapter:
         return {"accepted": True, "completed": False, "command_id": command_id}
 
 
-def _unconfirmed(command_id, error: str) -> dict:
+def _unconfirmed(command_id, error: str, *, raw=None) -> dict:
     return {
         "command_id": command_id,
         "terminal": None,
@@ -160,6 +202,7 @@ def _unconfirmed(command_id, error: str) -> dict:
         "resources_released": False,
         "evidence": {},
         "error": error,
+        "raw": raw if isinstance(raw, dict) else None,
     }
 
 
@@ -225,11 +268,13 @@ def _effect_supported(skill, result, body) -> bool:
     if skill == "inspect":
         return result.get("success") is True
     object_id = body.get("object_id")
+    evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
     if skill == "pick":
         return (
             result.get("success") is True
             and result.get("object_grasped") is True
             and result.get("holding") == object_id
+            and evidence.get("object_presence_verified") is not False
         )
     if skill == "place":
         return (
@@ -238,6 +283,7 @@ def _effect_supported(skill, result, body) -> bool:
             and result.get("released") is True
             and result.get("holding") is None
             and result.get("object_at_target") is True
+            and evidence.get("object_at_target_verified") is not False
         )
     return False
 
@@ -327,6 +373,9 @@ def interpret_observation(command_id, raw, request) -> dict:
         "time_ok": _timestamp_has_timezone(raw.get("completed_at")),
         "grade": grade,
         "identity": command_id,
+        "reported_success": state == "succeeded" and result.get("success") is True,
+        "effect_verified": supports and _timestamp_has_timezone(raw.get("completed_at")),
+        "reported_evidence_level": level,
     }
     entry = by_id(str(skill or ""))
     if supports and entry is not None:

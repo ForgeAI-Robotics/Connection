@@ -18,6 +18,7 @@ def main():
     for module in ('reception', 'execution', 'observation'):
         parser.add_argument('--' + module, choices=['inherit', 'simulation', 'real', 'disabled'])
     parser.add_argument('--execution-sim', choices=['inherit', 'desk', 'mujoco', 'mujoco_3dgs', 'simple_o7'])
+    parser.add_argument('--reception-sim', choices=['inherit', 'reception_mock', 'reception_protocol'])
     parser.add_argument('--observation-sim', choices=['inherit', 'desk', 'mujoco', 'mujoco_3dgs', 'simple_o7'])
     args = parser.parse_args()
     switcher = Switcher()

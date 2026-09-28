@@ -29,6 +29,24 @@ class EntryTests(unittest.TestCase):
         for page in ('/', '/teach', '/reception'):
             self.assertEqual(app.get(page).status_code, 200)
 
+    def test_skip_route_requires_both_identities_and_web_forwards_them(self):
+        facade = Mock()
+        facade.control.return_value = {'accepted': True, 'skipped_step_id': 'step-1'}
+        app = create_app(Mock(), facade=facade).test_client()
+        for payload in ({}, {'task_id': 't'}, {'step_id': 'step-1'},
+                        {'task_id': 't', 'step_id': 123}):
+            self.assertEqual(app.post('/api/task_skip', json=payload).status_code, 400)
+        facade.control.assert_not_called()
+        self.assertTrue(app.post('/api/task_skip', json={'task_id': 't', 'step_id': 'step-1'}).json['accepted'])
+        facade.control.assert_called_once_with('skip', task_id='t', step_id='step-1')
+        proxy = Mock()
+        proxy.request.return_value = Mock(content=b'{"accepted":true}', status_code=200,
+                                          headers={'content-type': 'application/json'})
+        web = create_web(client=proxy).test_client()
+        self.assertEqual(web.post('/api/task_skip', json={'task_id': 't', 'step_id': 'step-1'}).status_code, 200)
+        self.assertEqual(proxy.request.call_args.args, ('POST', '/api/task_skip'))
+        self.assertEqual(proxy.request.call_args.kwargs['json'], {'task_id': 't', 'step_id': 'step-1'})
+
     def test_brain_api_read_and_cancel_work_without_web(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'CONNECTION_WORKSPACE': root}):
             config = {'brain': {'capture_timeline': False}, 'reflection': {'enabled': False},
@@ -39,8 +57,18 @@ class EntryTests(unittest.TestCase):
                 self.assertTrue(client.get('/health').json['ready'])
                 self.assertEqual(client.get('/api/task_status').status_code, 200)
                 self.assertEqual(client.post('/api/task_cancel').status_code, 200)
+                intent = client.post('/api/task_intent', json={'task': '停止'}).json
+                self.assertEqual(intent['intent'], 'control')
+                self.assertFalse(intent['needs_llm_route'])
+                for text in ('停止', '取消任务', '暂停', '继续'):
+                    result = client.post('/publish_task', json={'task': text, 'task_id': 'not-a-new-task'}).json
+                    self.assertEqual(result['intent'], 'control')
+                    self.assertTrue(result['no_op'])
+                self.assertIsNone(application.status().get('task_id'))
                 self.assertEqual(client.post('/publish_task', json={'task': '抓取', 'refresh': True, 'task_id': '../oops'}).status_code, 400)
                 self.assertEqual(client.get('/api/auto_tools').status_code, 200)
+                sops = client.get('/api/sops').json
+                self.assertEqual(sops['packages']['reception']['id'], 'reception.single_can')
             finally:
                 self.assertTrue(application.close())
 

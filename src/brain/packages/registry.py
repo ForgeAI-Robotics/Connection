@@ -1,9 +1,16 @@
-"""Choose an existing business package. Unknown work stays on the old queue."""
+"""Registered business packages and their fixed SOP boundaries."""
 
 from __future__ import annotations
 
 from contracts.tasks import KernelError
 from brain.packages import desk, look, reception
+
+
+SOPS = {
+    "reception": reception.SOP,
+    "look": {"id": "look.describe", "version": "1", "description": "只观察并描述现场，不移动物体。"},
+    "desk": {"id": "desk.tidy", "version": "1", "description": "按当前桌面关系整理，展开已有技能并核验。"},
+}
 
 
 def match_name(task) -> str:

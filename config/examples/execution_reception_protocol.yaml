@@ -1,0 +1,13 @@
+# 仅接待协议模拟；应用时启动本机 NAV/VLA，不连接真机，不需要物理仿真器。
+mode: simulation
+simulation_backend: desk
+modules:
+  reception:
+    mode: simulation
+    simulation_backend: reception_protocol
+  execution:
+    mode: disabled
+    simulation_backend: inherit
+  observation:
+    mode: disabled
+    simulation_backend: inherit

@@ -112,6 +112,31 @@ class BrainClient:
             headers["X-FQ-Operator"] = str(operator)
         return headers
 
+    async def control_task(self, action, task_id, *, operator=None, step_id=None, expected_command_id=None):
+        if action not in {'cancel', 'pause', 'continue'} or not task_id:
+            raise BrainRejected('控制动作或目标任务 ID 无效')
+        body = {'task_id': task_id}
+        if action == 'continue':
+            if step_id is not None:
+                body['step_id'] = step_id
+            if expected_command_id is not None:
+                body['expected_command_id'] = expected_command_id
+        def call():
+            try:
+                response = self.session.post(
+                    f'{self.base_url}/api/task_{action}', json=body,
+                    timeout=max(self.timeout, 30), headers=self._source_headers(operator))
+            except requests.RequestException as exc:
+                raise BrainOffline(f'控制响应未确认，请查询原任务状态：{exc}') from exc
+            try:
+                payload = response.json()
+            except ValueError as exc:
+                raise BrainRejected('控制接口返回无效 JSON，请查询原任务状态') from exc
+            if not response.ok or not isinstance(payload, dict):
+                raise BrainRejected(f'控制接口返回 HTTP {response.status_code}')
+            return payload
+        return await asyncio.to_thread(call)
+
     async def publish_task(self, task: str, task_id: str, *, operator: str | None = None) -> dict[str, Any]:
         return await asyncio.to_thread(self._publish_task, task, task_id, operator)
 

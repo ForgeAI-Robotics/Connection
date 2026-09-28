@@ -78,6 +78,21 @@ class ExecutionSwitchTests(unittest.TestCase):
     def test_desk_does_not_claim_a_camera(self):
         self.assertFalse(resolve({'mode': 'simulation'}, ROBOT)['routes']['observation']['available'])
 
+    def test_protocol_preset_starts_only_local_pair_and_brain(self):
+        self.services.up = {'master', 'deploy', 'feishu'}
+        value = {'mode': 'simulation', 'modules': {
+            'reception': {'simulation_backend': 'reception_protocol'},
+            'execution': {'mode': 'disabled'}, 'observation': {'mode': 'disabled'}}}
+        applied = self.switcher.apply(value)
+        self.assertEqual(applied['routes']['reception']['backend'], 'reception_protocol')
+        self.assertEqual([n for action, n in self.services.calls if action == 'start'],
+                         ['reception_nav', 'reception_vla', 'master'])
+        self.assertEqual((self.root / 'config/brain.yaml').read_text(),
+                         'brain: {scheduler: runtime}\nreception_real: {kernel_enabled: false}\n')
+        real = resolve(dict(value, mode='real'), ROBOT)['routes']['reception']
+        self.assertEqual(real['backend'], 'reception_real')
+        self.assertNotIn('endpoints', real)
+
     def test_typos_fail_before_services_change(self):
         for config in [{'mode': 'sim'}, {'moduels': {}}, {'modules': {'execution': {'backed': 'desk'}}}]:
             with self.assertRaises(ValueError): self.switcher.apply(config)

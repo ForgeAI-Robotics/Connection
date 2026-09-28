@@ -44,6 +44,15 @@ class FakeSession:
 
 
 class BrainClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_control_pins_target_and_does_not_require_new_task_identity(self):
+        session = FakeSession(post_response=FakeResponse(payload={
+            'accepted': True, 'state': 'cancelled', 'task_id': 'original'}))
+        result = await BrainClient('http://localhost:5000', session=session).control_task('cancel', 'original', operator='sender')
+        self.assertEqual(session.last_post[0], 'http://localhost:5000/api/task_cancel')
+        self.assertEqual(session.last_post[1], {'task_id': 'original'})
+        self.assertEqual(session.last_post[3]['X-FQ-Operator'], 'sender')
+        self.assertEqual(result['state'], 'cancelled')
+
     async def test_status_busy_contract(self):
         session = FakeSession(
             get_response=FakeResponse(payload={"active": True, "all_done": False})

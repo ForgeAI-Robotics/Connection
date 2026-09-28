@@ -51,6 +51,8 @@ class BrainApplication:
         service.port_factory = port_factory
         service.runtime_factory = runtime
         service.plan_call = lambda rt, options: self.owner.wait(self.planner.submit(service.planning.plan, rt, options))
+        service.select_call = lambda task, options: self.owner.wait(self.planner.submit(service.reasoner.select, task, options))
+        service.advice_call = lambda context: self.owner.wait(self.planner.submit(service.reasoner.advise, context))
         service._launch = lambda rt: self.owner.submit(service._drive, rt)
         service.reflection = self.learning.enqueue
 
@@ -95,12 +97,14 @@ class BrainApplication:
             raise Rejected('大脑正在关闭，停止接受新任务')
         return self.owner.call(self.service.publish, task, task_id, **kwargs)
 
-    def control(self, action):
+    def control(self, action, *, task_id=None, step_id=None, expected_command_id=None):
         self.start()
         def apply():
-            result = self.service.control(action)
+            result = self.service.control(action, task_id=task_id,
+                **({"step_id": step_id} if step_id is not None else {}),
+                **({"expected_command_id": expected_command_id} if expected_command_id is not None else {}))
             runtime = self.service.runtime
-            if runtime and runtime.state in {'succeeded', 'failed', 'cancelled', 'recovery_required'}:
+            if not result.get('no_op') and runtime and runtime.state in {'succeeded', 'failed', 'cancelled', 'recovery_required'}:
                 self.learning.enqueue(runtime.record)
             return result
         return self.owner.call(apply, control=True)

@@ -54,6 +54,7 @@ uv pip install --python venv/gpu -e .
 - 「一键全仿真／一键全真机」：清除模块覆盖，所有模块跟随全局环境。
 - 「应用当前选择」：保留各模块的独立设置。
 - 「预览选择」：只展示将使用的后端，不停止服务。
+- 「仅接待协议模拟」：启动本机 NAV/VLA 两个 HTTP 进程，接待选择 `reception_protocol`，停用通用执行与观察模块。预设为 `examples/execution_reception_protocol.yaml`。
 
 本地配置在 `config/execution.yaml`，模板为 `config/examples/execution.yaml`。例如接待选择真机，通用执行选择 Desk，观察和网页画面选择 3DGS：
 
@@ -70,7 +71,7 @@ modules:
     simulation_backend: mujoco_3dgs
 ```
 
-模块 `mode` 可选 `inherit / simulation / real / disabled`。执行与观察的 `simulation_backend` 可选 `inherit / desk / mujoco / mujoco_3dgs`。接待的仿真是已有 `reception_mock`，不代表物理仿真器已支持整套接待。观察覆盖只影响现场描述和网页画面；动作核验仍使用执行后端自己的证据。
+模块 `mode` 可选 `inherit / simulation / real / disabled`。执行与观察的 `simulation_backend` 可选 `inherit / desk / mujoco / mujoco_3dgs / simple_o7`。接待可选 `inherit / reception_mock / reception_protocol`；`inherit` 保留旧演示，`reception_protocol` 使用独立导航与操控协议模拟进程。两者均不代表物理仿真器已支持整套接待。观察覆盖只影响现场描述和网页画面；动作核验仍使用执行后端自己的证据。
 
 命令行和面板使用同一个应用过程：
 

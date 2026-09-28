@@ -73,6 +73,21 @@ class UnifiedBrainTests(unittest.TestCase):
     def publish(self, text="把牛奶放好", task_id="task-unified0001", **kw):
         return self.service.publish(text, task_id, **kw)
 
+    def test_control_target_race_cannot_cancel_new_task(self):
+        self.publish()
+        before = self.service.runtime.snapshot()
+        with self.assertRaisesRegex(Rejected, '目标任务已变化'):
+            self.service.control('cancel', task_id='older-task')
+        self.assertEqual(before, self.service.runtime.snapshot())
+        result = self.service.control('cancel', task_id=before['task_id'])
+        self.assertTrue(result['no_op'])
+        self.assertEqual(before, self.service.runtime.snapshot())
+
+    def test_control_text_never_creates_planning_ledger(self):
+        with self.assertRaisesRegex(Rejected, '控制入口'):
+            self.publish('停止')
+        self.assertIsNone(self.service.runtime)
+
     def test_generic_already_satisfied_skill_is_observed_without_motion(self):
         self.world["milk_1"]["pos"] = [1, 1]
         self.model.forward = lambda *args: json.dumps({"subtask_list": [
@@ -184,7 +199,8 @@ class UnifiedBrainTests(unittest.TestCase):
         command = self.service.runtime.record["open_command_id"]
         self.service.runtime = None
         self.port = DeskAdapter(perform=Mock(side_effect=AssertionError("resubmitted")), world=lambda: self.world, zones=self.zones)
-        self.publish(resume=True)
+        with self.assertRaisesRegex(Rejected, "停止或资源释放尚未确认"):
+            self.publish(resume=True)
         self.assertEqual(self.service.runtime.record["open_command_id"], command)
         self.assertEqual(self.service.runtime.state, "recovery_required")
         self.assertFalse(self.port._perform.called)

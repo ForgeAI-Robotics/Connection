@@ -12,10 +12,13 @@
       mode.add(new Option(text, value));
     }
     row.append(mode);
-    if (key !== 'reception') {
+    {
       const backend = document.createElement('select');
       backend.id = 'exec-' + key + '-sim';
-      for (const [value, text] of Object.entries({inherit: '跟随默认仿真器', desk: 'Desk（无画面）', mujoco: 'MuJoCo', mujoco_3dgs: '3DGS', simple_o7: 'SIMPLE（O6 远端）'})) {
+      const choices = key === 'reception'
+        ? {inherit: '默认旧演示', reception_mock: '旧会议补货演示', reception_protocol: '单罐接待 · NAV/VLA 协议模拟'}
+        : {inherit: '跟随默认仿真器', desk: 'Desk（无画面）', mujoco: 'MuJoCo', mujoco_3dgs: '3DGS', simple_o7: 'SIMPLE（O6 远端）'};
+      for (const [value, text] of Object.entries(choices)) {
         backend.add(new Option(text, value));
       }
       row.append(backend);
@@ -26,7 +29,7 @@
     const modules = {};
     for (const key of Object.keys(names)) {
       modules[key] = {mode: el('exec-' + key).value};
-      if (key !== 'reception') modules[key].simulation_backend = el('exec-' + key + '-sim').value;
+      modules[key].simulation_backend = el('exec-' + key + '-sim').value;
     }
     return {mode: el('exec-mode').value, simulation_backend: el('exec-sim').value, modules};
   }
@@ -35,7 +38,7 @@
     el('exec-sim').value = c.simulation_backend || 'desk';
     for (const key of Object.keys(names)) {
       el('exec-' + key).value = c.modules?.[key]?.mode || 'inherit';
-      if (key !== 'reception') el('exec-' + key + '-sim').value = c.modules?.[key]?.simulation_backend || 'inherit';
+      el('exec-' + key + '-sim').value = c.modules?.[key]?.simulation_backend || 'inherit';
     }
   }
   function describe(profile) {
@@ -81,6 +84,13 @@
     catch (e) { el('exec-preview-text').textContent = e.message; }
   };
   el('exec-apply').onclick = apply;
+  el('exec-reception-protocol').onclick = () => {
+    fill({mode: 'simulation', simulation_backend: 'desk', modules: {
+      reception: {mode: 'simulation', simulation_backend: 'reception_protocol'},
+      execution: {mode: 'disabled'}, observation: {mode: 'disabled'}
+    }});
+    apply();
+  };
   for (const [id, mode] of [['exec-all-sim', 'simulation'], ['exec-all-real', 'real']]) {
     el(id).onclick = () => { fill({mode, simulation_backend: el('exec-sim').value, modules: {}}); apply(); };
   }

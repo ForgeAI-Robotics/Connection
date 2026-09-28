@@ -129,6 +129,11 @@ def register_views(app, application):
         return jsonify({'success': True, 'message': f"{action} '{obj}' at '{location}'；已记录人工线索",
                         'data': observation, 'confirmed': False})
 
+    @app.get('/api/sops')
+    def registered_sops():
+        from brain.packages.registry import SOPS
+        return jsonify({'success': True, 'packages': SOPS})
+
     @app.get('/api/sop')
     @app.get('/api/reception/sop')
     def sop():

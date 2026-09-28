@@ -28,6 +28,7 @@ def create_service(config, *, model=None, port_factory=None, inputs=None,
     from brain.learning.experiences import Experiences
     from brain.adapters.planning_inputs import PlanningInputs
     from brain.adapters.ports import build_port
+    from brain.reasoning import TaskReasoner
     from shared.paths import workspace_root
 
     config = deepcopy(config)
@@ -54,7 +55,8 @@ def create_service(config, *, model=None, port_factory=None, inputs=None,
 
     planning = PlanningService(config, planner, inputs or PlanningInputs(config, transport=transport),
                                experiences, desk_planner=desk_planner)
-    service = BrainService(config, planning, port_factory or make_port, reflection=reflection)
+    service = BrainService(config, planning, port_factory or make_port, reflection=reflection,
+                           reasoner=TaskReasoner(model, config))
     service.experiences = experiences
     service.transports = transports
     return service

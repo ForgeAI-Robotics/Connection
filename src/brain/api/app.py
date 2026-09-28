@@ -30,6 +30,27 @@ def create_app(application, *, facade=None):
     def _inbound():
         return inbound_from_flask(request)
 
+    def _control(action):
+        data = request.get_json(silent=True) or {}
+        try:
+            target = _validated_task_id(data.get('task_id'))
+        except (ValueError, AttributeError) as exc:
+            return jsonify({'accepted': False, 'error': str(exc)}), 400
+        options = {}
+        if action == 'skip':
+            step_id = data.get('step_id')
+            if not target or not isinstance(step_id, str) or not step_id or len(step_id) > 160:
+                return jsonify({'accepted': False, 'error': '跳过必须指定 task_id 和 step_id'}), 400
+            options['step_id'] = step_id
+        if action == 'continue':
+            for key in ('step_id', 'expected_command_id'):
+                if key in data:
+                    value = data[key]
+                    if not isinstance(value, str) or len(value) > 160:
+                        return jsonify({'accepted': False, 'error': key + ' 必须为字符串'}), 400
+                    options[key] = value
+        return jsonify(master_agent.control(action, task_id=target, **options)), 200
+
     @app.get("/api/execution_profile")
     def execution_profile_status():
         from shared.execution_profile import applied_profile
@@ -64,17 +85,22 @@ def create_app(application, *, facade=None):
     @app.route("/api/task_pause", methods=["POST"])
     def task_pause():
         """暂停当前 Runtime 任务。"""
-        return jsonify(master_agent.kernel_pause()), 200
+        return _control('pause')
 
     @app.route("/api/task_continue", methods=["POST"])
     def task_continue():
         """从暂停或人工等待继续。开关关闭时不写旧账本。"""
-        return jsonify(master_agent.kernel_continue()), 200
+        return _control('continue')
+
+    @app.post("/api/task_skip")
+    def task_skip():
+        """人工跳过指定失败步骤；下一步仍执行真实前置核验。"""
+        return _control("skip")
 
     @app.route("/api/task_cancel", methods=["POST"])
     def task_cancel():
         """请求取消当前 Runtime 任务。受理不等于已经取消完成。"""
-        return jsonify(master_agent.kernel_cancel()), 200
+        return _control('cancel')
 
     @app.route("/api/task_preflight", methods=["POST"])
     def task_preflight():
@@ -222,6 +248,13 @@ def create_app(application, *, facade=None):
                 if not isinstance(task, str):
                     return jsonify({"error": "Invalid task format - must be a string"}), 400
                 task = task.strip()
+                from contracts.task_control import control_action
+                action = control_action(task)
+                if action:
+                    # The submitted ID identifies a new request, not its control target.
+                    target = _validated_task_id(data.get('target_task_id'))
+                    result = master_agent.control(action, task_id=target)
+                    return jsonify(dict(result, status='success', intent='control', action=action)), 200
                 entry = classify_task(task)
                 resume = bool(data.get("resume"))
                 from brain.config_flags import scheduler_runtime

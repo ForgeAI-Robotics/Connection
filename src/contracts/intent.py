@@ -200,6 +200,12 @@ def classify_entry(text: str, *, llm_label: str | None = None) -> dict[str, Any]
     """JSON-friendly entry report for Feishu, 8888, and Master."""
 
     task = (text or "").strip()
+    from contracts.task_control import control_action
+    action = control_action(task)
+    if action:
+        return {'task': task, 'intent': 'control', 'action': action,
+                'risk': 'motion' if action == 'continue' else 'read_only',
+                'requires_confirmation': False, 'needs_llm_route': False}
     seed = classify_task(task)
     classification = (
         refine_with_llm(seed, llm_label, task) if llm_label else seed

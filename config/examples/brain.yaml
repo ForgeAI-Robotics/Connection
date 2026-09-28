@@ -47,6 +47,11 @@ reflection:
   # 候选规则发布目录。不设置时，新任务不绑定规则版本。
   # release_dir: data/releases
 brain:
+  reasoning:
+    # 明确的 SOP 触发词直接命中；其它任务由 LLM 选择业务包，再按现场能力规划。
+    semantic_selection: true
+    # 异常建议写入账本和状态页，不自动重试、改路线或放宽核验。
+    recovery_advice: true
   # 所有业务共用 Runtime；legacy 仅用于无在途任务时回退。
   scheduler: runtime
   # 通用任务沿用 robot_api 的 active_backend，不强制改成仿真。

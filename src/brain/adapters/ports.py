@@ -8,6 +8,13 @@ from brain.adapters.execution import BodyAdapter, LookAdapter, SimAdapter, _unco
 from contracts.tasks import CONTRACT_VERSION, Rejected
 
 
+class UnselectedPort:
+    """A task can be cancelled while its package is being selected; no action port exists yet."""
+    contract_version = CONTRACT_VERSION
+    gate_open = False
+    gate_reason = "execution_not_selected"
+
+
 class ActiveRobotAPI:
     """Use the same robot_api implementation, pinning action AND observation to its active backend."""
     def __init__(self, name):
@@ -343,9 +350,20 @@ def select_backend(config, package, *, mock=False):
     return "desk" if backend == "desk" else "slaver:" + backend
 
 
+def protocol_endpoints():
+    from shared.execution_profile import applied_profile, PROTOCOL_URLS
+    profile = applied_profile()
+    route = (profile or {}).get('routes', {}).get('reception', {})
+    if route.get('backend') != 'reception_protocol' or route.get('endpoints') != PROTOCOL_URLS:
+        raise Rejected('导航／操控协议模拟必须通过运行环境配置显式应用')
+    return dict(PROTOCOL_URLS)
+
+
 def target_identity(config, backend):
     from shared.execution_profile import applied_profile
     profile = applied_profile()
+    if backend == 'reception_protocol':
+        return {'backend': backend, **protocol_endpoints()}
     if backend == 'simple_o7':
         from brain.adapters.simple_o7 import settings, WIRE_VERSION
         return {'backend': backend, 'url': settings().url, 'contract_version': WIRE_VERSION}
@@ -369,6 +387,14 @@ def build_port(config, backend, *, agent=None):
         return SimpleO7Adapter.from_config()
     if backend == "camera":
         return LookAdapter()
+    if backend == 'reception_protocol':
+        from copy import deepcopy
+        from shared.protocol_simulation import require_simulator_pair
+        endpoints = protocol_endpoints()
+        require_simulator_pair(endpoints)
+        selected = deepcopy(config)
+        selected.setdefault('reception_real', {}).update(dream_base_url=endpoints['dream'], vla_base_url=endpoints['vla'])
+        return BodyAdapter.from_config(selected)
     if backend == "reception_real":
         return MotionGate(BodyAdapter.from_config(config), kernel_enabled(config))
     if backend == "reception_mock":

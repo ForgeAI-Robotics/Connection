@@ -43,3 +43,22 @@ class ProfileRoutingTests(unittest.TestCase):
         with patch('shared.execution_profile.applied_profile', return_value=second):
             b = target_identity({}, 'camera')
         self.assertNotEqual(a, b)
+
+    def test_protocol_route_cannot_bypass_local_pair_identity_check(self):
+        profile = resolve({'mode': 'simulation', 'modules': {
+            'reception': {'simulation_backend': 'reception_protocol'},
+            'execution': {'mode': 'disabled'}, 'observation': {'mode': 'disabled'}}}, {})
+        from shared.protocol_simulation import require_simulator_pair
+        from shared.execution_profile import PROTOCOL_URLS
+        with patch('shared.execution_profile.applied_profile', return_value=profile):
+            self.assertEqual(select_backend({}, 'reception'), 'reception_protocol')
+            identity = target_identity({}, 'reception_protocol')
+            self.assertEqual(identity['dream'], PROTOCOL_URLS['dream'])
+            with patch('shared.protocol_simulation.require_simulator_pair', side_effect=ValueError('not simulator')):
+                with self.assertRaisesRegex(ValueError, 'not simulator'):
+                    build_port({}, 'reception_protocol')
+        with self.assertRaises(ValueError):
+            require_simulator_pair(PROTOCOL_URLS, get=lambda _: {'status': 'ok'})
+        with patch('shared.execution_profile.applied_profile', return_value=None):
+            with self.assertRaises(Rejected):
+                build_port({}, 'reception_protocol')

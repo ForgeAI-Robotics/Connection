@@ -20,6 +20,11 @@ class FakeBrain:
         self.statuses = list(statuses or [{"active": False}])
         self.last_status = self.statuses[-1]
         self.published = []
+        self.controls = []
+
+    async def control_task(self, action, task_id, **kwargs):
+        self.controls.append((action, task_id))
+        return {'accepted': True, 'state': 'cancelled', 'completed': True, 'task_id': task_id}
 
     async def get_status(self):
         if self.statuses:
@@ -160,6 +165,56 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(task_id), 32)
         self.assertRegex(task_id, re.compile(r"^[A-Za-z0-9]+$"))
         self.assertEqual(task_id, FeishuBridge._brain_task_id("om_复杂/message:id"))
+
+    async def test_stop_bypasses_busy_llm_confirmation_and_deduplicates(self):
+        brain = FakeBrain([{'active': True, 'all_done': False, 'task_id': 'original', 'state': 'recovery_required'}])
+        router = FakeRouter('chat')
+        bridge = self.make_bridge(brain, router=router)
+        await bridge.handle_message(message('stop-1', '停止'))
+        await bridge.handle_message(message('stop-1', '停止'))
+        self.assertEqual(brain.controls, [('cancel', 'original')])
+        self.assertEqual(brain.published, [])
+        self.assertEqual(router.queries, [])
+        self.assertEqual(self.messenger.cards, [])
+        self.assertIn('停止已确认', self.messenger.texts[0][1])
+
+    async def test_stop_after_success_does_not_create_task(self):
+        brain = FakeBrain([{'active': False, 'all_done': True, 'state': 'succeeded', 'task_id': 'finished'}])
+        await self.make_bridge(brain).handle_message(message('stop-done', '停止'))
+        self.assertEqual(brain.controls, [])
+        self.assertEqual(brain.published, [])
+        self.assertIn('没有进行中的任务', self.messenger.texts[0][1])
+
+    async def test_control_dry_run_never_calls_brain(self):
+        from dataclasses import replace
+        brain = OfflineBrain()
+        bridge = self.make_bridge(brain, settings=replace(self.settings, task_mode='dry_run'))
+        await bridge.handle_message(message('dry-stop', '停止'))
+        self.assertEqual(brain.controls, [])
+        self.assertIn('演练模式', self.messenger.texts[0][1])
+
+    async def test_group_stop_requires_bot_mention(self):
+        brain = FakeBrain([{'active': True, 'state': 'running', 'task_id': 'running'}])
+        bridge = self.make_bridge(brain)
+        await bridge.handle_message(message('no-mention', '停止', chat_type='group'))
+        self.assertEqual(brain.controls, [])
+        await bridge.handle_message(message('mention', '停止', chat_type='group', mentioned_bot=True))
+        self.assertEqual(brain.controls, [('cancel', 'running')])
+
+    async def test_cancel_acceptance_does_not_claim_stop_completed(self):
+        brain = FakeBrain([{'active': True, 'state': 'running', 'task_id': 'running'}])
+        async def pending(*args, **kwargs):
+            return {'accepted': True, 'completed': False, 'state': 'cancelling'}
+        brain.control_task = pending
+        await self.make_bridge(brain).handle_message(message('pending-stop', '停止'))
+        self.assertIn('仍在确认停止', self.messenger.texts[0][1])
+        self.assertNotIn('停止已确认', self.messenger.texts[0][1])
+
+    def test_control_parser_does_not_stop_on_negation_or_task_substring(self):
+        from contracts.task_control import control_action
+        for text in ('不要停止', '停止了吗？', '到一号桌后停止', '开始接待', '停止抓取并去一号桌'):
+            self.assertIsNone(control_action(text))
+        self.assertEqual(control_action('停止！'), 'cancel')
 
     async def test_runtime_inactive_terminal_is_tracked(self):
         for terminal, expected in (("succeeded", "succeeded"), ("cancelled", "canceled"), ("failed", "failed")):

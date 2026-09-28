@@ -15,7 +15,9 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | --- | --- |
 | `POST /publish_task` | 保留 task、task_id、refresh、resume 与 accepted 等现有字段；一次只接受一个顶层任务，拒绝时不自动重发 |
 | `GET /api/task_status` | 读取内核账本，支持 paused、waiting_human、cancelling、recovery_required；不改写旧账本 |
+| `GET /api/sops` | 返回已登记业务包的 SOP 标识、版本、范围和明确触发词；不是候选经验文件 |
 | `POST /api/task_pause`、`task_continue`、`task_cancel` | 送到 Runtime 所有者线程；取消受理不等于已经停止 |
+| `POST /api/task_skip` | 人工跳过指定待恢复／已暂停未完成步骤；必填 `task_id`、`step_id`，核对停止/资源后前移，保留失败，不伪造前置成功 |
 | `POST /api/task_preflight` | 只读提示，不等于下游已就绪或已取得真机许可 |
 | `GET /health`、`/api/execution_profile` | 进程工作器状态与已应用配置版本 |
 | `POST /api/reception/run`、`GET /api/reception/report` | 同一 Runtime 的 mock 演示与报告，不另起旧接待循环 |
@@ -26,6 +28,25 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | `/api/task_events`、`task_intent`、`chat`、`chat/route` | 事件查询、共享分流与飞书闲聊服务；没有绕过 Runtime 的观察执行 |
 
 网页保留原路径，通过 `BrainClient` 转发。配置校验由 Ops `POST /api/validate-config` 提供。反思线程读取任务快照，按任务和账本版本去重；评测、影子和发布继续在学习侧，只有新任务绑定新快照，已开任务保留原版本。
+
+### 1.1 共用任务选择与异常建议
+
+大脑先持久化任务再调用 LLM，任务选择与规划等待期间仍可取消。明确的“开始接待”等登记触发词直接选择 `reception.single_can` v1；其它表述由模型按登记范围选择业务包。模型只能选择包，不能向接待 SOP 注入动作、坐标或跳步。通用任务继续通过 Planner 读取实际能力与场景生成步骤。
+
+`GET /api/task_status` 增加以下只读字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `selection` | 包名、选择来源、原因、SOP 标识和版本；执行环境选择后绑定，恢复时不重新选择 |
+| `recovery_advice` | 异常分析与建议，包含 `action`、`summary`、`reason`、`source`、原任务／命令／版本、`applicable`；`automatic=false` 表示尚未执行 |
+| `handoff_observation` | 原命令停止与现有导航／操控状态接口的只读诊断；通路就绪不等于控制器接管 |
+| `subtask_list[].reported_success` | 下游是否自报成功；非此类端口或尚无回包时为 null |
+| `subtask_list[].evidence_level` | 下游报告的证据等级或适配器的证据等级 |
+| `subtask_list[].effect_verified` | 当前尝试是否已通过 Verifier；不能由 LLM 建议改变 |
+
+建议限于等待、人工协助、取消，以及当前状态允许的查询原命令或继续。LLM 不直接调用控制接口；模型异常或格式非法时保存规则回退建议。建议基于的账本版本变化后 `applicable=false`，迟到结果不能覆盖新状态。
+
+`POST /api/task_continue` 在暂停／待恢复时先查询原 `command_id`。确认停止、资源释放且当前动作明确失败、取消或未开始后，为同一任务的当前环节准备新 attempt／新命令 ID，重新执行原有前置检查，再下发。原动作报告成功时进入效果核验，弱证据不重复抓放。未知或未核清资源仍阻止新派发。请求可携带 `step_id` 和 `expected_command_id`（来自状态接口的 `control_step_id`、`control_command_id`；无命令时传空串），拒绝旧页面／重复请求误重试新的命令。网页和飞书继续入口绑定这些身份。`/publish_task` 的 `resume:true` 使用相同恢复语义。DREAM/VLA 线上请求体和 HTTP 路径未增加字段或接口。
 
 ## 2. 局域网拓扑
 
@@ -497,7 +518,7 @@ LLM固定输出：
 
 动作发送前记录意图；重启或丢回包时优先核查原命令。未知结果不转换为成功，也不靠删除账本、清 holding 或 `force_new_task` 放行新动作。
 
-## 9.1 同一 Runtime 的断点继续
+## 9.1 同一 Runtime 的继续与人工重试
 
 | 项 | 当前行为 |
 | --- | --- |
@@ -505,7 +526,7 @@ LLM固定输出：
 | 任务身份 | 沿用原 `task_id`，附着账本记录的业务包、执行后端和目标地址；不重新发布一整单 |
 | `recovery_required` | 先查询原 `command_id`；结果未核清时不生成新物理命令 |
 | `paused` / `waiting_human` | 按各自状态继续，重新经过相应条件检查；继续不等于已取得身体动作许可 |
-| 新尝试 | 旧尝试核清、条件与预算允许后才可创建；只读重查不增加 `-r{n}` 计数 |
+| 新尝试 | 人工继续核对旧尝试停止、资源释放和明确未完成后才创建；自动恢复预算仍为 0，只读重查不增加 `-r{n}` 计数 |
 | 取消与新任务 | 取消受理和停止完成分别记录；`force_new_task` 不绕过未知命令或资源隔离 |
 
 当前不承诺下游跨重启一定保留历史命令。若原命令不可查，保持 `recovery_required`，不以强制新建或从更早步骤重做来替代核查。控制交接、效果证据、取消确认及未完成范围统一见[重构规划第 17 节](规划说明_具身大脑重构.md#17-统一规划口径控制交接与断点恢复2026-09-24)。
@@ -537,3 +558,10 @@ LLM固定输出：
 ## 11. 验收边界
 
 软件回放及工程部署记录见[重构规划第 16 节](规划说明_具身大脑重构.md#16-最终目录替换2026-09-24)。当前状态、三态核验、取消确认和原命令恢复必须符合该规划第 6、9、17 节；手部开合证据不等于物体实际到位。DREAM/VLA 报文仍为 `fq/reception-lan/v1`，真机派发仍需单独完成第 9.7 节的放行核查。
+
+
+## 接待协议模拟路由（2026-09-28）
+
+运行环境的接待模块可选 `simulation_backend: reception_protocol`。从正式 `/publish_task` 入口执行「开始接待」，任务状态与账本标记 `execution_backend=reception_protocol`，仍执行 `reception.single_can` v1。独立下游默认延时成功，任务核验不设模拟特例。旧 `/api/reception/run` 是旧会议演示入口，不用它验证本流程。
+
+`handoff_observation` 现可包含共用可选合同 `fq/control-receipt/v1` 的核验结果；缺少该凭证仍阻断。详细启动、端点和真机差异见[接待协议模拟使用说明](使用说明_接待协议模拟.md)。

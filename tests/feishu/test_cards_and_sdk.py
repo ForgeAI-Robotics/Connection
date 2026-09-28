@@ -35,6 +35,17 @@ class CardsAndSdkTests(unittest.TestCase):
         self.assertEqual(values[0], {"action": "confirm", "message_id": "m1"})
         self.assertEqual(values[1], {"action": "cancel", "message_id": "m1"})
 
+    def test_manual_skip_is_not_rendered_as_success(self):
+        from types import SimpleNamespace
+        record = SimpleNamespace(state='failed', task_text='接待', brain_task_id='t', last_error=None,
+                                 created_at=1, updated_at=2)
+        rendered = str(task_card(record, {'state': 'failed', 'flow_finished': True,
+            'manual_skips': [{'step_id': 'nav'}], 'subtask_list': [
+                {'subtask': '导航', 'done': True, 'status': 'skipped', 'result': '人工跳过'}]}))
+        self.assertIn('⏭', rendered)
+        self.assertNotIn('✅', rendered)
+        self.assertIn('未全部成功', rendered)
+
     def test_websocket_card_patch_is_idempotent(self):
         first = enable_websocket_card_callbacks()
         second = enable_websocket_card_callbacks()

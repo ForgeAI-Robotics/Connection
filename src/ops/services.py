@@ -289,6 +289,18 @@ def catalog() -> list[Service]:
             health=_health_alive,
         ),
         Service(
+            id="reception_nav", name="接待导航协议模拟", layer="environment", controllable=True,
+            window="reception_nav", port=18001, match="-m execution.reception_sim nav",
+            log_service="reception_nav", health=_health_http("http://127.0.0.1:18001/health"),
+            note="独立 NAV HTTP 进程 · 单罐接待协议模拟，无物理运动",
+        ),
+        Service(
+            id="reception_vla", name="接待操控协议模拟", layer="environment", controllable=True,
+            window="reception_vla", port=18091, match="-m execution.reception_sim vla",
+            log_service="reception_vla", health=_health_http("http://127.0.0.1:18091/health"),
+            note="独立 VLA HTTP 进程 · 校验原导航命令，延时返回模拟结果",
+        ),
+        Service(
             id="desk",
             name="Desk 仿真",
             layer="environment",
@@ -430,6 +442,9 @@ def start_shell(service: Service) -> str:
         return f"exec {_shell_quote(str(python))} -m entries.feishu"
     if service.id == "slaver":
         return f"exec {_shell_quote(str(python))} -m execution.slaver"
+    if service.id in {"reception_nav", "reception_vla"}:
+        role = "nav" if service.id == "reception_nav" else "vla"
+        return f"exec {_shell_quote(str(python))} -m execution.reception_sim {role}"
     if service.id == "desk":
         return f"exec {_shell_quote(str(python))} simulation/backends/desk/main.py"
     if service.id == "mujoco":

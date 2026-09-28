@@ -62,6 +62,9 @@ class LocalServices:
 
     def targets_healthy(self, routes):
         for route in routes.values():
+            if route['available'] and route['backend'] == 'reception_protocol':
+                from shared.protocol_simulation import require_simulator_pair
+                require_simulator_pair(route['endpoints'], self.get)
             if route['available'] and route['mode'] == 'simulation' and route['url']:
                 endpoint = '/health' if route['backend'] in {'desk', 'simple_o7'} else '/camera/status'
                 if route['backend'] == 'simple_o7':
@@ -176,6 +179,8 @@ class Switcher:
         needed = { {'desk': 'desk', 'mujoco': 'mujoco', 'mujoco_3dgs': 'gs'}[r['backend']]
                    for r in routes.values() if r['available'] and r['mode'] == 'simulation'
                    and r['backend'] in {'desk', 'mujoco', 'mujoco_3dgs'} }
+        if routes['reception']['available'] and routes['reception']['backend'] == 'reception_protocol':
+            needed.update({'reception_nav', 'reception_vla'})
         started_dependencies = []
         try:
             atomic_write(self.block, 'Environment application in progress.\n')

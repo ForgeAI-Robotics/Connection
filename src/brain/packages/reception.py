@@ -8,43 +8,18 @@ from contracts.tasks import CONTRACT_VERSION, OBJECT_ID
 
 
 NAME = "reception"
+SOP = {
+    "id": "reception.single_can", "version": "1",
+    "description": "单罐接待：table_2 抓取 cola_can_1，经 relay2、relay3 到 table_1 放置。",
+    "constraints": "固定一罐、固定物体与桌子；不包含开灯、人数补货、改路线或额外动作。",
+    "triggers": ["开始接待", "启动接待", "执行接待", "开始单罐接待"],
+}
 
 
 from contracts.steps import StepSpec
 
 
-# Copied from reception_real.NAVIGATION_LEGS so the request body keeps the same fields.
-NAVIGATION_LEGS = {
-    "table2": {
-        "target_id": "table_2",
-        "route_phase": "",
-        "leg_index": 1,
-        "goal_xyt": [0.9903405869861586, 1.3761315438191244, -0.39236607751253016],
-        "motion_mode": "forward_path",
-    },
-    "relay2": {
-        "target_id": "door_1",
-        "route_phase": "door_approach",
-        "leg_index": 2,
-        "goal_xyt": [3.733075988421528, 6.215369909530748, 2.718279944258407],
-        "motion_mode": "forward_path",
-    },
-    "relay3": {
-        "target_id": "door_1",
-        "route_phase": "door_lateral_exit",
-        "leg_index": 3,
-        "goal_xyt": [4.185939449618811, 7.560143924693016, 2.7689146673931306],
-        "motion_mode": "lateral_path_aligned",
-    },
-    "table1": {
-        "target_id": "table_1",
-        "route_phase": "table1_approach",
-        "leg_index": 4,
-        "goal_xyt": [3.0873798986272165, 8.279995338440145, 1.175238157458919],
-        "motion_mode": "forward_path",
-    },
-}
-
+from contracts.reception_lan import NAVIGATION_LEGS
 
 PHASES = (
     StepSpec("INITIALIZING", "local"),

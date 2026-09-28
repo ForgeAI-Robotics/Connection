@@ -31,9 +31,11 @@ class HttpFacade:
             return {'ignored': True, 'error': str(exc), 'reasoning_explanation': str(exc),
                     'subtask_list': [], 'blocks_new_motion': True}
 
-    def control(self, action):
+    def control(self, action, *, task_id=None, step_id=None, expected_command_id=None):
         try:
-            return self.application.control(action)
+            return self.application.control(action, task_id=task_id,
+                **({"step_id": step_id} if step_id is not None else {}),
+                **({"expected_command_id": expected_command_id} if expected_command_id is not None else {}))
         except (KernelError, ValueError) as exc:
             return {'accepted': False, 'error': str(exc)}
 

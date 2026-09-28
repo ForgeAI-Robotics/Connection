@@ -15,6 +15,8 @@ STATE_PATH = ROOT / 'data' / 'system' / 'execution.json'
 LOCK_PATH = ROOT / 'data' / 'system' / 'execution.lock'
 BLOCK_PATH = ROOT / 'data' / 'system' / 'execution.blocked'
 SIM_BACKENDS = {'desk', 'mujoco', 'mujoco_3dgs', 'simple_o7'}
+RECEPTION_BACKENDS = {'reception_mock', 'reception_protocol'}
+PROTOCOL_URLS = {'dream': 'http://127.0.0.1:18001', 'vla': 'http://127.0.0.1:18091'}
 DEFAULT = {'mode': 'simulation', 'simulation_backend': 'desk', 'modules': {}}
 
 
@@ -38,10 +40,9 @@ def normalize(value):
         backend = item.get('simulation_backend', 'inherit')
         if mode not in {'inherit', 'simulation', 'real', 'disabled'}:
             raise ValueError(f'{name}.mode 无效')
-        if backend not in SIM_BACKENDS | {'inherit'}:
+        choices = RECEPTION_BACKENDS if name == 'reception' else SIM_BACKENDS
+        if backend not in choices | {'inherit'}:
             raise ValueError(f'{name}.simulation_backend 无效')
-        if name == 'reception' and backend != 'inherit':
-            raise ValueError('接待仿真使用 reception_mock，不支持指定物理仿真器')
         result['modules'][name] = {'mode': mode, 'simulation_backend': backend}
     return result
 
@@ -56,7 +57,10 @@ def resolve(value, robot_config):
         if mode == 'disabled':
             route.update(backend='disabled', available=False, reason='此模块已停用')
         elif name == 'reception':
-            route['backend'] = 'reception_real' if mode == 'real' else 'reception_mock'
+            route['backend'] = 'reception_real' if mode == 'real' else (
+                item['simulation_backend'] if item['simulation_backend'] != 'inherit' else 'reception_mock')
+            if route['backend'] == 'reception_protocol':
+                route['endpoints'] = dict(PROTOCOL_URLS)
         elif mode == 'real':
             route.update(backend='unavailable', available=False,
                          reason=f'{name} 尚无已接入的完整真机适配；不会回落仿真')

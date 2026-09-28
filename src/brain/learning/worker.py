@@ -14,18 +14,35 @@ def episode_from_record(record):
     for step_id in record.get('phase_order') or []:
         for attempt in (record.get('steps', {}).get(step_id) or {}).get('attempts') or []:
             verdict = attempt.get('verdict')
-            evidence = (attempt.get('progress') or {}).get('evidence') or {}
+            progress = attempt.get('progress') or {}
+            evidence = progress.get('evidence') or {}
+            contract = attempt.get('contract') or {}
+            downstream = evidence.get('downstream') or {}
+            result = downstream.get('result') or {}
             steps.append({'phase': step_id, 'attempt_id': attempt['attempt_id'],
                 'command_id': attempt['command_id'], 'status': verdict or 'unknown',
                 'verify_ok': True if verdict == 'PASS' else False if verdict == 'FAIL' else None,
-                'claimed_ok': evidence.get('claimed_ok'), 'detail': evidence.get('detail') or '',
-                'skill': (attempt.get('contract') or {}).get('skill')})
+                'claimed_ok': evidence.get('reported_success', evidence.get('claimed_ok')),
+                'detail': evidence.get('detail') or progress.get('error')
+                          or (downstream.get('error') or {}).get('message') or result.get('message') or '',
+                'skill': contract.get('skill'), 'goal': contract.get('goal'),
+                'object_id': contract.get('object_id'),
+                'evidence': {key: deepcopy(evidence.get(key)) for key in
+                             ('grade', 'effect', 'effect_verified', 'identity_ok', 'time_ok')},
+                'evidence_source': (result.get('evidence') or {}).get('source'),
+                'downstream_error': deepcopy(downstream.get('error'))})
     final = 'success' if record['state'] == 'succeeded' else 'recovery' if record['state'] == 'recovery_required' else 'failure'
     episode = episode_from_steps(record['task_id'], record.get('task_desc', ''), steps,
         task_type=record['package'], backend=record.get('execution_backend'),
         final=final, error=record.get('blocked_reason'))
     episode['record_revision'] = record.get('revision')
     episode['release_id'] = record.get('release_id')
+    episode['selection'] = deepcopy(record.get('selection'))
+    episode['manual_skips'] = deepcopy(record.get('manual_skips') or [])
+    episode['flow_finished'] = bool(record.get('flow_finished'))
+    episode['established_facts'] = [deepcopy(item) for item in record.get('observations') or []
+                                    if item.get('kind') == 'established']
+    episode['existing_rules'] = deepcopy(record.get('release_rules') or [])
     return episode
 
 

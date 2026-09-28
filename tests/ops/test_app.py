@@ -28,7 +28,7 @@ class PanelAppTests(unittest.TestCase):
             [item["id"] for item in payload["brain"]],
             ["master", "deploy", "feishu"],
         )
-        self.assertEqual([item["id"] for item in payload["environment"]], ["desk", "mujoco", "gs", "simple_o7"])
+        self.assertEqual([item["id"] for item in payload["environment"]], ["reception_nav", "reception_vla", "desk", "mujoco", "gs", "simple_o7"])
         self.assertEqual([item["id"] for item in payload["support"]], ["redis", "slaver"])
         ids = [item["id"] for group in ("brain", "environment", "support", "robot") for item in payload[group]]
         self.assertEqual(len(ids), len(set(ids)))

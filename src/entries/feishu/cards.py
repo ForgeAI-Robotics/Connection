@@ -134,6 +134,8 @@ def task_card(
     state_label = {"paused": "已暂停", "waiting_human": "等待人工", "cancelling": "取消中，停止尚未核清",
                    "recovery_required": "待恢复", "cancelled": "已取消", "succeeded": "已完成",
                    "failed": "执行失败"}.get(status.get("state"), state_label)
+    if status.get("flow_finished") and status.get("manual_skips"):
+        state_label = "流程结束（含人工跳过，未全部成功）"
     elements: list[dict[str, Any]] = [
         _plain(f"任务：{record.task_text}"),
         _plain(f"任务 ID：{record.brain_task_id or '-'}"),
@@ -238,6 +240,7 @@ def task_card(
             done = bool(item.get("done"))
             sub_status = str(item.get("status") or "")
             icon = (
+                "⏭" if sub_status == "skipped" else
                 "✅"
                 if done and sub_status not in {"failure", "exception", "timeout"}
                 else "❌"

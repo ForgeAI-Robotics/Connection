@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 from contracts.tasks import KernelError, ProgressEvent, SkillContract, evidence_filename
 
 
@@ -36,6 +38,7 @@ class Runner:
                     "stopped": False,
                     "evidence": {},
                     "error": submitted.get("error") or "submit_unclear",
+                    "raw": submitted.get("raw"),
                 },
             )
         observed = port.wait(contract.command_id, contract.request)
@@ -47,6 +50,9 @@ class Runner:
     def _progress(self, contract: SkillContract, observed: dict) -> ProgressEvent:
         evidence = dict(observed.get("evidence")) if isinstance(observed.get("evidence"), dict) else {}
         evidence["resources_released"] = observed.get("resources_released") is True
+        if isinstance(observed.get("raw"), dict):
+            # Preserve the service payload, including weak evidence and error details.
+            evidence["downstream"] = deepcopy(observed["raw"])
         terminal = observed.get("terminal") or ""
         return ProgressEvent(
             task_id=contract.task_id,

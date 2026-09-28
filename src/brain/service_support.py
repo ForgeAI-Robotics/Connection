@@ -60,7 +60,7 @@ def attach_runtime(config, *, port=None):
     return runtime
 
 
-def control_task(config, action, *, port=None, runtime=None):
+def control_task(config, action, *, port=None, runtime=None, step_id=None):
     """Pause, continue, or cancel the open kernel task. A closed switch does not touch a ledger."""
     from contracts.tasks import IllegalTransition, Rejected
     from brain.config_flags import kernel_enabled
@@ -86,13 +86,11 @@ def control_task(config, action, *, port=None, runtime=None):
                 "error": None if paused else "暂停没有停止回执",
             }, runtime
         if action == "continue":
-            if runtime.state == "paused":
-                runtime.resume_paused()
-            elif runtime.state == "waiting_human":
-                runtime.human_continue()
-            else:
-                raise IllegalTransition("当前状态不能继续")
-            return {"accepted": True, "state": runtime.state, "error": None}, runtime
+            result = runtime.continue_current()
+            return {"accepted": True, "state": runtime.state, "error": None, **result}, runtime
+        if action == "skip":
+            result = runtime.skip_current(step_id=step_id)
+            return {"accepted": True, "state": runtime.state, **result}, runtime
         if action == "cancel":
             result = runtime.request_cancel()
             if runtime.state == "cancelling":

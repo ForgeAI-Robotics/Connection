@@ -28,6 +28,11 @@ from brain.kernel.verifier import Verifier
 
 _TRANSITIONS = {
     ("running", "action_finished"): "verifying",
+    ("recovery_required", "manual_skip"): "running",
+    ("paused", "manual_skip"): "running",
+    ("paused", "skip_final"): "failed",
+    ("recovery_required", "skip_final"): "failed",
+    ("verifying", "finish_with_skips"): "failed",
     ("verifying", "pass_continue"): "running",
     ("verifying", "pass_final"): "succeeded",
     ("verifying", "fail"): "recovery_required",
@@ -37,12 +42,21 @@ _TRANSITIONS = {
     ("waiting_human", "human_continue"): "running",
     ("running", "pause_ack"): "paused",
     ("running", "pause_nack"): "recovery_required",
+    ("verifying", "pause_ack"): "paused",
+    ("verifying", "pause_nack"): "recovery_required",
     ("paused", "resume_pause"): "running",
+    ("paused", "continue_retry"): "running",
+    ("paused", "continue_verify"): "verifying",
+    ("recovery_required", "continue_retry"): "running",
+    ("recovery_required", "continue_verify"): "verifying",
+    ("paused", "resume_verify"): "verifying",
+    ("running", "requery_stopped"): "recovery_required",
     ("cancelling", "cancel_cleared"): "cancelled",
     ("cancelling", "cancel_unclear"): "recovery_required",
     ("recovery_required", "requery_not_started"): "running",
     ("recovery_required", "requery_ended"): "verifying",
     ("recovery_required", "retry_allowed"): "running",
+    ("recovery_required", "retry_handoff"): "running",
     ("running", "handoff_unconfirmed"): "recovery_required",
     ("verifying", "handoff_unconfirmed"): "recovery_required",
 }
@@ -84,19 +98,43 @@ def _blank_record():
 def status_from_record(record) -> dict:
     state = (record or {}).get("state")
     terminal = state in TERMINAL_STATES
+    advice = deepcopy((record or {}).get("recovery_advice"))
+    if advice:
+        advice["applicable"] = advice.get("record_revision") == (record or {}).get("revision")
     tasks = []
     for order, spec in enumerate((record or {}).get("phase_specs") or [], 1):
-        attempts = ((record or {}).get("steps", {}).get(spec["step_id"]) or {}).get("attempts") or []
+        bucket = (record or {}).get("steps", {}).get(spec["step_id"]) or {}
+        attempts = bucket.get("attempts") or []
         latest = attempts[-1] if attempts else {}
         verdict = latest.get("verdict")
         evidence = (latest.get("progress") or {}).get("evidence") or {}
-        marker = ((record or {}).get("steps", {}).get(spec["step_id"]) or {}).get("status")
-        done = verdict == "PASS" or marker in {"done", "skipped"}
+        marker = bucket.get("status")
+        manual_skip = marker == "manual_skipped"
+        done = verdict == "PASS" or marker in {"done", "skipped", "manual_skipped"}
         tasks.append({"order": order, "robot_name": spec.get("robot_name") or "FQrobot",
                       "subtask": spec.get("key") or spec["step_id"], "done": done,
-                      "status": "success" if done else "failure" if verdict == "FAIL" else "unknown" if verdict == "UNKNOWN" else "pending",
-                      "result": evidence.get("text") or evidence.get("detail") or latest.get("outcome") or ""})
+                      "step_id": spec["step_id"], "skipped": manual_skip,
+                      "status": "skipped" if manual_skip else "success" if done else "failure" if verdict == "FAIL" else "unknown" if verdict == "UNKNOWN" else "pending",
+                      "result": "人工跳过；未确认该步骤完成" if manual_skip else evidence.get("text") or evidence.get("detail") or latest.get("outcome") or "",
+                      "reported_success": evidence.get("reported_success"),
+                      "evidence_level": evidence.get("reported_evidence_level") or evidence.get("grade"),
+                      "effect_verified": not manual_skip and (verdict == "PASS" or (spec.get("kind") == "verify"
+                          and marker == "done" and bool(bucket.get("verified_attempt_id"))))})
+    cursor = int((record or {}).get("cursor") or 0)
+    specs = (record or {}).get("phase_specs") or []
+    current = specs[cursor] if 0 <= cursor < len(specs) else {}
+    attempts = ((record or {}).get("steps", {}).get(current.get("step_id")) or {}).get("attempts") or []
+    can_skip = ((state == "recovery_required" or (state == "paused" and bool(attempts)
+                 and attempts[-1].get("submitted") is True)) and current.get("kind") not in {None, "local", "verify"}
+                and (record or {}).get("control_request") != "cancel"
+                and (not attempts or attempts[-1].get("verdict") != "PASS"))
     return {
+        "can_skip": can_skip,
+        "skip_step_id": current.get("step_id") if can_skip else None,
+        "control_step_id": current.get("step_id"),
+        "control_command_id": (attempts[-1].get("command_id") if attempts else None),
+        "manual_skips": deepcopy((record or {}).get("manual_skips") or []),
+        "flow_finished": bool((record or {}).get("flow_finished")),
         "active": bool(state) and not terminal,
         "task_id": (record or {}).get("task_id"),
         "task": (record or {}).get("task_desc") or "",
@@ -104,7 +142,7 @@ def status_from_record(record) -> dict:
         "terminal": terminal if state else True,
         "all_done": state == "succeeded",
         "failed": state in {"failed", "recovery_required"},
-        "has_failures": state in {"failed", "recovery_required"},
+        "has_failures": state in {"failed", "recovery_required"} or bool((record or {}).get("manual_skips")),
         "blocks_new_motion": bool(state) and not terminal,
         "can_resume": state in {"paused", "waiting_human", "recovery_required"},
         "execution_active": state == "running",
@@ -117,6 +155,9 @@ def status_from_record(record) -> dict:
         "answer": (((record or {}).get("pending_progress") or {}).get("evidence") or {}).get("text", "") if state == "succeeded" else "",
         "blocked_reason": (record or {}).get("blocked_reason") or "",
         "phase": (record or {}).get("phase") or "",
+        "selection": deepcopy((record or {}).get("selection")),
+        "recovery_advice": advice,
+        "handoff_observation": deepcopy((record or {}).get("handoff_observation")),
     }
 
 
@@ -217,6 +258,51 @@ class TaskRuntime:
             self._reload_locked()
             return status_from_record(self.record)
 
+    def snapshot(self):
+        with self._exclusive():
+            self._reload_locked()
+            return deepcopy(self.record)
+
+    def bind_execution(self, selection, backend, target, port):
+        """Bind a selected package before planning any actions, on the Runtime owner."""
+        with self._exclusive():
+            self._reload_locked()
+            if self.state not in {"running", "paused"} or self.record.get("control_request") == "cancel":
+                return False
+            if self.record.get("plan_ready") or self.record.get("open_command_id") or self.record.get("dispatch_counts"):
+                raise Rejected("执行已开始，不能更换业务包或执行目标")
+            self._bind_package(selection["package"], [])
+            self.port = port
+            self.record["package"] = self.package_name
+            self.record["selection"] = deepcopy(selection)
+            self.record["execution_backend"] = backend
+            self.record["execution_target"] = deepcopy(target)
+            bound = self.release_reader(self.config, self.package_name)
+            self.record["release_id"], self.record["release_rules"] = bound["version_id"], bound["rules"]
+            self._save("execution_selected")
+            return True
+
+    def record_advice(self, context, advice):
+        """Late model output cannot affect a changed task, command or control request."""
+        with self._exclusive():
+            try:
+                self._reload_locked()
+            except Rejected:
+                return False
+            if any(self.record.get(key) != context.get(key) for key in
+                   ("task_id", "revision", "state", "open_command_id")):
+                return False
+            self.record["recovery_advice"] = {
+                **deepcopy(advice), "task_id": self.record["task_id"],
+                "command_id": self.record.get("open_command_id"),
+                "based_on_revision": self.record["revision"],
+                "record_revision": self.record["revision"] + 1,
+                "allowed_actions": list(context["allowed_actions"]),
+                "automatic": False,
+            }
+            self._save("recovery_advised")
+            return True
+
     def dispatch_count(self, step_id: str) -> int:
         return int((self.record.get("dispatch_counts") or {}).get(step_id) or 0)
 
@@ -302,12 +388,14 @@ class TaskRuntime:
     def request_pause(self, *, stop_acknowledged: bool | None = None):
         with self._exclusive():
             self._reload_locked()
-            if self.state != "running":
-                raise IllegalTransition("只有运行中可以暂停")
+            if self.state not in {"running", "verifying"}:
+                raise IllegalTransition("只有运行或核验中可以暂停")
             if self.record.get("control_request") == "cancel":
                 raise IllegalTransition("取消已开始，不能再暂停")
             self.record["dispatch_closed"] = True
             self.record["control_request"] = "pause"
+            resume_state = self.state
+            self.record["pause_resume_state"] = resume_state
             command_id = self.record.get("open_command_id")
             request = self._request_of(command_id) if command_id else None
             self._save("pause_intent")
@@ -328,7 +416,7 @@ class TaskRuntime:
             stop_acknowledged = False
         with self._exclusive():
             self._reload_locked()
-            if self.record.get("control_request") != "pause" or self.state != "running":
+            if self.record.get("control_request") != "pause" or self.state != resume_state:
                 return self.state
             self.record["blocked_reason"] = "" if stop_acknowledged else "pause_without_stop_ack"
             self.apply("pause_ack" if stop_acknowledged else "pause_nack")
@@ -341,7 +429,7 @@ class TaskRuntime:
     def resume_paused(self):
         with self._exclusive():
             self._reload_locked()
-            self.apply("resume_pause")
+            self.apply("resume_verify" if self.record.get("pause_resume_state") == "verifying" else "resume_pause")
             self.record["dispatch_closed"] = False
             self.record["control_request"] = ""
             self._save("pause_resumed")
@@ -483,9 +571,11 @@ class TaskRuntime:
                 self.record["not_started_confirmed"] = True
                 self.record["stopped_confirmed"] = True
                 self.record["command_unknown"] = False
+                self.record["blocked_reason"] = "原命令确认未开始；点击继续将核对资源与前置条件，尝试重新下发当前环节。"
             elif kind == "stopped":
                 self.record["stopped_confirmed"] = True
                 self.record["command_unknown"] = False
+                self.record["blocked_reason"] = "原命令已停止；点击继续将核对执行结果、资源与前置条件，尝试重新下发未完成环节。"
             elif kind == "ended":
                 self.record["pending_progress"] = self._progress_from_query(step, command_id, result).as_dict()
                 self.record["command_unknown"] = False
@@ -501,6 +591,20 @@ class TaskRuntime:
         """续跑入口只查询原命令，不发出新的 -r 命令。"""
         with self._exclusive():
             self._reload_locked()
+            step = self._current_step()
+            # The preceding action has already passed. A failed handoff before
+            # the next submit has no open command to requery; retry that gate.
+            if (self.state == "recovery_required" and not self.record.get("open_command_id")
+                    and self.record.get("blocked_reason") == "handoff_unconfirmed"
+                    and step and step.handoff_before
+                    and not (self._latest(step.step_id) or {}).get("submitted")):
+                self.record["dispatch_closed"] = False
+                self.record["control_request"] = ""
+                self.record["requery_hold"] = False
+                self.record["blocked_reason"] = ""
+                self.apply("retry_handoff")
+                self._save("handoff_recheck_requested")
+                return {"handoff_recheck": True, "step_id": step.step_id}
             revision = self.record.get("revision", 0)
             command_id = self.record.get("open_command_id")
         result = self.requery()
@@ -517,6 +621,143 @@ class TaskRuntime:
                 self.record["blocked_reason"] = ""
                 self._save("resume_original_confirmed")
         return result
+
+    def continue_current(self):
+        """Human continue: verify completion or authorize one new attempt of this step."""
+        with self._exclusive():
+            self._reload_locked()
+            state = self.state
+            if state not in {'paused', 'recovery_required', 'waiting_human'}:
+                raise Rejected('当前状态不能继续')
+            command_id = self.record.get('open_command_id')
+            step = self._current_step()
+            attempt = self._latest(step.step_id) if step else None
+            if command_id and (not attempt or attempt.get('command_id') != command_id):
+                raise Rejected('原命令与当前环节不匹配，不能重新下发')
+            snapshot = deepcopy(self.record)
+            request = deepcopy(attempt['request']) if attempt else None
+        if state == 'waiting_human':
+            self.human_continue()
+            return {'resumed': True}
+        if not command_id:
+            if state == 'paused':
+                self.resume_paused()
+                return {'resumed': True}
+            return self.resume()
+        try:
+            result = self.port.query(command_id, request)
+        except Exception as exc:
+            raise Rejected('无法查询原动作停止和执行结果，未重新下发') from exc
+        if not isinstance(result, dict):
+            raise Rejected('原动作回执无效，未重新下发')
+        with self._exclusive():
+            self._reload_locked()
+            if (self.record['revision'] != snapshot['revision'] or self.state != snapshot['state']
+                    or self.record.get('open_command_id') != command_id):
+                raise Rejected('任务状态已变化，未重新下发，请刷新后重试')
+            if (result.get('command_id') != command_id or result.get('timed_out')
+                    or result.get('stopped') is not True or result.get('resources_released') is not True):
+                raise Rejected('原动作停止或资源释放尚未确认，未重新下发')
+            evidence = result.get('evidence') or {}
+            if evidence.get('identity_ok') is False or evidence.get('time_ok') is False:
+                raise Rejected('原动作回执身份或时间无效，未重新下发')
+            terminal = result.get('terminal')
+            if terminal not in {'succeeded', 'failed', 'cancelled'} and result.get('started') is not False:
+                raise Rejected('原动作效果仍不明确，未重新下发')
+            progress = self._progress_from_query(step, command_id, result)
+            progress.evidence = dict(progress.evidence or {}, resources_released=True)
+            if isinstance(result.get('raw'), dict):
+                progress.evidence['downstream'] = deepcopy(result['raw'])
+            self._stamp_attempt(step, progress, finished=bool(terminal))
+            self.record.update(command_unknown=False, stopped_confirmed=True, resources_cleared=True,
+                               dispatch_closed=False, control_request='', requery_hold=False,
+                               blocked_reason='', breakpoint_phase='')
+            if terminal == 'succeeded':
+                # Even a weak success claim is verified, never blindly executed again.
+                self.record['pending_progress'] = progress.as_dict()
+                self.apply('continue_verify')
+                self._save('continue_verifying_original')
+                return {'verifying_original': True, 'command_id': command_id}
+            attempt = self._latest(step.step_id)
+            attempt['verdict'] = 'FAIL' if terminal in {'failed', 'cancelled'} else 'UNKNOWN'
+            fresh = self._append_attempt(step, physical=self.policy.physical(step.kind))
+            new_command_id = fresh['command_id']
+            fresh['authorized_by'] = 'human_continue'
+            # An ID reserved for a new attempt is not an active downstream command.
+            self.record.update(open_command_id=None, pending_progress=None)
+            self.apply('continue_retry')
+            self._save('continue_attempt_prepared')
+            return {'retry_prepared': True, 'step_id': step.step_id,
+                    'previous_command_id': command_id, 'command_id': new_command_id}
+
+    def skip_current(self, *, step_id):
+        """Explicit human disposition; never synthesize effects or success receipts."""
+        with self._exclusive():
+            self._reload_locked()
+            status = status_from_record(self.record)
+            if not status['can_skip'] or not step_id or status['skip_step_id'] != step_id:
+                raise Rejected("当前失败步骤已变化或不可跳过，请刷新后重试")
+            step = self._current_step()
+            revision = self.record['revision']
+            original_state = self.state
+            command_id = self.record.get('open_command_id')
+            skipped_command_id = (self._latest(step_id) or {}).get('command_id')
+            if not command_id:
+                # A handoff failure can occur after the previous action closed.
+                # Recheck its stop evidence before skipping an unsubmitted step.
+                for previous in reversed(self.phases[:int(self.record['cursor']) + 1]):
+                    attempt = self._latest(previous.step_id) or {}
+                    if attempt.get('submitted') and attempt.get('command_id'):
+                        command_id = attempt['command_id']
+                        break
+            request = self._request_of(command_id) if command_id else None
+            if not command_id and not self.record.get('resources_cleared'):
+                raise Rejected("动作资源尚未核清，不能跳过")
+        # Query only. A timeout/failed command may still own the action port.
+        viewed = None
+        if command_id:
+            try:
+                viewed = self.port.query(command_id, request)
+            except Exception as exc:
+                raise Rejected("无法确认原动作已停止，不能跳过") from exc
+            if (not isinstance(viewed, dict) or viewed.get('command_id') != command_id
+                    or viewed.get('stopped') is not True or viewed.get('resources_released') is not True
+                    or not (viewed.get('terminal') in {'succeeded', 'failed', 'cancelled'}
+                            or viewed.get('started') is False)):
+                raise Rejected("原动作停止或资源释放尚未确认；请先暂停并核对，不能跳过")
+        if original_state == 'paused' and viewed and viewed.get('terminal') == 'succeeded':
+            raise Rejected('原动作已报告完成，请点击继续核验，无需跳过')
+        with self._exclusive():
+            self._reload_locked()
+            if self.record['revision'] != revision or self.state != original_state:
+                raise Rejected("任务状态已变化，未跳过任何步骤，请刷新后重试")
+            skipped = {'step_id': step_id, 'command_id': skipped_command_id,
+                       'stop_command_id': command_id,
+                       'reason': self.record.get('blocked_reason'),
+                       'source': 'human_control', 'at': datetime.now().astimezone().isoformat(),
+                       'stop_observation': deepcopy(viewed)}
+            self.record.setdefault('manual_skips', []).append(skipped)
+            self._mark(step, 'manual_skipped')
+            verify_id = self._verify_id(step)
+            if verify_id:
+                self._mark(self.phases[self._index(verify_id)], 'manual_skipped')
+            nxt = self._next_body(step)
+            self.record.update(open_command_id=None, command_unknown=False, resources_cleared=True,
+                               pending_progress=None, dispatch_closed=False, control_request='',
+                               requery_hold=False, blocked_reason='', breakpoint_phase='')
+            if nxt:
+                for intermediate in self.phases[self._index(step_id) + 1:self._index(nxt.step_id)]:
+                    if intermediate.kind != 'verify':
+                        self._mark(intermediate, 'skipped')
+                self.record['cursor'] = self._index(nxt.step_id)
+                self.record['phase'] = nxt.step_id
+                self.apply('manual_skip')
+            else:
+                self.apply('skip_final')
+                self._finish_cursor()
+                self.record.update(flow_finished=True, blocked_reason='流程结束，含人工跳过，任务未全部成功')
+            self._save('step_manually_skipped')
+            return {'skipped_step_id': step_id, 'next_step_id': nxt.step_id if nxt else None}
 
     def continue_same_attempt(self):
         with self._exclusive():
@@ -612,7 +853,7 @@ class TaskRuntime:
                     self._save("gate")
                 return self.state
             if step.handoff_before:
-                answer = self.port.handoff(step.step_id, step.handoff_before)
+                answer = self._handoff(step.step_id, step.handoff_before)
                 if not (answer.get("available") and answer.get("confirmed")):
                     with self._exclusive():
                         self._reload_locked()
@@ -643,8 +884,13 @@ class TaskRuntime:
                 else:
                     try:
                         contract = self._prepare_submit(current)
-                    except (StaleWrite, Rejected):
+                    except StaleWrite:
                         self._reload_locked()
+                        return self.state
+                    except Rejected as exc:
+                        self.record["blocked_reason"] = str(exc)
+                        self.apply("unknown")
+                        self._save("submit_precondition_rejected")
                         return self.state
                     mode = "body"
                     step = current
@@ -673,10 +919,10 @@ class TaskRuntime:
         safe = None
         handoff_ok = True
         if step is not None and need_safe:
-            answer = self.port.handoff(step.step_id, "safe_idle")
+            answer = self._handoff(step.step_id, "safe_idle")
             safe = bool(answer.get("available") and answer.get("confirmed"))
         if need_handoff:
-            answer = self.port.handoff(next_id, need_handoff)
+            answer = self._handoff(next_id, need_handoff)
             handoff_ok = bool(answer.get("available") and answer.get("confirmed"))
         with self._exclusive():
             self._reload_locked()
@@ -684,6 +930,35 @@ class TaskRuntime:
                 return False
             self._judge(safe_idle=safe, handoff_ok=handoff_ok, next_step_id=next_id)
         return True
+
+    def _handoff(self, step_id, kind):
+        contextual = getattr(self.port, "handoff_with_context", None)
+        if not callable(contextual):
+            return self.port.handoff(step_id, kind)
+        with self._exclusive():
+            self._reload_locked()
+            snapshot = deepcopy(self.record)
+            command_id = None
+            boundary = self._index(step_id) + (1 if kind == 'safe_idle' else 0)
+            for previous in reversed(self.phases[:boundary]):
+                attempts = (snapshot.get("steps", {}).get(previous.step_id) or {}).get("attempts") or []
+                submitted = [a for a in attempts if a.get('submitted') and a.get('command_id')]
+                if submitted:
+                    command_id = submitted[-1]['command_id']
+                    break
+            context = {"task_id": snapshot["task_id"], "step_id": step_id, "kind": kind,
+                       "source_command_id": command_id,
+                       "source_request": self._request_of(command_id) if command_id else None}
+        answer = contextual(context)
+        if not isinstance(answer, dict):
+            answer = {"available": False, "confirmed": False, "reason": "invalid_handoff_response"}
+        with self._exclusive():
+            self._reload_locked()
+            if self.record["revision"] != snapshot["revision"]:
+                return {"available": False, "confirmed": False, "reason": "stale_handoff_response"}
+            self.record["handoff_observation"] = deepcopy(answer)
+            self._save("handoff_observed")
+        return answer
 
     def _requery_outside(self, step, contract) -> bool:
         progress = self.runner.execute(contract, self.port, requery=True)
@@ -933,7 +1208,12 @@ class TaskRuntime:
         )
 
     def _envelope(self, step, command_id: str) -> dict:
-        return self.policy.request(step, self.record["task_id"], command_id, self._last_command)
+        request = self.policy.request(step, self.record["task_id"], command_id, self._last_command)
+        proof = (request.get("body") or {}).get("navigation_proof")
+        if proof and any(item.get("command_id") == proof.get("dream_command_id")
+                         for item in self.record.get("manual_skips") or []):
+            raise Rejected("所需导航已被人工跳过，缺少导航成功凭证，不能下发操控")
+        return request
 
     def _contract(self, step, attempt_id: str, command_id: str, request: dict) -> SkillContract:
         return SkillContract(
@@ -1036,6 +1316,8 @@ class TaskRuntime:
             self.record["stopped_confirmed"] = True
             self.record["command_unknown"] = False
             self.record["requery_hold"] = True
+            self.record["blocked_reason"] = "原命令确认未开始；点击继续将核对资源与前置条件，尝试重新下发当前环节。"
+            self.apply("requery_stopped")
             self._save("requery_not_started_seen")
             return
         if kind == "ended":
@@ -1046,6 +1328,8 @@ class TaskRuntime:
         self.record["stopped_confirmed"] = True
         self.record["command_unknown"] = False
         self.record["requery_hold"] = True
+        self.record["blocked_reason"] = "原命令已停止；点击继续将核对执行结果、资源与前置条件，尝试重新下发未完成环节。"
+        self.apply("requery_stopped")
         self._save("requery_stopped_seen")
 
     def _store_passed_observation(self, progress) -> bool:
@@ -1110,6 +1394,19 @@ class TaskRuntime:
         for subject, value in self.policy.effects(step, final=False).items():
             self._confirm(subject, value, attempt["attempt_id"])
             self.record[subject] = value
+        verify_id = self._verify_id(step)
+        if verify_id:
+            self._mark(self.phases[self._index(verify_id)], "done")
+            self.record["steps"][verify_id]["verified_attempt_id"] = attempt["attempt_id"]
+        if next_step_id:
+            for intermediate in self.phases[self._index(step.step_id) + 1:self._index(next_step_id)]:
+                if intermediate.kind == 'local':
+                    self._mark(intermediate, 'done')
+                elif intermediate.optional and not self.policy.enabled(intermediate, self.config):
+                    self._mark(intermediate, 'skipped')
+        self.record["command_unknown"] = False
+        self.record["open_command_id"] = None
+        self.record["resources_cleared"] = True
         if next_step_id and not handoff_ok:
             self.record["cursor"] = self._index(next_step_id)
             self.record["breakpoint_phase"] = next_step_id
@@ -1118,9 +1415,6 @@ class TaskRuntime:
             self.apply("handoff_unconfirmed")
             self._save("handoff_blocked")
             return
-        self.record["command_unknown"] = False
-        self.record["open_command_id"] = None
-        self.record["resources_cleared"] = True
         if next_step_id:
             self.apply("pass_continue", handoff_ok=True, has_more=True)
             self.record["cursor"] = self._index(next_step_id)
@@ -1132,9 +1426,13 @@ class TaskRuntime:
             self.record[subject] = value
         if step.requires_safe_idle:
             self.record["safe_idle"] = True
-        self.apply("pass_final", safe_idle=True)
+        if self.record.get("manual_skips"):
+            self.apply("finish_with_skips")
+            self.record.update(flow_finished=True, blocked_reason="流程结束，含人工跳过，任务未全部成功")
+        else:
+            self.apply("pass_final", safe_idle=True)
         self._finish_cursor()
-        self._save("task_succeeded")
+        self._save("task_finished_with_skips" if self.record.get("manual_skips") else "task_succeeded")
 
     def _progress_from_query(self, step, command_id: str, result: dict) -> ProgressEvent:
         attempt = self._latest(step.step_id) if step else None
@@ -1181,7 +1479,7 @@ class TaskRuntime:
         for candidate in self.phases[index + 1:]:
             if candidate.kind in {"verify", "local"}:
                 continue
-            if candidate.optional and not self.policy.enabled(step, self.config):
+            if candidate.optional and not self.policy.enabled(candidate, self.config):
                 continue
             return candidate
         return None

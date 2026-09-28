@@ -576,3 +576,12 @@ X-Content-SHA256: <摘要>
 - 成功、失败、取消都能停止策略并给出 `navigation_port_ready`；
 - VLA相机子系统独占RealSense，HTTP桥能按`captured_after`返回腕部相机新图片；
 - VLA不自行启动下一段导航。
+
+
+## 协议模拟与控制器凭证扩展（2026-09-28）
+
+本项目新增两个独立的本机协议模拟进程，用正式单罐请求与查询接口验证共用大脑流程。默认成功是模拟场景结果，不是现场动作或传感器验收；弱证据不会被大脑提升为物体成功。使用方法与差异见[接待协议模拟](使用说明_接待协议模拟.md)。
+
+本轮另增加可选状态字段 `control_receipt`，版本 `fq/control-receipt/v1`。VLA 在 `/v1/vla/control/status` 中返回 `to_vla/manipulation` 或 `safe_idle/safe_idle`。字段绑定 `task_id`、`source_command_id`、`kind`、`controller`、`active_command_id=null`、`confirmed=true` 和带时区的 `observed_at`。具体时效与来源要求见上述说明。
+
+这是新增目标契约，尚未声称真机实现。旧服务无此字段时，大脑保持 `controller_receipt_unavailable`；单独的 `navigation_stopped`、`policy_stopped`、`navigation_port_ready` 或空闲状态不能替代目标控制器接管／最终待机凭证。真机适配必须从实际控制器生成并验证该凭证。

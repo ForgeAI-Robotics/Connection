@@ -29,6 +29,7 @@ from contracts.intent import (
 )
 from .config import Settings
 from .store import TaskRecord, TaskStore
+from contracts.task_control import control_action
 
 
 LOGGER = logging.getLogger(__name__)
@@ -157,6 +158,15 @@ class FeishuBridge:
             )
             return
 
+        action = control_action(task_text)
+        if action:
+            created = self.store.create(
+                message_id=message.message_id, event_id=message.event_id or message.message_id,
+                chat_id=message.chat_id, chat_type=message.chat_type,
+                sender_open_id=message.sender_open_id, task_text=task_text, risk_level='motion')
+            if created:
+                await self._control_current(message, action)
+            return
         classification = classify_task(task_text)
         classification = await self._refine_ambiguous(task_text, classification)
         created = self.store.create(
@@ -204,6 +214,39 @@ class FeishuBridge:
                 refined.intent.value,
             )
         return refined
+
+    async def _control_current(self, message, action):
+        """Control the observed task before admission/LLM; never publish a stop task."""
+        if not self.settings.active:
+            answer = '演练模式，未向大脑发送控制指令。'
+            failed = False
+        else:
+            try:
+                current = await self.brain.get_status()
+                if not current.task_id or current.raw.get('state') in {'succeeded', 'failed', 'cancelled'} or current.all_done:
+                    answer = '当前没有进行中的任务，无需操作。可以发送“开始接待”启动新任务。'
+                    failed = False
+                else:
+                    self.store.update(message.message_id, brain_task_id=current.task_id)
+                    binding = ({'step_id': current.raw.get('control_step_id') or '',
+                                'expected_command_id': current.raw.get('control_command_id') or ''}
+                               if action == 'continue' and 'control_step_id' in current.raw else {})
+                    result = await self.brain.control_task(action, current.task_id, operator=message.sender_open_id, **binding)
+                    failed = result.get('accepted') is not True
+                    if failed:
+                        answer = '控制未确认：' + str(result.get('error') or '请查询原任务状态')
+                    elif result.get('no_op'):
+                        answer = result.get('message') or '原任务已经结束，无需操作。'
+                    else:
+                        state = result.get('state')
+                        label = {'cancelled': '已取消，停止已确认', 'paused': '已暂停',
+                                 'running': '已受理继续执行', 'cancelling': '取消已受理，仍在确认停止',
+                                 'recovery_required': '仍需恢复，停止或执行结果尚未核清'}.get(state, str(state))
+                        answer = f'任务 {current.task_id}：{label}。'
+            except (BrainOffline, BrainRejected) as exc:
+                answer, failed = f'控制未确认：{exc}', True
+        await self._finish_local_answer(message, failed=failed, answer=answer,
+                                        source='control', send_card=False)
 
     async def _answer_chat(self, message: IncomingMessage, task_text: str) -> None:
         try:
@@ -278,6 +321,8 @@ class FeishuBridge:
             if not match:
                 if text.lower().strip() in {"/help", "/status"}:
                     return text.lower().strip()[1:], ""
+                if control_action(text):
+                    return 'task', text
                 return None
             task_text = text[match.end() :].strip()
         else:
@@ -804,6 +849,7 @@ class FeishuBridge:
             "• 通用问答：天气、地点、百科等会直接文字回复，不会开动机器人\n"
             "• 公司任务：「开始接待」「整理可乐」「桌上有什么」「前面有什么」交给大脑；看现场由大脑拍照看图\n"
             "• /status：查看当前大脑任务\n"
+            "• 停止/取消、暂停、继续：控制当前任务；群聊须 @机器人\n"
             "• /help：查看帮助\n"
             "运动或无法判定的任务需要原发送者确认。"
         )

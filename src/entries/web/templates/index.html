@@ -150,11 +150,11 @@
             <div class="task-progress" id="task-progress"></div>
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
-                <button class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
-                <button class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="resumeReception()">断点继续</button>
-                <button class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
-                <button class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
-                <button class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="controlReception('cancel')">取消</button>
+                <button id="task-start" class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
+                <button id="task-skip" class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
+                <button id="task-pause" class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
+                <button id="task-continue" class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
+                <button id="task-cancel" class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="controlReception('cancel')">取消</button>
                 <button class="btn btn-outline btn-sm" onclick="refreshTaskStatus()">刷新任务进度</button>
             </div>
         </div>
@@ -237,11 +237,38 @@
             el.style.display = 'block';
         }
 
+        let taskSubmitting = false, taskControlPending = false, displayedTask = null;
+        async function readTaskStatus() {
+            const response = await fetch('/api/task_status');
+            const data = await response.json();
+            if (!response.ok || !data || !Object.prototype.hasOwnProperty.call(data, 'state')) {
+                throw new Error('无法确认当前任务状态，请检查大脑连接后刷新');
+            }
+            return data;
+        }
+        function updateTaskButtons() {
+            const state = displayedTask?.state;
+            const active = !!displayedTask?.task_id && !displayedTask.terminal;
+            const enabled = {
+                start: !taskSubmitting && !taskControlPending && !active,
+                skip: !taskControlPending && !!displayedTask?.can_skip,
+                pause: !taskControlPending && ['running', 'verifying'].includes(state),
+                continue: !taskControlPending && !!displayedTask?.can_resume,
+                cancel: !taskControlPending && active
+            };
+            for (const [name, allowed] of Object.entries(enabled)) {
+                const button = document.getElementById('task-' + name);
+                button.disabled = !allowed;
+                button.title = allowed ? '' : (taskControlPending ? '控制请求处理中' : '当前任务状态不支持此操作');
+            }
+        }
         // 发布任务
         async function sendTask(options) {
             options = options || {};
             const task = document.getElementById('task').value.trim();
-            if (!task) return;
+            if (!task || taskSubmitting) return;
+            taskSubmitting = true;
+            updateTaskButtons();
             const btn = document.getElementById('btn-send');
             const result = document.getElementById('task-result');
             btn.disabled = true;
@@ -255,6 +282,10 @@
                     body: JSON.stringify({task: task})
                 });
                 const intent = await intentResp.json();
+                if (intent.intent === 'control') {
+                    await controlReception(intent.action);
+                    return;
+                }
                 if (intent.intent === 'chat') {
                     result.textContent = '识别为闲聊，未发送给大脑。机器人任务请说「开始接待」「桌上有什么」等。';
                     return;
@@ -266,29 +297,10 @@
                         return;
                     }
                 }
-                if (!options.forceNewTask) {
-                    try {
-                        const st = await (await fetch('/api/task_status')).json();
-                        if (st && st.execution_active) {
-                            result.textContent = '当前任务仍在执行，请等待结束后再发。';
-                            return;
-                        }
-                        if (st && st.blocks_new_motion && st.state === 'RECOVERY_REQUIRED') {
-                            const ok = window.confirm(
-                                '上一轮真机任务仍待恢复（机器人可能还在动）。\n' +
-                                '请确认现场已停、手上状态清楚后，再开始新任务。\n\n' +
-                                '确定开始新任务？'
-                            );
-                            if (!ok) {
-                                result.textContent = '已取消（保留待恢复任务）';
-                                return;
-                            }
-                            options.forceNewTask = true;
-                        } else if (st && st.blocks_new_motion && !st.all_done) {
-                            result.textContent = st.reasoning || '存在未完成任务，禁止覆盖。';
-                            return;
-                        }
-                    } catch (e) {}
+                const st = await readTaskStatus();
+                if (st.blocks_new_motion) {
+                    result.textContent = st.blocked_reason || '存在未完成任务，请先暂停、继续或取消原任务。';
+                    return;
                 }
                 const preflightResp = await fetch('/api/task_preflight', {
                     method: 'POST',
@@ -319,6 +331,8 @@
             } catch (e) {
                 result.textContent = '请求失败: ' + e.message;
             } finally {
+                taskSubmitting = false;
+                updateTaskButtons();
                 btn.disabled = false;
                 btn.textContent = '发送';
                 document.getElementById('task').value = '';
@@ -329,50 +343,54 @@
             document.getElementById('task').value = '开始接待';
             sendTask({skipConfirm: true});
         }
-        async function resumeReception() {
+        async function controlReception(action) {
+            if (taskControlPending) return;
             const result = document.getElementById('task-result');
-            if (!window.confirm('将核对当前任务的原命令并尝试继续，不重开任务。确认继续？')) {
-                result.textContent = '已取消断点继续';
-                return;
-            }
-            result.textContent = '正在断点继续...';
+            const target = displayedTask?.task_id;
+            const skipStep = displayedTask?.skip_step_id;
+            const continueStep = displayedTask?.control_step_id;
+            const continueCommand = displayedTask?.control_command_id || '';
+            taskControlPending = true;
+            updateTaskButtons();
+            result.style.display = 'block';
             try {
-                const current = await (await fetch('/api/task_status')).json();
-                if (!current.task_id || !current.can_resume) throw new Error('当前任务没有可续跑断点');
-                const resp = await fetch('/publish_task', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({task: current.task, task_id: current.task_id, resume: true, refresh: false})
-                });
-                const data = await resp.json();
-                result.textContent = JSON.stringify(data, null, 2);
-                if (data.accepted === false) {
+                const current = await readTaskStatus();
+                if (target && current.task_id !== target) throw new Error('任务已变化，请刷新进度后再操作');
+                if (!current.task_id || current.terminal) {
+                    result.textContent = '当前没有进行中的任务，无需操作。';
                     return;
                 }
-                if (data.status === 'success') {
-                    _prevAllDone = false;
-                    startTaskPolling();
+                if (action === 'continue' && ((current.control_step_id || '') !== (continueStep || '')
+                        || (current.control_command_id || '') !== continueCommand)) {
+                    throw new Error('当前环节或命令已变化，请刷新后重试');
                 }
-            } catch (e) {
-                result.textContent = '断点继续失败: ' + e.message;
-            }
-        }
-        async function controlReception(action) {
-            const result = document.getElementById('task-result');
-            const path = action === 'pause' ? '/api/task_pause'
-                : (action === 'continue' ? '/api/task_continue' : '/api/task_cancel');
-            result.textContent = '正在发送控制请求...';
-            try {
-                const resp = await fetch(path, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: '{}'
+                if (action === 'skip') {
+                    if (!current.can_skip || !skipStep || current.skip_step_id !== skipStep) {
+                        throw new Error('当前失败步骤已变化或不可跳过，请刷新后重试');
+                    }
+                    if (!window.confirm(`跳过 ${skipStep} 并进入下一步？该步骤不会记为成功；下一步仍需满足真实接口的前置条件。`)) return;
+                }
+                result.textContent = '正在发送控制请求...';
+                const resp = await fetch('/api/task_' + action, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task_id: current.task_id, ...(action === 'skip' ? {step_id: skipStep} : {}),
+                        ...(action === 'continue' ? {step_id: continueStep || '', expected_command_id: continueCommand} : {})})
                 });
                 const data = await resp.json();
-                result.textContent = JSON.stringify(data, null, 2);
-                refreshTaskStatus();
+                if (!resp.ok || data.accepted === false) throw new Error(data.error || '控制未被受理');
+                const labels = {paused: '已暂停；继续将核对原动作，未完成则重新下发当前环节。',
+                    running: '继续请求已受理；结果以下方任务进度为准。', verifying: '正在核验原任务结果。',
+                    cancelled: '已取消，停止已确认。', cancelling: '取消已受理，仍在确认停止。',
+                    recovery_required: '前置条件或执行结果尚未满足，请查看任务中的具体原因。'};
+                result.textContent = data.error || data.message || (data.retry_prepared ? '当前环节的新尝试已准备，前置检查通过后下发；执行结果见任务进度。' : null) || (action === 'skip'
+                    ? `已人工跳过 ${data.skipped_step_id}；${data.next_step_id ? '下一步：' + data.next_step_id + '，执行结果见任务进度。' : '流程结束，含跳过，未全部成功。'}`
+                    : labels[data.state] || '控制请求已受理。');
             } catch (e) {
-                result.textContent = '控制请求失败: ' + e.message;
+                result.textContent = '控制请求未完成：' + e.message;
+            } finally {
+                await refreshTaskStatus();
+                taskControlPending = false;
+                updateTaskButtons();
             }
         }
         document.getElementById('task').addEventListener('keydown', e => { if (e.key === 'Enter') sendTask(); });
@@ -380,7 +398,16 @@
         // 任务进度
         let taskPollingTimer = null;
 
+        function taskText(value) {
+            const node = document.createElement('span');
+            node.textContent = String(value ?? '');
+            return node.innerHTML;
+        }
+
         function renderTaskProgress(data) {
+            displayedTask = data;
+            updateTaskButtons();
+            if (!data.all_done) document.getElementById('report-card').innerHTML = '';
             const el = document.getElementById('task-progress');
             if (!data.active && !data.all_done && data.state !== 'succeeded' && data.state !== 'cancelled' && data.state !== 'failed') {
                 el.innerHTML = '<div class="no-task">暂无执行中的任务</div>';
@@ -415,14 +442,15 @@
                 statusLabel = '已取消';
                 statusCls = 'status-fail';
             } else if (data.state === 'failed') {
-                statusLabel = '已失败';
+                statusLabel = data.flow_finished ? '流程结束（含人工跳过，未全部成功）' : '已失败';
                 statusCls = 'status-fail';
             } else if (data.all_done || data.state === 'succeeded') {
                 if (anyFailed) {
                     statusLabel = '✕ 任务失败(有子任务失败)';
                     statusCls = 'status-fail';
                 } else {
-                    statusLabel = wonSignal === true ? '✓ 任务成功(落点已验证)' : '✓ 任务成功';
+                    statusLabel = data.execution_backend === 'reception_protocol' ? '✓ 协议模拟完成'
+                        : wonSignal === true ? '✓ 任务成功(落点已验证)' : '✓ 任务成功';
                     statusCls = 'status-ok';
                 }
             } else {
@@ -431,7 +459,7 @@
             }
             const barCls = recovery ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');
             let html = `<div class="task-progress-header">
-                <span>${taskName} (${completed}/${total})</span>
+                <span>${taskText(taskName)} (${completed}/${total})${data.execution_backend === 'reception_protocol' ? ' · 导航／操控模拟' : ''}</span>
                 <span class="${statusCls}">${statusLabel}</span>
             </div>
             <div class="task-bar"><div class="${barCls}" style="width:${pct}%"></div></div>`;
@@ -441,15 +469,26 @@
                       + `<b style="color:#818cf8">🧠 Master 思考:</b> ${data.reasoning}</div>`;
             }
 
+            const advice = data.recovery_advice;
+            if (advice && advice.applicable) {
+                const actions = {query_original: '查询原命令', request_help: '请求人工协助',
+                    wait: '等待条件就绪', cancel: '取消任务', continue: '通过原任务入口继续'};
+                html += `<div style="margin:10px 0;padding:10px 12px;background:#0f172a;border-radius:8px;font-size:12px;line-height:1.6">`
+                    + `<b>异常分析${advice.source === 'llm' ? '' : '（规则回退）'}</b><br>`
+                    + `${taskText(advice.summary)}<br>${taskText(advice.reason)}<br>`
+                    + `建议：${taskText(actions[advice.action] || advice.action)}。建议尚未执行。</div>`;
+            }
+
             for (const t of (data.subtask_list || [])) {
-                const blocked = t.done && t.status === 'blocked';
-                const failed = t.done && t.status && t.status !== 'success' && t.status !== 'blocked';
+                const skipped = t.status === 'skipped';
+                const blocked = t.done && (t.status === 'blocked' || skipped);
+                const failed = t.done && t.status && t.status !== 'success' && t.status !== 'blocked' && !skipped;
                 const cls = t.done ? (failed ? 'done fail' : (blocked ? 'done' : 'done ok')) : '';
                 const insertedTag = t.inserted
                     ? ' <span style="font-size:10px;color:#fbbf24;border:1px solid #fbbf24;border-radius:4px;padding:1px 5px">↻ 失败重插</span>'
                     : '';
                 const blockedTag = blocked
-                    ? ' <span style="font-size:10px;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:1px 5px">未执行</span>'
+                    ? ' <span style="font-size:10px;color:#fbbf24;border:1px solid #475569;border-radius:4px;padding:1px 5px">' + (skipped ? '人工跳过，未确认成功' : '未执行') + '</span>'
                     : '';
                 let checkStyle = 'border-color:#475569;';
                 let checkIcon = '';
@@ -467,7 +506,7 @@
                 }
                 html += `<div class="subtask-item ${cls}">
                     <div class="check" style="${checkStyle}">${checkIcon}</div>
-                    <span class="subtask-text">${t.subtask}${insertedTag}${blockedTag}</span>
+                    <span class="subtask-text">${taskText(t.subtask)}${insertedTag}${blockedTag}</span>
                     <span class="subtask-robot">${t.robot_name}</span>
                 </div>`;
             }
@@ -477,8 +516,7 @@
         let _prevAllDone = false;   // 上一次轮询时任务是否已完成(用于只在"刚完成"那一刻快照 belief)
         async function refreshTaskStatus() {
             try {
-                const resp = await fetch('/api/task_status');
-                const data = await resp.json();
+                const data = await readTaskStatus();
                 renderTaskProgress(data);
                 // 任务从「进行中」→「完成」的那一刻:belief 快照 + 拉接待完成确认报告
                 const finished = !!data.task_id && data.all_done && data.terminal !== false
@@ -542,6 +580,8 @@
                 const tid = d.task_id || '';
                 if (_autoSeenTaskId === null) {
                     _autoSeenTaskId = tid;
+                    displayedTask = d;
+                    updateTaskButtons();
                     if (d.state === 'RECOVERY_REQUIRED' || d.state === 'recovery_required' || (d.blocks_new_motion && d.active && !d.all_done)) {
                         startTaskPolling();
                     }

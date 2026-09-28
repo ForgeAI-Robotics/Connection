@@ -11,6 +11,7 @@ ROOT = str(Path(__file__).resolve().parents[2])
 
 from contracts.episode import episode_from_steps, episode_from_task_queue
 from brain.learning.reflection import generic_findings, maybe_reflect, reflection_enabled
+from brain.learning.worker import episode_from_record
 
 
 class _Queue:
@@ -120,6 +121,49 @@ class GenericReflectionTests(unittest.TestCase):
         episode = episode_from_steps("off", "去门口", [], final="success")
         result = maybe_reflect(episode, quiet=True)
         self.assertTrue(result.get("skipped"))
+
+    def test_reflection_uses_verified_ledger_and_preserves_reported_false(self):
+        record = {'task_id': 'evidence', 'task_desc': '开始接待', 'state': 'recovery_required',
+                  'package': 'reception', 'execution_backend': 'reception_protocol',
+                  'selection': {'sop': {'id': 'reception.single_can'}},
+                  'observations': [{'kind': 'established', 'holding': None}, {'kind': 'unverified'}],
+                  'phase_order': ['PICK'], 'steps': {'PICK': {'attempts': [{
+                      'attempt_id': 'a1', 'command_id': 'c1', 'verdict': 'FAIL',
+                      'contract': {'skill': 'pick', 'goal': 'table_2', 'object_id': 'cola_can_1'},
+                      'progress': {'error': '物体证据不足', 'evidence': {
+                          'reported_success': False, 'claimed_ok': True,
+                          'effect_verified': False, 'grade': 'hand_state_only',
+                          'downstream': {'result': {'evidence': {'source': 'protocol_simulator'}}}}}
+                  }]}}}
+        episode = episode_from_record(record)
+        step = episode['steps'][0]
+        self.assertIs(step['claimed_ok'], False)
+        self.assertEqual(step['goal'], 'table_2')
+        self.assertEqual(step['detail'], '物体证据不足')
+        self.assertEqual(step['evidence_source'], 'protocol_simulator')
+        self.assertEqual(len(episode['established_facts']), 1)
+        def model(findings, existing, desc):
+            self.assertIn('hand_state_only', desc)
+            self.assertIn('reception.single_can', desc)
+            self.assertIn('protocol_simulator', desc)
+            return [], None
+        result = maybe_reflect(episode, llm_fn=model, quiet=True)
+        self.assertEqual(result['source'], 'LLM(deepseek)')
+        self.assertEqual(result['new_rules'], [])
+
+    def test_llm_failure_is_explicit_fallback(self):
+        episode = episode_from_steps('offline', '任务', [], final='failure')
+        result = maybe_reflect(episode, llm_fn=lambda *_: (None, 'timeout'), quiet=True)
+        self.assertIn('timeout', result['source'])
+        self.assertTrue(result['new_rules'])
+
+    def test_uppercase_navigation_phase_is_classified_from_ledger(self):
+        episode = episode_from_steps('nav-fail', '开始接待', [{
+            'phase': 'NAVIGATING_TO_TABLE2', 'skill': 'navigate',
+            'status': 'FAIL', 'verify_ok': False, 'claimed_ok': False,
+            'detail': '配置的模拟失败'}], final='recovery')
+        self.assertEqual([item['type'] for item in generic_findings(episode)],
+                         ['导航受阻', '需要人工恢复'])
 
 
 if __name__ == "__main__":
