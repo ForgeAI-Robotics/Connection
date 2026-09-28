@@ -56,6 +56,8 @@ class Journal:
                 if record["request_hash"] != digest:
                     raise Conflict("command_id_payload_conflict")
                 return record, False
+            if (self.root / "admission.closed").exists():
+                raise Conflict("executor_stopping")
             rows = db.execute("SELECT record FROM commands").fetchall()
             for row in rows:
                 old = json.loads(row[0])
@@ -70,6 +72,17 @@ class Journal:
             db.execute("INSERT INTO commands VALUES (?, ?, ?)", (
                 record["command_id"], record["task_id"], json.dumps(record)))
             return record, True
+
+    def records(self):
+        with self.transaction() as db:
+            return [json.loads(row[0]) for row in db.execute("SELECT record FROM commands").fetchall()]
+
+    def close_admission(self):
+        with self.transaction() as db:
+            records = [json.loads(row[0]) for row in db.execute("SELECT record FROM commands").fetchall()]
+            if any(r["state"] not in TERMINAL for r in records):
+                raise Conflict("原命令尚未结束，拒绝停止仿真服务；请先在任务入口取消并核清")
+            (self.root / "admission.closed").touch()
 
     def update(self, command_id, **changes):
         with self.transaction() as db:

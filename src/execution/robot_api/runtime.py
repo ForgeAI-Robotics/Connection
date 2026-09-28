@@ -168,7 +168,7 @@ class RobotRuntime:
             if backend.name == "real":
                 result = self._real(action, args)
             elif action == "navigate_to":
-                # 导航按后端重路由(同 nav-backend 分支):robocasa→/nav,3dgs→/move_to
+                # All configured simulation services expose base navigation at /nav.
                 endpoint, payload = self._nav_call(backend, args)
                 result = self._http(backend, "POST", endpoint, payload)
             else:
@@ -266,15 +266,8 @@ class RobotRuntime:
         return payload
 
     def _nav_call(self, backend, args):
-        """底盘导航端点按后端选：3DGS/MotrixSim 使用 /move_to（target=[x,y]），
-        RoboCasa 等用 /nav。坐标目标才重路由；名称目标（ALFWorld
-        等符号后端)仍走 /nav 透传。/move_to 只接位置、不控 yaw(如需朝向后续用 /move_duration 补)。"""
-        std = self._navigation_payload(args["target"], args.get("yaw"))
-        name = (backend.name or "").lower()
-        is_move_to = "3dgs" in name or "motrix" in name
-        if is_move_to and "x" in std:
-            return "/move_to", {"target": [std["x"], std["y"]]}
-        return ACTION_ENDPOINTS["navigate_to"], std
+        """/move_to controls the arm; base navigation uses /nav, including yaw."""
+        return ACTION_ENDPOINTS["navigate_to"], self._navigation_payload(args["target"], args.get("yaw"))
 
     def _real(self, action: str, args: dict[str, Any]):
         if action == "grasp_object":
@@ -335,6 +328,8 @@ class RobotRuntime:
 
     @staticmethod
     def _merge(results):
+        results = [dict(r, success=False, result=str(r.get("error") or r.get("result") or "执行回包缺少成功终态"))
+                   if r.get("error") or r.get("success") not in (True, False) else r for r in results]
         handled = [r for r in results if not r.get("skipped")]
         summary = {
             r["_backend"]: {
@@ -345,15 +340,15 @@ class RobotRuntime:
             for r in results
         }
         if not handled:
-            return {"success": True, "result": "动作未被任何后端处理", "backends": summary}
+            return {"success": False, "result": "动作未被任何后端处理", "backends": summary}
         required_failed = [
             r for r in handled if r.get("_required") and r.get("success") is False
         ]
-        first_success = next((r for r in handled if r.get("success") is not False), handled[0])
-        if required_failed:
+        first_success = next((r for r in handled if r.get("success") is True), None)
+        if required_failed or first_success is None:
             return {
                 "success": False,
-                "result": "；".join(r.get("result", "动作失败") for r in required_failed),
+                "result": "；".join(r.get("result", "动作失败") for r in required_failed or handled),
                 "backends": summary,
             }
         response = {

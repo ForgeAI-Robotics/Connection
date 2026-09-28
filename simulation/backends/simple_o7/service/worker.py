@@ -48,12 +48,12 @@ def terminate(process):
         raise StopUnconfirmed(str(exc)) from exc
 
 
-def run_stage(journal, command_id, command, log, *, timeout):
+def run_stage(journal, command_id, command, log, *, timeout, env=None):
     if journal.get(command_id)["cancel_requested"]:
         return "cancelled"
     with Path(log).open("ab") as output:
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=output, stderr=output,
-                                   start_new_session=True)
+                                   start_new_session=True, env=env)
         try:
             deadline = time.monotonic() + timeout
             while process.poll() is None:
@@ -86,8 +86,12 @@ def execute(config, command_id):
         journal.update(command_id, state="running", worker_pid=os.getpid())
         started = False
         try:
-            if record["scene_revision"] != scene(config["source"])["scene_revision"]:
+            if record["scene_revision"] != scene(config["source"], config)["scene_revision"]:
                 raise ValueError("scene_revision_changed_before_execution")
+            if config.get("robot_variant") == "o6":
+                started = True
+                execute_o6(config, journal, command_id, folder)
+                return
             fingerprint = source_fingerprint(config["source"])
             (folder / "source_fingerprint.json").write_text(json.dumps(fingerprint, indent=2))
             prepared, plan, output = (folder / name for name in ("prepared", "plan", "execution"))
@@ -140,6 +144,39 @@ def execute(config, command_id):
         except Exception as exc:
             journal.update(command_id, state="unknown" if started else "failed", stopped=True,
                            resources_released=True, error=str(exc))
+
+
+def execute_o6(config, journal, command_id, folder):
+    from . import o6
+    fingerprint = o6.fingerprint(config)
+    (folder / "source_fingerprint.json").write_text(json.dumps(fingerprint, indent=2))
+    output = folder / "execution"
+    command = [config.get("python", sys.executable), str(Path(config["source"]) / "scripts/validate_g1_o6_cycle.py"),
+               "--data-root", str(Path(config["source"]) / "data"), "--task", "grasp",
+               "--seed", str(int(config.get("seed", 101))), "--world-tracking", "--torso-feedback",
+               "--tracking-iterations", "10", "--plan-attempts", "1", "--max-frames", "1800",
+               "--output", str(output)]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join([str(o6.overlay(config)), str(Path(config["source"]) / "src"), config["source"]])
+    journal.update(command_id, stage="o6_grasp", started=True)
+    outcome = run_stage(journal, command_id, command, folder / "o6_grasp.log",
+                        timeout=float(config.get("stage_timeout_sec", 600)), env=env)
+    if outcome == "cancelled" or outcome == "stage_timeout":
+        journal.update(command_id, state="cancelled" if outcome == "cancelled" else "failed",
+                       stopped=True, resources_released=True, error=outcome)
+        return
+    # Native validation returns exit 1 for physical/planning failure but still writes diagnostics.
+    if not (output / "report.json").is_file():
+        raise ValueError("o6_grasp:" + outcome + ":report_missing")
+    if o6.fingerprint(config) != fingerprint:
+        raise ValueError("source_changed_during_execution")
+    report = json.loads((output / "report.json").read_text())
+    journal.update(command_id, diagnostics={k: report.get(k) for k in ("seed", "frames", "error", "phase_events")})
+    result, observation, diagnostics = o6.collect(output)
+    passed = outcome == "ok" and result["pick_hold_passed"]
+    journal.update(command_id, state="succeeded" if passed else "failed", stage="ended",
+                   result=result, observation=observation, diagnostics=diagnostics,
+                   stopped=True, resources_released=True, error="" if passed else result["stop_reason"])
 
 
 if __name__ == "__main__":

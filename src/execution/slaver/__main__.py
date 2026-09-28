@@ -228,10 +228,7 @@ class RobotManager:
         # ALFWorld search tasks need more steps (navigate to each receptacle + check/take)
         try:
             from execution.robot_api.config import load_robot_api_config
-            _is_alf = any(
-                b.name == "alfworld" and b.enabled and b.required
-                for b in load_robot_api_config().backends
-            )
+            _is_alf = load_robot_api_config().backend == "alfworld"
         except Exception:
             _is_alf = False
 

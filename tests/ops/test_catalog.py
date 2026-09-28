@@ -13,7 +13,7 @@ class CatalogTests(unittest.TestCase):
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "environment"],
-            ["desk", "mujoco", "gs"],
+            ["desk", "mujoco", "gs", "simple_o7"],
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "support"],

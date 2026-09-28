@@ -27,11 +27,12 @@ def base_link_yaw_deg_from_chassis_yaw_deg(yaw_deg):
 
 
 def _get_chassis_link(env):
+    base_link = getattr(getattr(env, "_gs_cfg", None), "base_link_name", _BASE_LINK_NAME)
     if hasattr(env, '_link_name_to_idx'):
-        idx = env._link_name_to_idx.get(_BASE_LINK_NAME)
+        idx = env._link_name_to_idx.get(base_link)
     else:
         try:
-            idx = list(env.model.link_names).index(_BASE_LINK_NAME)
+            idx = list(env.model.link_names).index(base_link)
         except ValueError:
             idx = None
     if idx is None:
@@ -53,6 +54,12 @@ def _set_wheel_actuators(env, vx: float, wz: float):
     BlueThink wheel actuators: ctrl[14:18] = ZQL(FR), ZHL(RR), YQL(FL), YHL(RL)
     Differential drive: right = vx+wz, left = vx-wz
     """
+    forward = _find_actuator_idx(env, "forward")
+    turn = _find_actuator_idx(env, "turn")
+    if forward >= 0 and turn >= 0:
+        env.model.get_actuator(forward).set_ctrl(env.data, float(np.clip(vx, -1, 1)))
+        env.model.get_actuator(turn).set_ctrl(env.data, float(np.clip(wz, -1, 1)))
+        return
     # Map vx [-1,1] and wz [-1,1] to wheel speed range [-10, 10]
     wheel_scale = 10.0
     right = vx * wheel_scale + wz * wheel_scale
@@ -121,9 +128,29 @@ def move(env, Vx=0.0, Vy=0.0, Vw=0.0, steps=1):
     return get_base_info(env)
 
 
-def stop_base(env):
+def stop_base(env, *, settle=False):
+    if settle:
+        # Zero torque leaves the wheeled robot coasting. Brake against measured
+        # velocity before reporting a navigation command as stopped.
+        for _ in range(200):
+            velocity = np.asarray(get_base_info(env)["qvel"], dtype=float)
+            if np.linalg.norm(velocity[:2]) < .01 and abs(velocity[2]) < .02:
+                break
+            _set_wheel_actuators(env, -4 * velocity[0], -4 * velocity[2])
+            env.step(5)
     set_base_velocity(env, 0.0, 0.0, 0.0)
     return get_base_info(env)
+
+
+def navigation_velocity(distance, heading_error, gain=1.5):
+    """Use reverse for a target behind a differential base instead of turning in place."""
+    direction = 1.0
+    if abs(heading_error) > math.pi / 2:
+        direction = -1.0
+        heading_error = _normalize_angle(heading_error + math.pi)
+    linear = direction * min(gain * distance, .8) * max(0.0, math.cos(heading_error))
+    angular = float(np.clip(gain * heading_error, -1.0, 1.0))
+    return linear, angular
 
 
 def nav(env, x, y, target_yaw=None, Kp=2.5, Kd=0.3, pos_threshold=0.1, yaw_threshold=3.0, max_steps=800):

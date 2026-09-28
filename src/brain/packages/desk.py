@@ -33,10 +33,34 @@ def plan_steps(planned, port):
             raise ValueError(f"未知桌面技能: {label}")
         name = names[0]
         for obj in pending_objects(name, world, zones):
-            tasks.extend([
-                {"subtask": f"抓取 {obj}", "robot_name": item.get("robot_name")},
-                {"subtask": f"放置 {obj} 到 {SKILLS[name]['zone']}", "robot_name": item.get("robot_name")},
-            ])
+            if world[obj].get("grasped") is not True:
+                tasks.append({"subtask": f"抓取 {obj}", "robot_name": item.get("robot_name")})
+            tasks.append({"subtask": f"放置 {obj} 到 {SKILLS[name]['zone']}", "robot_name": item.get("robot_name")})
     steps = steps_from_subtasks(tasks)
     steps.append(StepSpec("DESK_CHECK", "desk_check", evidence="desk_tidy"))
     return steps
+
+
+def normalize_subtasks(subtasks, world, zones):
+    """Validate the whole fixed-workspace plan before the first grasp is dispatched."""
+    from brain.adapters.execution import parse_sim_action
+    from contracts.tasks import Rejected
+    normalized = []
+    for item in subtasks:
+        text = item.get("subtask", "")
+        action = parse_sim_action(text)
+        if not action:
+            raise Rejected(f"Desk 不支持计划步骤：{text}")
+        kind = action[0]
+        if kind == "navigate":
+            if action[1] not in zones:
+                raise Rejected(f"Desk 没有导航能力或该目标区域：{action[1]}")
+            # A known zone is already reachable in Desk's stationary workspace.
+            continue
+        if kind not in {"grasp", "place"} or action[1] not in world:
+            raise Rejected(f"Desk 不支持计划动作或物体：{text}")
+        if kind == "place" and action[2] not in zones:
+            raise Rejected(f"Desk 没有目标区域：{action[2]}")
+        canonical = f"抓取 {action[1]}" if kind == "grasp" else f"放置 {action[1]} 到 {action[2]}"
+        normalized.append(dict(item, subtask=canonical))
+    return normalized

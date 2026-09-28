@@ -147,10 +147,16 @@ def get_obj_pos(env, obj_name):
 
 
 def is_grasped(env, obj_name, threshold=0.035):
-    return env.grasped_object == obj_name
+    if env.grasped_object != obj_name:
+        return False
+    env.forward_kinematic()
+    distance = np.linalg.norm(get_obj_pos(env, obj_name) - env.get_body_xpos(RIGHT_EE_LINK))
+    return bool(np.isfinite(distance) and distance <= 0.15)
 
 
 def grasp(env, obj_name, snap_threshold=0.15):
+    if env.grasped_object:
+        return False
     if obj_name not in env._link_name_to_idx:
         print(f"[grasp] object '{obj_name}' not found in model")
         available = [n for n in env.model.link_names if n and n not in (
@@ -169,17 +175,33 @@ def grasp(env, obj_name, snap_threshold=0.15):
 
     if dist > snap_threshold:
         print(f"[grasp] object too far ({dist:.3f} > {snap_threshold}), attempting approach...")
-        move_arm(env, obj_pos, max_steps=50, pos_threshold=snap_threshold)
+        if not move_arm(env, obj_pos, max_steps=50, pos_threshold=snap_threshold):
+            return False
 
     close_gripper(env, side="right", steps=5)
-    env.grasped_object = obj_name
     lift_pos = obj_pos.copy()
     lift_pos[2] += 0.2
-    move_arm(env, lift_pos, max_steps=20, pos_threshold=0.05)
+    if not move_arm(env, lift_pos, max_steps=20, pos_threshold=0.05):
+        open_gripper(env, side="right")
+        return False
+    # Closing a hand never proves possession. The object must physically lift
+    # and remain near the hand; no attachment or object teleport is introduced.
+    for _ in range(10):
+        env.step(5)
+        env.forward_kinematic()
+        actual = get_obj_pos(env, obj_name)
+        hand = np.asarray(env.get_body_xpos(RIGHT_EE_LINK))
+        if (not np.all(np.isfinite(actual)) or actual[2] - obj_pos[2] < 0.08
+                or np.linalg.norm(actual - hand) > snap_threshold):
+            open_gripper(env, side="right")
+            return False
+    env.grasped_object = obj_name
     return True
 
 
 def place(env, obj_name, target_pos, snap_threshold=0.15):
+    if not is_grasped(env, obj_name):
+        return False
     if obj_name not in env._link_name_to_idx:
         print(f"[place] object '{obj_name}' not found")
         return False
@@ -187,7 +209,8 @@ def place(env, obj_name, target_pos, snap_threshold=0.15):
     target_pos = np.asarray(target_pos, dtype=float)
     print(f"[place] {obj_name} target={target_pos.round(3)}")
 
-    move_arm(env, target_pos, max_steps=50, pos_threshold=snap_threshold)
+    if not move_arm(env, target_pos, max_steps=50, pos_threshold=snap_threshold):
+        return False
     if env.grasped_object == obj_name:
         env.grasped_object = None
     open_gripper(env, side="right", steps=5)
@@ -195,4 +218,6 @@ def place(env, obj_name, target_pos, snap_threshold=0.15):
     lift_pos = target_pos.copy()
     lift_pos[2] += 0.2
     move_arm(env, lift_pos, max_steps=20, pos_threshold=0.05)
-    return True
+    env.step(50)
+    actual = get_obj_pos(env, obj_name)
+    return bool(np.all(np.isfinite(actual)) and np.linalg.norm(actual - target_pos) <= snap_threshold)

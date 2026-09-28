@@ -64,12 +64,9 @@ from execution.robot_api.config import load_robot_api_config
 
 
 def _backend_url() -> Optional[str]:
-    """Return URL of the first enabled backend, or None."""
+    """Return the selected backend; enabled alternatives must not receive calls."""
     try:
-        cfg = load_robot_api_config()
-        for b in cfg.backends:
-            if b.enabled:
-                return b.url.rstrip("/")
+        return load_robot_api_config().server_url.rstrip("/") or None
     except Exception:
         pass
     return None
@@ -169,15 +166,15 @@ def _find_take(object_base, admissible, exclude_from=""):
 
 
 def _is_mujoco_backend() -> bool:
-    """True = 当前后端不是 ALFWorld(即 MuJoCo 等几何后端)。
+    """仅当前端为 RoboCasa 厨房时使用工作点发现。
 
     ALFWorld 的 search_and_grasp 读文本 admissible_commands;MuJoCo 的 /scene_state
     返回的是工作点→物体的 belief,没有 admissible_commands → 文本搜索必然失败。
-    所以 MuJoCo 上必须改走工作点发现。
+    3DGS 等其他几何后端没有这套工作点，不能套用厨房搜索。
     """
     try:
-        from execution.slaver.robot.module.base import _is_alfworld
-        return not _is_alfworld()
+        from execution.slaver.robot.module.base import _is_kitchen_backend
+        return _is_kitchen_backend()
     except Exception:
         return False
 
@@ -243,6 +240,10 @@ def register_tools(mcp):
         # 改走 MuJoCo 原生工作点发现 + 抓取。
         if _is_mujoco_backend():
             return _mujoco_search_and_grasp(object_base)
+
+        from execution.slaver.robot.module.base import _is_alfworld
+        if not _is_alfworld():
+            return json.dumps(["当前后端没有搜索工作点；请使用其已登记的抓取能力", {"_status": "failure"}], ensure_ascii=False)
 
         # ── 以下为 ALFWorld 文本搜索原逻辑 ──
         # 抓错恢复：手里拿着非目标物体会阻塞抓取（ALFWorld 一次只能持有一个），先放下

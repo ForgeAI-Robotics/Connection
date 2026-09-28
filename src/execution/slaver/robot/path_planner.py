@@ -15,17 +15,10 @@ import sys
 import numpy as np
 import yaml
 
-_FREE_POINTS_PATH = os.path.normpath(
-    os.path.join(
-        os.path.dirname(__file__), '..', '..', 'simulation', 'nav2', 'maps',
-        'free_points.json',
-    )
-)
-_NAV2_CONFIG_PATH = os.path.normpath(
-    os.path.join(
-        os.path.dirname(__file__), '..', '..', 'simulation', 'nav2', 'config.yaml',
-    )
-)
+from execution.robot_api.scene_metadata import free_points_path, nav2_config_path
+
+_FREE_POINTS_PATH = str(free_points_path())
+_NAV2_CONFIG_PATH = str(nav2_config_path())
 
 _pts      = None   # list of (x, y)
 _adj      = None   # adjacency list: _adj[i] = [(j, dist), ...]

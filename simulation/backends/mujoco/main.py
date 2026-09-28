@@ -113,6 +113,7 @@ def _init_belief(env):
     try:
         state = scene_memory.build_initial_state(env)
         import yaml
+        os.makedirs(os.path.dirname(scene_memory.INITIAL_PATH), exist_ok=True)
         with open(scene_memory.INITIAL_PATH, "w", encoding="utf-8") as f:
             yaml.dump(state, f, allow_unicode=True, default_flow_style=False)
         scene_memory.reset_to_initial()   # belief = 真值(上帝视角)

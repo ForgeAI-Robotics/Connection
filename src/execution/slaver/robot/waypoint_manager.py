@@ -105,12 +105,23 @@ def get_object_pos(obj_name):
                     simple_name = kw
                     break
             if simple_name:
+                fixtures = get_fixtures()
+                if isinstance(fixtures, dict) and obj_name in fixtures:
+                    return fixtures[obj_name]['pos']
                 for wp in waypoints:
                     serves = wp.get('serves') or []
                     if any(simple_name in s or s in simple_name for s in serves):
                         coords = wp['pos'][:2]
                         print(f"[waypoint] 记忆模式: {obj_name} 是家具({simple_name}) → {wp['name']} @ {coords}", file=sys.stderr)
                         return [coords[0], coords[1], 0.9]
+                # Generated serves lists may contain only objects. Kitchen
+                # memory also records the fixture served by each workpoint.
+                from simulation.backends.mujoco.scene.scene_memory import load_state
+                locations = (load_state() or {}).get('locations', {})
+                for wp in waypoints:
+                    fixture = str((locations.get(wp['name']) or {}).get('fixture') or '')
+                    if fixture == simple_name:
+                        return [*wp['pos'][:2], 0.9]
             coords = get_object_coords(obj_name)
             if coords:
                 location = get_object_location(obj_name)

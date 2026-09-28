@@ -9,10 +9,13 @@ import shutil
 import numpy as np
 import yaml
 from datetime import datetime
+from shared.paths import workspace_root
 
 _DIR = os.path.join(os.path.dirname(__file__), 'config')
-STATE_PATH = os.path.join(_DIR, 'scene_state.yaml')
-INITIAL_PATH = os.path.join(_DIR, 'scene_state_initial.yaml')
+_RUNTIME_DIR = workspace_root() / 'data' / 'simulation' / 'mujoco'
+STATE_PATH = str(_RUNTIME_DIR / 'scene_state.yaml')
+INITIAL_PATH = str(_RUNTIME_DIR / 'scene_state_initial.yaml')
+_INITIAL_TEMPLATE = os.path.join(_DIR, 'scene_state_initial.yaml')
 WAYPOINTS_PATH = os.path.join(_DIR, 'waypoints.yaml')
 
 
@@ -24,18 +27,20 @@ def _load_waypoint_coords() -> dict:
 
 
 def load_state() -> dict:
-    with open(STATE_PATH, 'r', encoding="utf-8") as f:
+    with open(STATE_PATH if os.path.isfile(STATE_PATH) else _INITIAL_TEMPLATE, 'r', encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 def save_state(state: dict):
+    _RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     state['last_updated'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(STATE_PATH, 'w', encoding="utf-8") as f:
         yaml.dump(state, f, allow_unicode=True, default_flow_style=False)
 
 
 def reset_to_initial():
-    shutil.copy(INITIAL_PATH, STATE_PATH)
+    _RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy(INITIAL_PATH if os.path.isfile(INITIAL_PATH) else _INITIAL_TEMPLATE, STATE_PATH)
     print("[SceneMemory] 场景状态已重置为初始状态")
 
 
@@ -46,7 +51,7 @@ def reset_belief_unknown():
     学习模式用这个:机器人开局不知道任何物体在哪,靠逐工作点导航+局部观测逐步填回
     belief,从而产生 ALFWorld 那样的 memory_speedup 学习曲线。
     """
-    with open(INITIAL_PATH, "r", encoding="utf-8") as f:
+    with open(INITIAL_PATH if os.path.isfile(INITIAL_PATH) else _INITIAL_TEMPLATE, "r", encoding="utf-8") as f:
         state = yaml.safe_load(f) or {}
     for info in (state.get('locations') or {}).values():
         info['objects'] = []

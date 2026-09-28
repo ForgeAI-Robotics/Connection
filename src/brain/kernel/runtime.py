@@ -228,6 +228,10 @@ class TaskRuntime:
             self._reject_if_blocked("拒绝新任务")
             if phases is not None:
                 self._bind_package(self.package_name, phases)
+            elif planning:
+                # Loaded phases belong to the previous task, including when
+                # the new planner fails before it can return a replacement.
+                self._bind_package(self.package_name, [])
             if self.package_name in {"generic", "desk"} and not self.phases and not planning:
                 raise Rejected("通用任务没有计划步骤")
             revision = int(self.record.get("revision") or 0)
@@ -495,7 +499,24 @@ class TaskRuntime:
 
     def resume(self):
         """续跑入口只查询原命令，不发出新的 -r 命令。"""
-        return self.requery()
+        with self._exclusive():
+            self._reload_locked()
+            revision = self.record.get("revision", 0)
+            command_id = self.record.get("open_command_id")
+        result = self.requery()
+        with self._exclusive():
+            self._reload_locked()
+            # Explicit resume may withdraw an earlier failed pause/cancel only after
+            # the original command is verified ended. A concurrent control wins.
+            if (self.state == "verifying" and self.record.get("revision") == revision + 1
+                    and self.record.get("open_command_id") == command_id
+                    and result.get("stopped") is True
+                    and (result.get("evidence") or {}).get("resources_released") is True):
+                self.record["dispatch_closed"] = False
+                self.record["control_request"] = ""
+                self.record["blocked_reason"] = ""
+                self._save("resume_original_confirmed")
+        return result
 
     def continue_same_attempt(self):
         with self._exclusive():

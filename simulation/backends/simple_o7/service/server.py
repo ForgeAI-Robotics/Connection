@@ -9,12 +9,15 @@ import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urlsplit, parse_qs
 
 from .store import Journal, Conflict, VERSION, public
 
 
-def scene(source):
+def scene(source, config=None):
+    if config and config.get("robot_variant") == "o6":
+        from .o6 import scene as o6_scene
+        return o6_scene(config)
     path = Path(source) / "data/scenes/g1_coke_tabletop/manifest.json"
     raw = path.read_bytes()
     manifest = json.loads(raw)
@@ -53,16 +56,21 @@ class Bridge:
             raise ValueError("invalid_command_value")
         if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,160}", request["command_id"]):
             raise ValueError("invalid_command_id")
-        if (request["contract_version"] != VERSION or request["action"] != "pick_hold_coke"
-                or request["object_id"] != "coke"):
+        # Old command identities remain queryable after changing the deployed hand variant.
+        if (request["contract_version"] != VERSION or (request["action"], request["object_id"])
+                not in {("pick_hold_coke", "coke"), ("pick_hold_can", "can")}):
             raise ValueError("unsupported_action")
         # A duplicate remains queryable even if the scene changed since original acceptance.
         try:
             existing = self.store.get(request["command_id"])
         except KeyError:
             existing = None
-        if existing is None and request["scene_revision"] != scene(self.config["source"])["scene_revision"]:
-            raise Conflict("scene_revision_changed")
+        if existing is None:
+            current = scene(self.config["source"], self.config)
+            if request["action"] not in current["capabilities"]:
+                raise ValueError("unsupported_action_for_current_variant")
+            if request["scene_revision"] != current["scene_revision"]:
+                raise Conflict("scene_revision_changed")
         record, created = self.store.create(request)
         if created:
             try:
@@ -70,6 +78,26 @@ class Bridge:
             except Exception as exc:
                 record = self.store.update(request["command_id"], state="unknown", error="worker_launch_uncertain: " + str(exc))
         return dict(public(record), accepted=True)
+
+    def logs(self, lines):
+        records = self.store.records()
+        if not records:
+            return {"text": "尚无仿真命令", "path": None}
+        latest = max(records, key=lambda r: r["created_at"])
+        folder = self.store.root / "episodes" / latest["episode_id"]
+        files = sorted(folder.glob("*.log"), key=lambda p: p.stat().st_mtime)
+        summary = {k: latest.get(k) for k in ("command_id", "state", "stage", "error", "result")}
+        summary.update({k: latest.get("diagnostics", {}).get(k) for k in ("seed", "frames")})
+        header = json.dumps(summary, ensure_ascii=False, indent=2)
+        text = ""
+        if files:
+            with files[-1].open("rb") as handle:
+                handle.seek(max(0, files[-1].stat().st_size - 64000))
+                entries = handle.read(64000).decode("utf-8", "replace").splitlines()[-lines:]
+                text = "\n".join(line if len(line) <= 3000 else
+                                 "[完整物理报告：" + str(folder / "execution/report.json") + "]"
+                                 for line in entries)
+        return {"text": header + "\n" + text, "path": str(files[-1]) if files else str(folder)}
 
 
 def handler(bridge, token):
@@ -93,8 +121,10 @@ def handler(bridge, token):
             path = unquote(urlsplit(self.path).path)
             if path == "/health" and self.command == "GET":
                 try:
-                    info = scene(bridge.config["source"])
-                    self.respond(200, {"ready": True, "backend": "simple_o7", "scene_revision": info["scene_revision"]})
+                    info = scene(bridge.config["source"], bridge.config)
+                    self.respond(200, {"ready": True, "backend": "simple_o7", "scene_revision": info["scene_revision"],
+                                       "robot_variant": info.get("robot_variant", "o7"),
+                                       "asset_version": info["asset_version"]})
                 except Exception:
                     self.respond(503, {"ready": False, "error": "source_unavailable"})
                 return
@@ -109,7 +139,10 @@ def handler(bridge, token):
                         raise ValueError("invalid_body_length")
                     body = json.loads(self.rfile.read(length))
                 if path == "/v1/scene" and self.command == "GET":
-                    result = scene(bridge.config["source"])
+                    result = scene(bridge.config["source"], bridge.config)
+                elif path == "/v1/logs" and self.command == "GET":
+                    query = parse_qs(urlsplit(self.path).query)
+                    result = bridge.logs(max(1, min(500, int(query.get("lines", ["100"])[0]))))
                 elif path == "/v1/commands" and self.command == "POST":
                     result = bridge.submit(body)
                 elif path.startswith("/v1/commands/"):

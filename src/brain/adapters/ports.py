@@ -111,6 +111,11 @@ class SlaverAdapter(SimAdapter):
                     "identity_ok": True, "time_ok": True, "grade": "object",
                     "identity": command_id, "detail": str(result["result"]), "scene": scene}
         stopped = status in {"success", "navigated"} and effect is True
+        velocity = (scene.get("robot") or {}).get("base_velocity") if isinstance(scene, dict) else None
+        if velocity is not None:
+            import math
+            stopped = stopped and len(velocity) >= 3 and all(
+                type(value) in (int, float) and math.isfinite(value) and abs(value) < .03 for value in velocity[:3])
         return {"command_id": command_id, "terminal": "failed" if status == "failure" else "succeeded",
                 "started": True, "stopped": stopped, "resources_released": stopped, "evidence": evidence}
 
@@ -135,6 +140,18 @@ def verify_scene(subtask, scene):
             return actual == wanted or (not re.search(r"\d", wanted) and re.fullmatch(re.escape(wanted) + r" \d+", actual) is not None)
     if action and action[0] == "place":
         obj = objects.get(action[1]) or {}
+        support = objects.get(action[2]) or {}
+        if support and obj.get('grasped') is False and support.get('grasped') is False:
+            import math
+            lower, upper = (obj.get('bounds') or {}).get('min'), (obj.get('bounds') or {}).get('max')
+            floor, ceiling = (support.get('bounds') or {}).get('min'), (support.get('bounds') or {}).get('max')
+            bounds = (lower, upper, floor, ceiling)
+            if all(isinstance(b, list) and len(b) == 3 and all(type(v) in (int, float) and math.isfinite(v) for v in b) for b in bounds):
+                if any(lo[i] > hi[i] for lo, hi in ((lower, upper), (floor, ceiling)) for i in range(3)):
+                    return None
+                center = [(lower[i] + upper[i]) / 2 for i in range(2)]
+                return (all(floor[i] - .02 <= center[i] <= ceiling[i] + .02 for i in range(2))
+                        and -.02 <= lower[2] - ceiling[2] <= .05)
         target = fixtures.get(action[2]) or {}
         pos, center, size = obj.get("pos"), target.get("pos"), target.get("size")
         if obj.get("grasped") is False and pos and center and size and min(size[:2]) > 0:
@@ -144,6 +161,22 @@ def verify_scene(subtask, scene):
                     and abs(pos[1] - center[1]) <= size[1] / 2 + .05
                     and abs(pos[2] - (center[2] + size[2] / 2)) <= .15)
     if action and action[0] == "navigate":
+        import math
+        try:
+            coords = [float(x.strip()) for x in action[1].strip("()").split(",")]
+        except ValueError:
+            coords = []
+        if len(coords) in {2, 3} and all(math.isfinite(x) for x in coords):
+            robot = scene.get("robot") or {}
+            pos = robot.get("base_pos")
+            if not pos or len(pos) < 2:
+                return None
+            near = math.dist(pos[:2], coords[:2]) <= .20
+            if len(coords) == 3:
+                if robot.get("yaw") is None:
+                    return None
+                near = near and abs((robot["yaw"] - coords[2] + 180) % 360 - 180) <= 10
+            return near
         at = scene.get("robot_at", (scene.get("robot") or {}).get("at"))
         if at is not None:
             return str(at).replace("_", " ") == action[1].replace("_", " ")
@@ -204,6 +237,61 @@ class DeskAdapter(SimAdapter):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.check = DeskCheckAdapter(self)
+
+    def restore_receipts(self, record):
+        """Restore only identity-bound, confirmed-stop receipts already persisted by Runtime.
+
+        Missing/lost replies remain unknown. A current scene alone never proves an old command.
+        """
+        from copy import deepcopy
+        import threading
+        if record.get("execution_backend") != "desk":
+            return
+        for step_id, bucket in (record.get("steps") or {}).items():
+            for attempt in bucket.get("attempts") or []:
+                progress = attempt.get("progress") or {}
+                request = attempt.get("request") or {}
+                evidence = progress.get("evidence") or {}
+                command_id = attempt.get("command_id")
+                body = request.get("body") or {}
+                if not (command_id and attempt.get("submitted") is True
+                        and progress.get("command_id") == body.get("command_id") == evidence.get("identity") == command_id
+                        and progress.get("task_id") == request.get("task_id") == body.get("task_id") == record.get("task_id")
+                        and progress.get("step_id") == request.get("step_id") == step_id
+                        and progress.get("attempt_id") == attempt.get("attempt_id")
+                        and progress.get("publisher_stopped") is True and evidence.get("resources_released") is True
+                        and evidence.get("identity_ok") is True and evidence.get("time_ok") is True
+                        and not progress.get("timed_out") and not progress.get("error")):
+                    continue
+                viewed = {"command_id": command_id, "terminal": progress.get("terminal") or "",
+                          "started": progress.get("started"), "stopped": True, "resources_released": True,
+                          "timed_out": False, "evidence": deepcopy(evidence)}
+                viewed["evidence"]["receipt_source"] = "task_ledger"
+                done = threading.Event()
+                done.set()
+                with self._commands_lock:
+                    self.commands.setdefault(command_id, {"request": deepcopy(request), "view": viewed,
+                                                          "started": True, "done": done})
+
+    def _stationary_navigation(self, command_id, request, viewed):
+        from brain.adapters.execution import parse_sim_action
+        action = parse_sim_action((request.get("body") or {}).get("subtask"))
+        proof = viewed.get("evidence") or {}
+        # This exact receipt comes from Desk's non-moving /nav endpoint, not DREAM or a pose claim.
+        if (action and action[0] == "navigate" and not viewed.get("terminal")
+                and viewed.get("stopped") is True and viewed.get("resources_released") is True
+                and proof.get("identity") == command_id and proof.get("identity_ok") is True
+                and proof.get("time_ok") is True and proof.get("detail") == "定点 demo,无需导航(no-op)"
+                and action[1] in self._read_zones()):
+            viewed = dict(viewed, terminal="succeeded", evidence=dict(proof, supports=True, contradicts=False,
+                          verification="desk_stationary_workspace"))
+        return viewed
+
+    def _execute_view(self, command_id, request):
+        return self._stationary_navigation(command_id, request, super()._execute_view(command_id, request))
+
+    def query(self, command_id, request):
+        return self._stationary_navigation(command_id, request, super().query(command_id, request))
 
     def submit(self, command_id, request):
         if request.get("skill") == "desk_check":

@@ -6,7 +6,7 @@ const STATE_LABEL = {
   down: "不通",
 };
 
-const REMOTE_ACTION_LABEL = {
+const REMOTE_ACTION_LABEL = {restart: "重启",
   start: "启动",
   stop: "停止",
   "stand-enter": "站立 Enter",

@@ -4,5 +4,8 @@
   "source": "/mnt/simple",
   "runtime": "/opt/connection-simple-o7/runtime",
   "python": "/workspace/simple/.venv/bin/python",
-  "stage_timeout_sec": 300
+  "stage_timeout_sec": 600,
+  "robot_variant": "o6",
+  "o6_overlay": "generated-data/o6-planner-production-20260923/src",
+  "seed": 101
 }

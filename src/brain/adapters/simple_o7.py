@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 from datetime import datetime
@@ -29,11 +30,13 @@ def plan_steps(planned, deadline=900):
     """The existing backend supports one compound pick/hold episode, not placement."""
     items = planned.get("subtask_list") or []
     accepted = {"抓取 coke", "抓取可乐", "抓取 可乐", "抓取并稳定持有 coke", "抓取可乐并稳定持有"}
+    accepted |= {"抓取 can", "抓取罐子", "抓取 罐子", "抓取汤罐"}
     if len(items) != 1 or items[0].get("subtask", "").strip() not in accepted:
-        raise Rejected("simple_o7 当前只支持单步‘抓取 coke’（包含抬升和稳定持有）；不支持导航、放置或多步重置场景")
-    return Plan((StepSpec("STEP_1", "sim", prefix="simple-o7-1", key="抓取 coke",
+        raise Rejected("SIMPLE 当前只支持单步抓取当前场景的罐子（包含抬升和稳定持有）；不支持导航、放置或多步重置场景")
+    object_id = "can" if items[0]["subtask"].strip() in {"抓取 can", "抓取罐子", "抓取 罐子", "抓取汤罐"} else "coke"
+    return Plan((StepSpec("STEP_1", "sim", prefix="simple-o7-1", key="抓取 " + object_id,
                          evidence="object_held", requires_object_evidence=True,
-                         writes="in_gripper", object_id="coke", robot_name="FQrobot",
+                         writes="in_gripper", object_id=object_id, robot_name="FQrobot",
                          deadline_sec=deadline),), planned.get("reasoning_explanation", ""))
 
 
@@ -69,22 +72,27 @@ class SimpleO7Adapter:
 
     def planning_input(self, task, experiences="", rules=()):
         scene = self._call("/v1/scene")
-        if scene.get("capabilities") != ["pick_hold_coke"]:
+        if scene.get("capabilities") not in (["pick_hold_coke"], ["pick_hold_can"]):
             raise Rejected("simple_o7 能力合同不匹配")
+        item = "can" if scene["capabilities"] == ["pick_hold_can"] else "coke"
+        description = "O6 校准汤罐（不是可乐模型）" if item == "can" else "可乐"
         return PlanningInput(task, ("FQrobot",), {"FQrobot": {"tools": [
-            "抓取 coke：单步完成抓可乐、抬升和稳定持有。subtask 必须准确写成‘抓取 coke’。"
+            f"抓取 {item}：单步抓取{description}、抬升和稳定持有。subtask 必须准确写成‘抓取 {item}’。"
             "没有导航、放置、其他物体抓取或桌面整理能力；不支持的任务返回空计划。"
         ]}}, scene, experiences, tuple(rules))
 
     def submit(self, command_id, request):
         body = request.get("body") or {}
-        if request.get("skill") != "sim" or body.get("subtask") != "抓取 coke":
+        item = {"抓取 coke": "coke", "抓取 can": "can"}.get(body.get("subtask"))
+        if request.get("skill") != "sim" or item is None:
             return {"accepted": False, "error": "simple_o7_unsupported_action"}
         scene = self._call("/v1/scene")
+        if "pick_hold_" + item not in scene.get("capabilities", []):
+            return {"accepted": False, "error": "simple_variant_object_mismatch"}
         raw = self._call("/v1/commands", {
             "contract_version": WIRE_VERSION, "command_id": command_id,
             "task_id": request["task_id"], "step_id": request["step_id"],
-            "action": "pick_hold_coke", "object_id": "coke",
+            "action": "pick_hold_" + item, "object_id": item,
             "scene_revision": scene["scene_revision"],
         })
         if not self._identity(raw, command_id, request):
@@ -93,10 +101,11 @@ class SimpleO7Adapter:
 
     @staticmethod
     def _identity(raw, command_id, request):
+        item = {"抓取 coke": "coke", "抓取 can": "can"}.get((request.get("body") or {}).get("subtask"))
         return (raw.get("command_id") == command_id
                 and raw.get("task_id") == request.get("task_id")
                 and raw.get("step_id") == request.get("step_id")
-                and raw.get("action") == "pick_hold_coke" and raw.get("object_id") == "coke")
+                and item is not None and raw.get("action") == "pick_hold_" + item and raw.get("object_id") == item)
 
     def query(self, command_id, request):
         try:
@@ -127,6 +136,19 @@ class SimpleO7Adapter:
                    and isinstance(result.get("maximum_guarded_penetration_m"), (int, float))
                    and 0 <= result["maximum_guarded_penetration_m"] <= .002
                    and sample.get("held") is True and sample.get("supported") is False)
+        if raw.get("object_id") == "can":
+            def bounded(value, low, high):
+                return type(value) in (int, float) and math.isfinite(value) and low <= value <= high
+            support = (result.get("evidence_profile") == "o6_native_grasp_v1"
+                       and result.get("robot_variant") == "o6"
+                       and result.get("pick_hold_passed") is True and result.get("lifted") is True
+                       and result.get("stop_reason") == "completed"
+                       and bounded(result.get("terminal_stable_hold_s"), 1.0 - 1e-6, 3600)
+                       and bounded(result.get("maximum_guarded_penetration_m"), 0, .003)
+                       and bounded(result.get("base_tilt_degrees"), 0, 20)
+                       and bounded(sample.get("lift_m"), .08, 2)
+                       and bounded(sample.get("object_speed_m_s"), 0, .02)
+                       and sample.get("held") is True and sample.get("supported") is False)
         stopped = raw.get("stopped") is True and raw.get("resources_released") is True
         return {"command_id": command_id, "terminal": terminal, "started": raw.get("started"),
                 "stopped": stopped, "resources_released": stopped, "timed_out": False,

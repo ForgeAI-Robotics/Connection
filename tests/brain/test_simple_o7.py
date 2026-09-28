@@ -84,6 +84,30 @@ class SimpleO7Tests(unittest.TestCase):
                 plan_steps({"subtask_list": [{"subtask": text} for text in plan]})
         self.assertEqual(self.launches, [])
 
+    def test_o6_capabilities_preserve_object_identity_through_runtime(self):
+        current = dict(scene(self.source), robot_variant='o6', capabilities=['pick_hold_can'],
+                       objects={'can': {'asset_id': 'graspnet1b:2'}})
+        def launch(command):
+            self.bridge.store.update(command, state='succeeded', stopped=True, resources_released=True,
+                result={'robot_variant': 'o6', 'evidence_profile': 'o6_native_grasp_v1',
+                        'pick_hold_passed': True, 'lifted': True, 'stop_reason': 'completed',
+                        'terminal_stable_hold_s': 1.01, 'maximum_guarded_penetration_m': .001,
+                        'base_tilt_degrees': 3},
+                observation={'held': True, 'supported': False, 'lift_m': .12, 'object_speed_m_s': .001})
+        self.bridge.launcher = launch
+        with patch('simulation.backends.simple_o7.service.server.scene', return_value=current):
+            self.assertFalse(self.port.submit('wrong-object', self.request)['accepted'])
+            with self.assertRaisesRegex(ValueError, 'unsupported_action'):
+                self.bridge.submit(self.wire())
+            runtime = TaskRuntime(KernelStore(self.root / 'o6-brain'), self.port, package='generic')
+            steps = plan_steps({'subtask_list': [{'subtask': '抓取 can'}]}).steps
+            runtime.open_task('simple-task-1', task_desc='抓取罐子', phases=steps, execution_backend='simple_o7')
+            runtime.drive()
+        self.assertEqual(runtime.state, 'succeeded')
+        self.assertEqual(runtime.belief('holding')['certain'], 'can')
+        logs = self.port._call('/v1/logs?lines=1')
+        self.assertIn('succeeded', logs['text'])
+
     def test_duplicate_submission_is_atomic_and_rejects_different_payload(self):
         with ThreadPoolExecutor(max_workers=10) as pool:
             list(pool.map(lambda _: self.bridge.submit(self.wire()), range(10)))

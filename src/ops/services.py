@@ -230,6 +230,7 @@ def feishu_ready_from_text(text: str) -> bool:
 
 def catalog() -> list[Service]:
     _load_dotenv()
+    from ops import simple_remote
     dream = os.getenv("DREAM_BASE_URL", "http://127.0.0.1:8001")
     vla = os.getenv("VLA_BASE_URL", "http://127.0.0.1:8091")
     return [
@@ -319,6 +320,17 @@ def catalog() -> list[Service]:
             match="simulation/backends/gs/main.py",
             log_service="gs",
             health=_health_http("http://127.0.0.1:5002/camera/status"),
+        ),
+        Service(
+            id="simple_o7",
+            name="SIMPLE（远端）",
+            layer="environment",
+            controllable=False,
+            log_service="simple_o7",
+            remote_control="ssh_simple",
+            remote_actions=("start", "restart", "stop"),
+            note="同事服务器 · 当前 O6 校准汤罐抓取；有未核清命令时拒绝停止",
+            health=simple_remote.health,
         ),
         Service(
             id="dream",

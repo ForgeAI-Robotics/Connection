@@ -785,7 +785,13 @@ def _avoid_stack(env, obj, tp, clear=0.13, step=0.14, ring=3):
         if o == obj:
             continue
         try:
-            others.append(env.get_object_pos(o)[:2])
+            pos = np.asarray(env.get_object_pos(o), dtype=float)
+            # A fixed receiving object directly below the requested point is
+            # the support, not clutter to push the payload away from.
+            if (o in _nongraspable_objects() and np.linalg.norm(pos[:2] - tp[:2]) < .01
+                    and 0 <= tp[2] - pos[2] <= .10):
+                continue
+            others.append(pos[:2])
         except Exception:
             pass
 
@@ -1229,6 +1235,15 @@ def api_scene():
                 except Exception:
                     grasped = getattr(env, "grasped_object", None) == name
                 objects[name] = {"pos": pos.tolist(), "grasped": grasped}
+                # Publish measured geometry so the brain can verify placement
+                # on another object (such as a plate), not just on fixtures.
+                model = env.objects.get(name) if isinstance(env.objects, dict) else None
+                if model is not None and hasattr(model, 'get_bbox_points'):
+                    quat = np.asarray(env.sim.data.body_xquat[env.obj_body_id[name]], dtype=float)
+                    corners = np.asarray(model.get_bbox_points(trans=pos, rot=quat[[1, 2, 3, 0]]), dtype=float)
+                    if corners.shape == (8, 3) and np.isfinite(corners).all():
+                        objects[name]['bounds'] = {'min': corners.min(axis=0).tolist(),
+                                                   'max': corners.max(axis=0).tolist()}
             except Exception:
                 continue
 

@@ -37,4 +37,5 @@ def pending_objects(skill_name, objects=None, zones=None):
     zones = zones or get_zones()
     zone = zones[spec["zone"]]
     return [k for k, v in objects.items()
-            if v.get("category") == spec["category"] and not in_zone(v["pos"], zone)]
+            if v.get("category") == spec["category"]
+            and (v.get("grasped") is True or not in_zone(v["pos"], zone))]

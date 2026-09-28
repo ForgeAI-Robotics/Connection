@@ -32,6 +32,7 @@ from tools.move import (
     base_link_yaw_deg_from_chassis_yaw_deg,
     base_link_yaw_from_chassis_yaw,
     get_base_info,
+    navigation_velocity,
     nav,
     move,
     stop_base,
@@ -356,6 +357,17 @@ def _finish_command(cmd, result):
         env = _get_env()
         if env is not None:
             try:
+                info = stop_base(env, settle=True)
+                stopped = np.linalg.norm(info['qvel'][:2]) < .02 and abs(info['qvel'][2]) < .03
+                result.update(stopped=bool(stopped), resources_released=bool(stopped), pos=info['pos'], yaw=_public_yaw_deg(info))
+                if not stopped:
+                    result.update(success=False, result='底盘停止未确认')
+                if cmd.get('type') == 'nav' and result.get('success'):
+                    state = cmd['state']
+                    near = np.hypot(info['pos'][0] - state['x'], info['pos'][1] - state['y']) < state['pos_threshold']
+                    yaw_ok = state['target_yaw'] is None or abs(_normalize_angle_deg(state['target_yaw'] - _public_yaw_deg(info))) < state['yaw_threshold']
+                    if not (near and yaw_ok):
+                        result.update(success=False, result='停止后位姿未满足导航目标')
                 _read_base_info(env)
             except Exception:
                 pass
@@ -408,10 +420,7 @@ def _step_active_command(env):
                 if pos_err >= state["pos_threshold"]:
                     angle_to_target = np.arctan2(err_y, err_x)
                     heading_err = np.arctan2(np.sin(angle_to_target - yaw_now), np.cos(angle_to_target - yaw_now))
-                    Kp = state["kp"]
-                    turn = np.clip(Kp * heading_err, -1.0, 1.0)
-                    forward = np.clip(Kp * pos_err, -0.8, 0.8)
-                    forward *= max(0.0, np.cos(heading_err))
+                    forward, turn = navigation_velocity(pos_err, heading_err, state["kp"])
                     move(env, Vx=forward, Vw=turn)
                 else:
                     Vw = np.clip(2.0 * (yaw_err / 90.0), -1.0, 1.0)
@@ -738,6 +747,7 @@ def api_scene():
             "base_pos": base_info["pos"],
             "ee_pos": arm_info["ee_pos"],
             "yaw": _public_yaw_deg(base_info),
+            "base_velocity": base_info["qvel"],
         }
 
     return jsonify(_np_to_list({

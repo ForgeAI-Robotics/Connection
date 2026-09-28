@@ -22,7 +22,7 @@ from execution.robot_api.config import load_robot_api_config
 
 def _raw_post(command: str) -> dict:
     cfg = load_robot_api_config()
-    for backend in cfg.backends:
+    for backend in cfg.action_backends():
         if not backend.enabled:
             continue
         url = f"{backend.url}/raw"

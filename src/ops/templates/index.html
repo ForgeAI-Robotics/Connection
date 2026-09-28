@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQPlanner 控制面板</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=11">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=12">
 </head>
 <body>
   <div class="app">
@@ -48,7 +48,7 @@
           <p class="hint">全局选择可被模块覆盖。应用时重启本机大脑服务；有未核清任务时拒绝切换。不会启动远端机器人，也不会打开真机动作许可。</p>
           <div class="execution-fields">
             <label>全局环境 <select id="exec-mode"><option value="simulation">仿真</option><option value="real">真机</option></select></label>
-            <label>默认仿真器 <select id="exec-sim"><option value="desk">Desk（无画面）</option><option value="mujoco">MuJoCo</option><option value="mujoco_3dgs">3DGS</option><option value="simple_o7">SIMPLE O7（远端）</option></select></label>
+            <label>默认仿真器 <select id="exec-sim"><option value="desk">Desk（无画面）</option><option value="mujoco">MuJoCo</option><option value="mujoco_3dgs">3DGS</option><option value="simple_o7">SIMPLE（O6 远端）</option></select></label>
           </div>
           <div id="exec-modules" class="execution-fields"></div>
           <div class="execution-fields execution-actions">
@@ -85,7 +85,7 @@
       </section>
     </div>
   </div>
-  <script src="{{ url_for('static', filename='panel.js') }}?v=11"></script>
-  <script src="{{ url_for('static', filename='execution.js') }}?v=1"></script>
+  <script src="{{ url_for('static', filename='panel.js') }}?v=12"></script>
+  <script src="{{ url_for('static', filename='execution.js') }}?v=2"></script>
 </body>
 </html>

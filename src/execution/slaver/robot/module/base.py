@@ -38,6 +38,12 @@ def _mem_mode() -> bool:
         return False
 
 
+def _is_kitchen_backend() -> bool:
+    """Only RoboCasa owns the kitchen waypoints and discovery memory."""
+    from execution.robot_api.config import load_robot_api_config
+    return load_robot_api_config().backend == "mujoco"
+
+
 def _obj_base(name: str) -> str:
     return _re.sub(r'\s*\d+$', '', str(name).strip().lower())
 
@@ -55,28 +61,23 @@ def _scene_mem():
 
 # ── 感知后端:geometric(坐标真值,baseline) / segmentation(相机分割图,真部分可观测) ──
 
-def _perception_cfg(key: str, default: str) -> str:
+def _perception_cfg(key: str, default):
     """读 config/slaver.yaml 的 perception.<key>,失败返回 default。"""
     try:
         import yaml
         cfg_path = os.path.normpath(str(workspace_root() / 'config/slaver.yaml'))
         with open(cfg_path, encoding='utf-8') as f:
             c = yaml.safe_load(f) or {}
-        return str((c.get('perception') or {}).get(key, default)).strip().lower()
+        value = (c.get('perception') or {}).get(key, default)
+        return value.strip().lower() if isinstance(value, str) else value
     except Exception:
         return default
 
 
 def _backend_url() -> str:
-    """第一个 enabled 后端的 URL(调 serve /visible_objects 用)。"""
-    try:
-        from execution.robot_api.config import load_robot_api_config
-        for b in load_robot_api_config().backends:
-            if b.enabled:
-                return b.url.rstrip('/')
-    except Exception:
-        pass
-    return 'http://127.0.0.1:5001'
+    """Keep discovery on the selected execution backend."""
+    from execution.robot_api.config import load_robot_api_config
+    return load_robot_api_config().server_url.rstrip('/')
 
 
 def _observe_at_waypoint(wp_name: str) -> set:
@@ -462,10 +463,7 @@ def _is_alfworld() -> bool:
     """True when ALFWorld is the active required backend."""
     try:
         from execution.robot_api.config import load_robot_api_config
-        cfg = load_robot_api_config()
-        for b in cfg.backends:
-            if b.name == "alfworld" and b.enabled and getattr(b, "required", False):
-                return True
+        return load_robot_api_config().backend == "alfworld"
     except Exception:
         pass
     return False
@@ -576,7 +574,7 @@ def register_tools(mcp):
         # 记忆模式 + MuJoCo 后端 + 物体目标(非家具):走"逐工作点发现"——belief 已知则
         # 直达确认,未知/扑空则遍历搜索并更新位置记忆。家具(counter/sink/...)位置固定不走发现。
         # 必须排除 ALFWorld:那是符号后端,导航(含 shelf 等 receptacle)透传名称,不用 MuJoCo 工作点。
-        if _mem_mode() and not _is_alfworld() and not _is_fixture_name(target):
+        if _is_kitchen_backend() and _mem_mode() and not _is_fixture_name(target):
             ok, msg = _discover_object_waypoint(target)
             print(f"[base] {'✓' if ok else '✗'} 发现导航 '{target}': {msg}", file=sys.stderr)
             return json.dumps([msg, {"_status": "success" if ok else "failure"}])
@@ -586,7 +584,7 @@ def register_tools(mcp):
         # 否则 "countertop 1" 会模糊匹配到 MuJoCo 的 counter 工作点 → 发坐标 → ALFWorld
         # /nav 报 "coordinates not supported"(这正是 shelf 能成功、countertop 失败的原因:
         # shelf 无对应 MuJoCo 工作点会抛异常透传,countertop 却匹配到 counter 工作点)。
-        if not _is_alfworld():
+        if _is_kitchen_backend():
             try:
                 wp = find_waypoint(target)
                 return await _do_navigate(wp['x'], wp['y'], wp['yaw_deg'])

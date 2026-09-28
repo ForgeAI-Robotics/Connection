@@ -511,13 +511,23 @@ def parse_sim_action(subtask: str):
             return ("skill", skill_name)
     import re
 
-    placed = re.search(r"(?:放置|放到|搁到)\s*(\S+?)\s*(?:到|至)\s*(\S+)", text)
+    number = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+    coordinate = re.fullmatch(
+        rf"(?:导航到|前往|走到|移动到|到达)\s*(?:坐标\s*)?[（(]?\s*({number})\s*[,，]\s*({number})"
+        rf"(?:\s*[,，]\s*({number}))?\s*[）)]?\s*(?:[，,]?\s*(?:并|然后|到达后)?\s*停止)?[。.]?", text)
+    if coordinate:
+        return ("navigate", ",".join(part for part in coordinate.groups() if part is not None))
+
+    placed = re.fullmatch(r"(?:将|把)\s*(\S+)\s*(?:放置|放|搁)(?:到|至)\s*(\S+?)(?:\s*上)?[，。,.；;]?", text)
+    if placed:
+        return ("place", _sim_token(placed.group(1)), _sim_token(placed.group(2)))
+    placed = re.fullmatch(r"(?:放置|放到|搁到)\s*(\S+?)\s*(?:到|至)\s*(\S+?)(?:\s*上)?[，。,.；;]?", text)
     if placed:
         return ("place", _sim_token(placed.group(1)), _sim_token(placed.group(2)))
     grasped = re.search(r"(?:抓取|拿起|取走|拾起|捡起)\s*(\S+(?: \d+)?)", text)
     if grasped:
         return ("grasp", _sim_token(grasped.group(1)))
-    moved = re.search(r"(?:导航到|前往|走到|移动到|到达|靠近)\s*(\S+(?: \d+)?)", text)
+    moved = re.search(r"(?:导航到|前往|走到|移动到|到达|靠近)\s*([^\s（()）]+(?: \d+)?)", text)
     if moved:
         return ("navigate", _sim_token(moved.group(1)))
     return None
@@ -653,9 +663,10 @@ class SimAdapter:
         return _sim_view(command_id, action, raw, self._read_world(), self._read_zones())
 
     def query(self, command_id, request):
-        del request
         with self._commands_lock:
             stored = self.commands.get(command_id)
+            if stored and stored["request"] != request:
+                return _unconfirmed(command_id, "command_request_mismatch")
             if stored and stored.get("view"):
                 return deepcopy(stored["view"])
             if stored and not stored["started"]:
@@ -667,15 +678,22 @@ class SimAdapter:
         return _unconfirmed(command_id, "original_command_unavailable")
 
     def cancel(self, command_id, request):
-        del request
         with self._commands_lock:
             stored = self.commands.get(command_id)
+            if stored and stored["request"] != request:
+                return {"accepted": False, "completed": False, "command_id": command_id,
+                        "error": "command_request_mismatch"}
             if stored and not stored["started"]:
                 self.cancelled.add(command_id)
                 stored["view"] = _cancelled_view(command_id)
                 stored["done"].set()
                 return {"accepted": True, "completed": True, "command_id": command_id}
-            if stored and (stored.get("view") or {}).get("terminal"):
+            viewed = (stored or {}).get("view") or {}
+            if stored and stored["done"].is_set() and viewed.get("stopped") is True and viewed.get("resources_released") is True:
+                # A completed synchronous call can have unknown task effect. Its confirmed
+                # stop still permits cancellation; do not turn the effect into a success.
+                if not viewed.get("terminal"):
+                    stored["view"] = dict(viewed, terminal="cancelled")
                 return {"accepted": True, "completed": True, "command_id": command_id}
         return {"accepted": False, "completed": False, "command_id": command_id,
                 "error": "stop_unavailable"}

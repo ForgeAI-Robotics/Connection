@@ -28,7 +28,7 @@ class PanelAppTests(unittest.TestCase):
             [item["id"] for item in payload["brain"]],
             ["master", "deploy", "feishu"],
         )
-        self.assertEqual([item["id"] for item in payload["environment"]], ["desk", "mujoco", "gs"])
+        self.assertEqual([item["id"] for item in payload["environment"]], ["desk", "mujoco", "gs", "simple_o7"])
         self.assertEqual([item["id"] for item in payload["support"]], ["redis", "slaver"])
         ids = [item["id"] for group in ("brain", "environment", "support", "robot") for item in payload[group]]
         self.assertEqual(len(ids), len(set(ids)))
@@ -73,6 +73,22 @@ class PanelAppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_json())
         self.assertTrue(response.get_json()["ok"])
         mocked.assert_called_once_with("start")
+
+    def test_simple_remote_controls_and_logs_do_not_use_local_tmux(self):
+        from unittest.mock import patch, call
+        with patch('ops.simple_remote.run') as run, patch('ops.simple_remote.health', return_value={'ok': True}), \
+             patch('ops.tmuxctl.stop_session') as local_stop, patch('ops.tmuxctl.start_session') as local_start:
+            response = self.client.post('/api/services/simple_o7/restart')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(run.call_args_list, [call('stop'), call('start')])
+            local_stop.assert_not_called()
+            local_start.assert_not_called()
+        with patch('ops.simple_remote.run', side_effect=RuntimeError('original command unresolved')) as run:
+            self.assertEqual(self.client.post('/api/services/simple_o7/restart').status_code, 400)
+            run.assert_called_once_with('stop')
+        with patch('ops.simple_remote.logs', return_value=('remote command log', '/remote/episode/log', None)):
+            result = self.client.get('/api/services/simple_o7/logs').get_json()
+            self.assertEqual(result['text'], 'remote command log')
 
     def test_status_health_is_not_task_json(self):
         payload = self.client.get("/api/status").get_json()

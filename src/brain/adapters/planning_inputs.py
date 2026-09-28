@@ -31,7 +31,7 @@ def _belief_obj_locations() -> dict:
     try:
         state_path = _os.path.normpath(_os.path.join(
             str(workspace_root()),
-            "simulation", "backends", "mujoco", "scene", "config",
+            "data", "simulation", "mujoco",
             "scene_state.yaml"))
         with open(state_path, encoding="utf-8") as f:
             state = yaml.safe_load(f) or {}
@@ -140,6 +140,24 @@ class PlanningInputs:
             all_environments_info = {it["name"]: it for it in (raw or {}).get("scene", [])}
         if backend == "desk":
             all_environments_info = {"backend": "desk", "objects": port._read_world(), "zones": port._read_zones()}
+            all_environments_info["execution_rules"] = (
+                "固定桌面，所有物体和区域均在同一操作范围内，没有导航能力，不生成导航步骤。"
+                "抓取写成‘抓取 milk_1’，放置写成‘放置 milk_1 到 milk_area’，"
+                "也可直接选已有技能‘整理牛奶’等，由大脑展开。"
+                "已持有的物体直接放置；已在目标区且已释放的物体无需重复抓取。"
+            )
+        elif backend == 'slaver:mujoco_3dgs':
+            # This scene has its own robot, objects and geometry. RoboCasa's
+            # kitchen waypoints and memory must not leak into its plans.
+            scene = _get_scene()
+            if not isinstance(scene, dict) or scene.get('success') is False or not scene.get('robot'):
+                from contracts.tasks import Rejected
+                raise Rejected('3DGS 场景状态不可用')
+            all_environments_info = {'backend': 'mujoco_3dgs', **scene,
+                'execution_rules': '仅使用本场景实际存在的物体和家具。没有厨房工作点、counter、sink。'
+                '坐标导航子任务写成“导航到 x,y”或“导航到 x,y,yaw”，坐标内不留空格，yaw 单位为度。'
+                '抓取写成“抓取 bottle”，直接调用 grasp_object；不要调用依赖厨房工作点的 search_and_grasp。'
+                '没有可放置表面时不得凭空生成桌面、牛奶区或放置技能。'}
         else:
             # ===== 注入真实场景信息 =====
             try:
@@ -214,11 +232,8 @@ class PlanningInputs:
                                 info["grasped"] = obj_data.get("grasped", False)
                                 all_environments_info[obj_name] = info
                     all_environments_info['_navigation_guide'] = {
-                        '说明': '导航时使用以下简单名称，不要使用fixture原始名称',
-                        'counter': {'工作点': 'counter_front', '可服务物体': ['apple', 'mug', 'pot', 'cup']},
-                        'sink': {'工作点': 'island_north', '可服务物体': ['sink', 'sponge', 'bowl']},
-                        'island': {'工作点': 'island_north', '可服务物体': ['island', 'bowl', 'sponge']},
-                        'stove': {'工作点': 'stove_front', '可服务物体': ['stove']},
+                        '说明': '使用当前场景的准确物体或家具名称；不要编造工作点。放到 plate 就导航到 plate，不要替换为笼统的 counter。',
+                        'fixtures': (scene_data or {}).get('fixtures', {}),
                     }
                     if memory_mode:
                         all_environments_info['_perception_note'] = (
@@ -227,8 +242,8 @@ class PlanningInputs:
                             "并**当场把物体抓起**,你无需指定去哪找。"
                             "【严禁】用 navigate_to_target([物体]) 取物体——它只导航/发现、**绝不抓取**,"
                             "误用会让后续 place 因'未持有'而失败(cup→cabinet 卡死的根因)。"
-                            "navigate_to_target 只用于去目标家具。"
-                            "放置骨架恒为:search_and_grasp([物体]) → navigate_to_target([目标家具]) → place_on_top。"
+                            "navigate_to_target 用于去放置目标(家具或 plate 等承接物)。"
+                            "放置骨架恒为:search_and_grasp([物体]) → navigate_to_target([放置目标]) → place_on_top。"
                         )
             except Exception as e:
                 print(f"[Planner] Warning: could not fetch scene: {e}")

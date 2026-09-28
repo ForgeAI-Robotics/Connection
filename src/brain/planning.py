@@ -43,21 +43,22 @@ class PlanningService:
         check_skills = []
         if kind == "sim":
             from brain.adapters.execution import parse_sim_action
+            from brain.packages.desk import normalize_subtasks
             from execution.robot_api.desk import SKILLS, pending_objects
+            world, zones = runtime.port._read_world(), runtime.port._read_zones()
             expanded = []
             for item in subtasks:
                 action = parse_sim_action(item.get("subtask"))
                 if action and action[0] == "skill":
                     name = action[1]
                     check_skills.append(name)
-                    for obj in pending_objects(name, runtime.port._read_world(), runtime.port._read_zones()):
-                        expanded.extend([
-                            dict(item, subtask=f"抓取 {obj}"),
-                            dict(item, subtask=f"放置 {obj} 到 {SKILLS[name]['zone']}"),
-                        ])
+                    for obj in pending_objects(name, world, zones):
+                        if world[obj].get("grasped") is not True:
+                            expanded.append(dict(item, subtask=f"抓取 {obj}"))
+                        expanded.append(dict(item, subtask=f"放置 {obj} 到 {SKILLS[name]['zone']}"))
                 else:
                     expanded.append(item)
-            subtasks = expanded
+            subtasks = normalize_subtasks(expanded, world, zones)
         steps = steps_from_subtasks(subtasks, kind=kind)
         from contracts.steps import StepSpec
         steps.extend(StepSpec(f"CHECK_SKILL_{i}", "desk_check", key=name, evidence="desk_tidy")

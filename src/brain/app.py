@@ -8,9 +8,15 @@ def create_runtime(config, port, *, package="reception"):
     from brain.storage.releases import bound_release
     from brain.storage.tasks import KernelStore
     from brain.service_support import runtime_dir
-    return TaskRuntime(KernelStore(runtime_dir(config)), port,
-                       config=deepcopy(config), package=package,
-                       policy=PackagePolicy(), release_reader=bound_release)
+    runtime = TaskRuntime(KernelStore(runtime_dir(config)), port,
+                          config=deepcopy(config), package=package,
+                          policy=PackagePolicy(), release_reader=bound_release)
+    # Restore execution receipts, not physical actions. Only ports with this capability opt in.
+    if runtime.record.get("execution_backend") == "desk":
+        restore = getattr(port, "restore_receipts", None)
+        if callable(restore):
+            restore(runtime.record)
+    return runtime
 
 
 def create_service(config, *, model=None, port_factory=None, inputs=None,
