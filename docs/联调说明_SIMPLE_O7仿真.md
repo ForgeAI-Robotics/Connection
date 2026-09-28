@@ -6,7 +6,7 @@
 ## 1. 接入边界
 
 Connection 新增 `simple_o7` 执行适配器，复用现有 Planner、Runtime、Runner 和 Verifier。
-网页和飞书的发布接口不变。默认运行环境没有切换，真机动作许可没有开启。
+网页和飞书的发布接口不变。初次接入未切换默认运行环境；2026-09-28 正式入口验收曾临时切换，结束后恢复 Desk，见第 9 节。真机动作许可没有开启。
 
 ```mermaid
 flowchart LR
@@ -39,7 +39,7 @@ Connection 中：
 | `scripts/simple_o7_experiment.py` | 使用隔离账本运行同一套大脑的实验入口 |
 | `tests/brain/test_simple_o7.py` | HTTP 合同、账本、重启、取消和 Runtime 验证 |
 
-对方机器上：
+远端机器上（`<REMOTE_WORKSPACE>` 为部署工作区，`<CONNECTION_ROOT>` 为本机仓库根目录，使用命令前替换为实际路径）：
 
 ```text
 <REMOTE_WORKSPACE>/
@@ -126,7 +126,7 @@ O6 不伪造旧 O7 的 `lowering_verified`，旧 O7 的三秒持有等判据仍�
 本机 `.env` 中配置 `SIMPLE_O7_TOKEN`，与远端独立服务一致。健康检查：
 
 ```bash
-cd <CONNECTION_ROOT>
+cd "<CONNECTION_ROOT>"
 venv/core/bin/python scripts/simple_o7_experiment.py health
 ```
 

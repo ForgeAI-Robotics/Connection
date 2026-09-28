@@ -1,6 +1,8 @@
 # Standalone SIMPLE executor (O6 / legacy O7)
 
 Deploy this directory to `<REMOTE_WORKSPACE>/connection-simple-o7`, alongside `code/`.
+Replace `<REMOTE_WORKSPACE>` with the deployment workspace and set `SIMPLE_SOURCE` to
+the actual `code/SIMPLE-o7-verify` path before running `start.sh`.
 It has no dependency on Connection's brain package. The HTTP service uses the standard library;
 the O6 worker reads physical evidence with NumPy from the existing simulation image.
 The worker uses the existing `simple:260904` image and mounts `SIMPLE-o7-verify` read-only.
