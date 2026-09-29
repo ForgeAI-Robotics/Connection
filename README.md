@@ -1,13 +1,13 @@
 # Connection 具身大脑
 
-生产代码统一在 `src/`。任务网页、飞书分别直连大脑；所有业务任务使用同一个 Runtime。旧调度、旧接待循环及导入兼容层已退出，历史代码可在 Git 提交 `d85e9b9` 查看。
+生产代码统一在 `src/`。任务网页、飞书、语音文本入口分别直连大脑；所有业务任务使用同一个 Runtime。旧调度、旧接待循环及导入兼容层已退出，历史代码可在 Git 提交 `d85e9b9` 查看。
 
 ```text
-网页 :8888 ─┐
-飞书 ──────┼→ Brain API :5000 → Runtime ⇄ Planner / 业务包
-外部 API ──┘                     ↓ Runner → 执行适配器 → 身体 / 仿真
-                                ↑ Verifier ← 执行证据
-                                └→ 账本与记忆 → 异步反思、评测、发布
+网页 :8888 ──┐
+飞书 ────────┼→ Brain API :5000 → Runtime ⇄ Planner / 业务包
+语音 :8890 ──┤                     ↓ Runner → 执行适配器 → 身体 / 仿真
+外部 API ────┘                     ↑ Verifier ← 执行证据
+                                  └→ 账本与记忆 → 异步反思、评测、发布
 Ops :5678 → 服务启停、健康、日志、运行环境切换
 ```
 
@@ -16,7 +16,7 @@ Ops :5678 → 服务启停、健康、日志、运行环境切换
 | 目录 | 用途 |
 |---|---|
 | `src/brain/` | 大脑应用、内核、业务包、技能、适配、账本、学习、API |
-| `src/entries/` | 独立网页与飞书入口；不持有大脑账本 |
+| `src/entries/` | 独立网页、飞书与语音文本入口；不持有大脑账本 |
 | `src/ops/` | 运维面板、受控环境切换与服务管理 |
 | `src/execution/` | 机器人语义接口、Slaver、协作通信、DREAM 服务及可选扩展 |
 | `src/contracts/`、`src/clients/` | 数据合同与大脑 HTTP 客户端 |
@@ -49,12 +49,13 @@ uv pip install --python venv/core/bin/python -e '.[feishu,execution]'
 venv/core/bin/python -m brain
 venv/core/bin/python -m entries.web
 venv/core/bin/python -m entries.feishu
+venv/core/bin/python -m entries.voice
 venv/core/bin/python -m ops
 # 使用 Slaver 执行路径时另起 Redis 和 Slaver
 venv/core/bin/python -m execution.slaver
 ```
 
-网页 `:8888` 使用 `MASTER_URL` 连接大脑 `:5000`；飞书使用 `LARK_BRAIN_URL` 直连 `:5000`。运维面板 `:5678` 独立运行。沿用的面板服务 ID `master` / `deploy` 只是既有管理 API 标识，启动的都是新模块。
+网页 `:8888` 与语音文本入口 `:8890` 使用 `MASTER_URL` 连接大脑 `:5000`；飞书使用 `LARK_BRAIN_URL` 直连 `:5000`。语音入口只转发已识别文本。运维面板 `:5678` 独立运行。沿用的面板服务 ID `master` / `deploy` 只是既有管理 API 标识，启动的都是新模块。
 
 从仓库外部署时设置 `CONNECTION_WORKSPACE` 指向配置和数据根目录。配置不会从进程工作目录猜测。入口可独立部署，无需挂载大脑的数据。
 
@@ -74,7 +75,7 @@ venv/core/bin/python -m execution.slaver
 - `data/retired/`：只读保存的历史数据，不运行旧程序。
 - `logs/YYYY-MM-DD/<服务>/`：服务日志。
 
-网页、飞书、外部 API 以及接待演示共用 Runtime。通用任务由 Planner 生成步骤；接待与观察使用业务包；桌面整理通过现有规则展开。Runner 不改路线；Verifier 只输出 PASS / FAIL / UNKNOWN。反思读取任务快照，不改正在执行的任务，也不自动改内核代码。
+网页、飞书、语音文本入口、外部 API 以及接待演示共用 Runtime。通用任务由 Planner 生成步骤；接待与观察使用业务包；桌面整理通过现有规则展开。Runner 不改路线；Verifier 只输出 PASS / FAIL / UNKNOWN。反思读取任务快照，不改正在执行的任务，也不自动改内核代码。
 
 大脑先建立可取消的任务，再选择业务包：明确的 SOP 触发词直接命中，其它表述由 LLM 结合登记范围选择；通用任务继续按当前现场能力规划。单罐接待 SOP 固定为取物桌导航、抓取、经既定门段到目标桌、放置，模型不能改写路段或命令字段。异常时 LLM 读取原命令、回包和账本生成受限建议，网页显示解释；建议不会自动执行，也不改变核验标准。`/api/sops` 返回登记目录，任务状态返回所选版本和异常建议。配置与验收边界见[规划第 19 节](docs/规划说明_具身大脑重构.md#19-共用大脑的任务选择与异常分析2026-09-28)。
 

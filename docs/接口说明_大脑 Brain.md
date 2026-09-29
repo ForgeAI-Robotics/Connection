@@ -53,6 +53,7 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | 服务 | 地址 | 调用方向 | 用途 |
 |---|---|---|---|
 | 大脑网页/Master | `http://<BRAIN_IP>:8888` | 浏览器 → 大脑 | 创建和查看任务 |
+| 语音文本入口 | `http://<BRAIN_IP>:8890` | 上游识别文本 → 大脑 | 只提交已识别文字 |
 | DREAM | `http://192.168.5.18:8001` | 大脑 → DREAM | 世界、状态、导航 |
 | VLA | `http://192.168.5.194:8091` | 大脑 → VLA | 抓取、放置、可选相机图片 |
 | RealSense | NX `192.168.5.240:5555` 唯一相机服务打开 USB | VLA 子系统内部 | HTTP 桥只读订阅；照片开关开启时生成动作后图片 |
@@ -553,7 +554,7 @@ LLM固定输出：
 | `src/brain/storage/tasks.py` | 任务和尝试账本 |
 | `src/brain/packages/reception.py` | 接待相位与合同 |
 | `src/brain/adapters/execution.py` | 真机 / 仿真执行适配，真实交接缺失时明确不可用 |
-| `src/entries/web/`、`src/entries/feishu/` | 独立入口，通过大脑接口操作任务 |
+| `src/entries/web/`、`src/entries/feishu/`、`src/entries/voice/` | 独立入口，通过大脑接口操作任务 |
 
 ## 11. 验收边界
 
@@ -565,3 +566,11 @@ LLM固定输出：
 运行环境的接待模块可选 `simulation_backend: reception_protocol`。从正式 `/publish_task` 入口执行「开始接待」，任务状态与账本标记 `execution_backend=reception_protocol`，仍执行 `reception.single_can` v1。独立下游默认延时成功，任务核验不设模拟特例。旧 `/api/reception/run` 是旧会议演示入口，不用它验证本流程。
 
 `handoff_observation` 现可包含共用可选合同 `fq/control-receipt/v1` 的核验结果；缺少该凭证仍阻断。详细启动、端点和真机差异见[接待协议模拟使用说明](使用说明_接待协议模拟.md)。
+
+## 语音文本入口（2026-09-29）
+
+`python -m entries.voice` 默认监听 `:8890`，用 `MASTER_URL`（默认 `http://127.0.0.1:5000`）连接大脑。它不采集音频，也不筛选文字。
+
+`POST /publish_task` 要求 JSON 字段 `task` 为非空字符串。缺省时入口生成 `task_id`，并把 `refresh` 设为 true，然后原样转发到大脑 `POST /publish_task`。请求头固定为 `X-FQ-Source: voice`、`X-FQ-Via: voice`。空文本返回 400；大脑不可达返回 503。`GET /health` 只表示入口进程在听，不表示大脑已接受任务。
+
+大脑收到后的分类、预检、控制和执行与网页、飞书提交的同一段文字相同。NX 上的 `reception_voice.py` 仍只向网页 `:8888` 发送固定任务「开始接待」，尚未改为调用本入口。

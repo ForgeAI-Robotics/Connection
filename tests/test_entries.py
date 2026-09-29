@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from werkzeug.datastructures import FileStorage
 from entries.web.app import create_app as create_web
+from entries.voice.app import create_app as create_voice
 from brain.api.app import create_app
 from brain.app import create_service
 from brain.application import BrainApplication
@@ -89,6 +90,37 @@ class EntryTests(unittest.TestCase):
             finally:
                 learner.close()
 
+    def test_voice_forwards_recognized_text_without_filtering(self):
+        client = Mock()
+        client.request.return_value = Mock(
+            content=b'{"accepted":true,"status":"success"}',
+            status_code=200,
+            headers={"content-type": "application/json"},
+        )
+        app = create_voice(client=client).test_client()
+        result = app.post("/publish_task", json={"task": "  请开始接待  ", "task_id": "given"})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(client.request.call_args.args, ("POST", "/publish_task"))
+        body = client.request.call_args.kwargs["json"]
+        self.assertEqual(body["task"], "请开始接待")
+        self.assertEqual(body["task_id"], "given")
+        self.assertTrue(body["refresh"])
+        headers = client.request.call_args.kwargs["headers"]
+        self.assertEqual(headers["X-FQ-Source"], "voice")
+        self.assertEqual(headers["X-FQ-Via"], "voice")
+        self.assertTrue(headers["X-FQ-Client"])
+        other = app.post("/publish_task", json={"task": "去一号桌拿可乐"})
+        self.assertEqual(other.status_code, 200)
+        self.assertEqual(client.request.call_args.kwargs["json"]["task"], "去一号桌拿可乐")
+        self.assertEqual(len(client.request.call_args.kwargs["json"]["task_id"]), 32)
+        self.assertEqual(app.post("/publish_task", json={"task": "   "}).status_code, 400)
+        self.assertEqual(app.post("/publish_task", json={}).status_code, 400)
+        client.request.side_effect = TimeoutError("lost reply")
+        failed = app.post("/publish_task", json={"task": "开始接待"})
+        self.assertEqual(failed.status_code, 503)
+        self.assertTrue(failed.json["unavailable"])
+        self.assertEqual(app.get("/health").json, {"ready": True, "entry": "voice"})
+
     def test_entries_import_no_brain_or_robot_code(self):
         import subprocess, sys
         script = '''
@@ -100,7 +132,9 @@ class Deny(importlib.abc.MetaPathFinder):
 sys.meta_path.insert(0, Deny())
 from entries.web.app import create_app
 from entries.feishu.bridge import FeishuBridge
+from entries.voice.app import create_app as create_voice
 create_app()
+create_voice()
 '''
         result = subprocess.run([sys.executable, '-c', script], cwd='/tmp', text=True, capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr)

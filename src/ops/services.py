@@ -285,6 +285,18 @@ def catalog() -> list[Service]:
             health=_health_alive,
         ),
         Service(
+            id="voice",
+            name="语音入口",
+            layer="brain",
+            controllable=True,
+            window="voice",
+            port=8890,
+            match="-m entries.voice",
+            log_service="voice",
+            health=_health_http("http://127.0.0.1:8890/health"),
+            note="识别文本 POST /publish_task，交给大脑处理",
+        ),
+        Service(
             id="slaver",
             name="Slaver",
             layer="support",
@@ -446,6 +458,8 @@ def start_shell(service: Service) -> str:
         return f"exec {_shell_quote(str(python))} -m entries.web"
     if service.id == "feishu":
         return f"exec {_shell_quote(str(python))} -m entries.feishu"
+    if service.id == "voice":
+        return f"exec {_shell_quote(str(python))} -m entries.voice"
     if service.id == "slaver":
         return f"exec {_shell_quote(str(python))} -m execution.slaver"
     if service.id in {"reception_nav", "reception_vla"}:

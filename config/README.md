@@ -102,6 +102,6 @@ venv/core/bin/python scripts/execution_mode.py apply --mode real --reset-overrid
 一键离线测试仍使用 `venv/core/bin/python scripts/run_tests.py`。测试脚本隔离现场生效配置及切换互斥文件，不受当前全局／模块环境影响，也不改现场生效版本。
 
 
-工程入口：`python -m brain`、`python -m entries.web`、`python -m entries.feishu`、`python -m ops`。`LARK_BRAIN_URL` 应直接指向大脑 `:5000`。启动前安装本项目；不再提供旧脚本或导入转发。
+工程入口：`python -m brain`、`python -m entries.web`、`python -m entries.feishu`、`python -m entries.voice`、`python -m ops`。`LARK_BRAIN_URL` 应直接指向大脑 `:5000`。语音文本入口默认 `:8890`，用 `MASTER_URL` 连接大脑。启动前安装本项目；不再提供旧脚本或导入转发。
 
 大脑工作器配置位于 `config/brain.yaml` 的 `brain`：`queue_limit` 默认 32、`io_workers` 默认 4（最少 2）、`shutdown_timeout_sec` 默认 10、`capture_timeline` 默认 true。规划 1 个工作线程，Runtime 1 个所有者线程，控制 I/O 2 个，反思 1 个；媒体及示教工作器按需启动。关闭超时不会假写“已停止”，原命令保留在账本。`brain.scheduler=legacy` 不再由新启动器动态切回旧执行；回退须停准入、核清任务后切回上一代码版本。

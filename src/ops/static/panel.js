@@ -129,7 +129,7 @@ function card(item) {
   el.dataset.id = item.id;
   el.dataset.state = item.state;
   el.dataset.review = String(item.review_ok);
-  const entry = item.id === "deploy" || item.id === "feishu";
+  const entry = item.id === "deploy" || item.id === "feishu" || item.id === "voice";
   el.classList.toggle("entry-card", entry);
   if (!entry) el.onclick = () => selectService(item.id);
   const port = item.port ? `端口 ${item.port}` : "无本地端口";

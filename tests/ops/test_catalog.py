@@ -9,7 +9,7 @@ class CatalogTests(unittest.TestCase):
         items = catalog()
         self.assertEqual(
             [item.id for item in items if item.layer == "brain"],
-            ["master", "deploy", "feishu"],
+            ["master", "deploy", "feishu", "voice"],
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "environment"],
