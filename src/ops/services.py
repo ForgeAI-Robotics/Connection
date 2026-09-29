@@ -79,6 +79,9 @@ def _load_dotenv() -> None:
             continue
         key, _, value = line.partition("=")
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    from shared.networks import apply_proxy_bypass
+
+    apply_proxy_bypass()
 
 
 def _http_get(url: str, timeout: float = 3.0) -> tuple[bool, str, int, str]:
@@ -207,10 +210,9 @@ def _health_alive(_service: Service) -> dict[str, Any]:
     return {"ok": True, "detail": "进程在运行"}
 
 
-def _health_remote(service_id: str, env_name: str, default: str):
+def _health_remote(service_id: str, base: str):
     def check(_service: Service) -> dict[str, Any]:
-        base = os.getenv(env_name, default).rstrip("/")
-        url = f"{base}/health"
+        url = f"{base.rstrip('/')}/health"
         ok, status, ms, body = _http_get(url)
         detail = format_http_health_detail(ok, status, body)
         _record_probe(service_id, f"{'通' if ok else '不通'} {url} {ms}ms {detail}", ok=ok)
@@ -231,8 +233,12 @@ def feishu_ready_from_text(text: str) -> bool:
 def catalog() -> list[Service]:
     _load_dotenv()
     from ops import simple_remote
-    dream = os.getenv("DREAM_BASE_URL", "http://127.0.0.1:8001")
-    vla = os.getenv("VLA_BASE_URL", "http://127.0.0.1:8091")
+    from shared.networks import lan
+
+    site = lan()
+    dream = site.http("nav")
+    vla = site.http("control")
+    review = site.review_url()
     return [
         Service(
             id="redis",
@@ -364,11 +370,11 @@ def catalog() -> list[Service]:
             ),
             confirm_start=True,
             confirm_start_message=(
-                "将按导航组一键脚本在 192.168.5.18 启动："
+                f"将按导航组一键脚本在 {site.ip('nav')} 启动："
                 "g1_three_party_oneclick.sh。"
-                "会准备 NX SONIC、DREAM 8001/9882，以及 4090 上的 VLA HTTP/relay。"
+                "会准备 NX SONIC、DREAM 8001/9882，以及操控机上的 VLA HTTP/relay。"
                 "面板只代填 READY，不会代按站立 Enter，也不会点 9882。"
-                "之后仍需在 http://192.168.5.18:9882 点初始位置/朝向并 Approve。"
+                f"之后仍需在 {review} 点初始位置/朝向并 Approve。"
                 "确认现场已支撑、肩带连接、急停人员就位？"
             ),
             confirm_stop=True,
@@ -377,7 +383,7 @@ def catalog() -> list[Service]:
                 "确定继续？"
             ),
             note="一键脚本拉 SONIC+导航+VLA HTTP；9882 需人工 Approve",
-            health=_health_remote("dream", "DREAM_BASE_URL", dream),
+            health=_health_remote("dream", dream),
         ),
         Service(
             id="vla",
@@ -400,7 +406,7 @@ def catalog() -> list[Service]:
                 "若任务正在执行，远端会拒绝停止。确定继续？"
             ),
             note="按文档启动 8091 HTTP + 导航 relay",
-            health=_health_remote("vla", "VLA_BASE_URL", vla),
+            health=_health_remote("vla", vla),
         ),
     ]
 

@@ -39,10 +39,7 @@ from typing import Callable, Optional
 from ops.services import _load_dotenv
 
 
-DEFAULT_SSH_TARGET = "dream"
 DEFAULT_REMOTE_DIR = "/home/fq/BJHYZJ_FQ/DREAM"
-DEFAULT_HTTP = "http://192.168.5.18:8001"
-DEFAULT_REVIEW = "http://192.168.5.18:9882"
 ONECLICK = "tools/g1_three_party_oneclick.sh"
 ASKPASS = Path(__file__).resolve().parent / "ssh_askpass.sh"
 ALLOWED_ACTIONS = {
@@ -74,13 +71,14 @@ CHECK_REMOTE_ADVISORY = (
     "现在大脑是 gpu3080 Linux，这一项必然不通。"
     "官方 start 走 runtime-sync，本身跳过这台机器，并自带严格检查。"
 )
-FOLLOW_UP = (
-    "脚本已收到 READY。现场还要完成："
-    "NX 窗口若提示密码则输入导航组给的 NX 密码；"
-    "adapter 两次 Enter 进入 POSE 站立；"
-    "确认带子并解除肩带；"
-    f"打开 {DEFAULT_REVIEW} 在 2D 图上点初始位置和朝向，然后 Approve。"
-)
+def follow_up(review: str) -> str:
+    return (
+        "脚本已收到 READY。现场还要完成："
+        "NX 窗口若提示密码则输入导航组给的 NX 密码；"
+        "adapter 两次 Enter 进入 POSE 站立；"
+        "确认带子并解除肩带；"
+        f"打开 {review} 在 2D 图上点初始位置和朝向，然后 Approve。"
+    )
 _HISTORY: deque[str] = deque(maxlen=160)
 _FOLLOW_PROC: Optional[subprocess.Popen[bytes]] = None
 _FOLLOW_LOCK = threading.Lock()
@@ -90,18 +88,16 @@ Runner = Callable[..., subprocess.CompletedProcess]
 
 def settings() -> dict[str, str]:
     _load_dotenv()
+    from shared.networks import lan
+
+    site = lan()
     return {
-        "ssh_target": os.getenv("DREAM_SSH_TARGET", DEFAULT_SSH_TARGET).strip()
-        or DEFAULT_SSH_TARGET,
+        "ssh_target": site.ssh_target("nav"),
         "remote_dir": os.getenv("DREAM_REMOTE_DIR", DEFAULT_REMOTE_DIR).strip()
         or DEFAULT_REMOTE_DIR,
         "password": os.getenv("DREAM_SSH_PASSWORD", "").strip(),
-        "http_base": (
-            os.getenv("DREAM_BASE_URL", DEFAULT_HTTP).strip() or DEFAULT_HTTP
-        ).rstrip("/"),
-        "review_url": (
-            os.getenv("DREAM_REVIEW_URL", DEFAULT_REVIEW).strip() or DEFAULT_REVIEW
-        ).rstrip("/"),
+        "http_base": site.http("nav"),
+        "review_url": site.review_url(),
         "review_forward_bind": os.getenv("DREAM_REVIEW_FORWARD_BIND", "0.0.0.0").strip()
         or "0.0.0.0",
         "review_forward_port": os.getenv(
@@ -134,13 +130,14 @@ def record(line: str) -> None:
 def _remote_script(action: str) -> tuple[str, float]:
     cfg = settings()
     remote_dir = shlex.quote(cfg["remote_dir"])
+    nav_ip = cfg["ssh_target"].split("@")[-1]
     script = f"./{ONECLICK}"
     if action == "preflight":
         return (
             f"cd {remote_dir} && "
             f"command -v tmux >/dev/null 2>&1 || {{ "
             f"echo '导航机找不到 tmux。{ONECLICK} 进入 8001/9882 工作流必须有 tmux。'; "
-            f"echo '请在 192.168.5.18 安装: sudo apt install tmux'; exit 2; }}; "
+            f"echo '请在 {nav_ip} 安装: sudo apt install tmux'; exit 2; }}; "
             f"echo '== preflight ==' && {script} preflight",
             90.0,
         )
@@ -247,17 +244,15 @@ def _friendly_error(exc: BaseException, output: str = "") -> str:
     text = " ".join(part for part in (str(exc), output) if part).strip()
     lowered = text.lower()
     if "permission denied" in lowered:
+        target = settings()["ssh_target"]
         return (
             "导航机 SSH 登录失败。"
-            "请确认 gpu3080 的 DREAM_SSH_PASSWORD 与 fq@192.168.5.18 密码一致。"
+            f"请确认 DREAM_SSH_PASSWORD 与 {target} 的密码一致。"
         )
     if "timed out" in lowered or "timeout" in lowered:
         return f"SSH 等待超时: {text}"
     if "name or service not known" in lowered or "could not resolve" in lowered:
-        return (
-            "找不到 SSH 主机 dream。"
-            "请确认 ~/.ssh/config 已写入 Host dream，或设置 DREAM_SSH_TARGET。"
-        )
+        return f"找不到导航机 {settings()['ssh_target']}。请核对 config/networks.yaml 里的当前 WiFi。"
     return text or "SSH 调用失败"
 
 
@@ -390,7 +385,9 @@ def ensure_log_follower() -> None:
 def _local_ip() -> str:
     probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        probe.connect(("192.168.5.18", 22))
+        from shared.networks import lan
+
+        probe.connect((lan().ip("nav"), 22))
         return probe.getsockname()[0]
     except OSError:
         return "127.0.0.1"
@@ -538,7 +535,7 @@ def _launch(action: str, *, runner: Optional[Runner] = None) -> str:
         ready_cmd, ready_timeout, ready_env = ready_argv()
         _run_remote(ready_cmd, ready_timeout, ready_env, runner=runner)
     review = ensure_review_tunnel() if runner is None else settings()["review_url"]
-    follow = FOLLOW_UP.replace(DEFAULT_REVIEW, review)
+    follow = follow_up(review)
     record(follow)
     return follow
 

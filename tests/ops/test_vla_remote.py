@@ -19,7 +19,8 @@ class VlaRemoteTests(unittest.TestCase):
         argv, timeout, env = vla_remote.ssh_argv("start")
         self.assertGreaterEqual(timeout, 90)
         self.assertIn("ssh", argv)
-        self.assertEqual(argv[-2], "gpu4090")
+        from shared.networks import lan
+        self.assertEqual(argv[-2], lan().ssh_target("control"))
         remote = argv[-1]
         self.assertIn("./run_agent_vla_runtime.sh check", remote)
         self.assertIn("./run_phase_aware_action_stack.sh live-dependencies", remote)
@@ -44,7 +45,7 @@ class VlaRemoteTests(unittest.TestCase):
 
         with self.assertRaises(RuntimeError) as raised:
             vla_remote.run("start", runner=runner)
-        self.assertIn("4090 SSH 登录失败", str(raised.exception))
+        self.assertIn("操控机 SSH 登录失败", str(raised.exception))
 
     def test_successful_start_records_output(self):
         def runner(_argv, _timeout, env=None):

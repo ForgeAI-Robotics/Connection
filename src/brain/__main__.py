@@ -14,13 +14,15 @@ def main():
     args = parser.parse_args()
     from dotenv import load_dotenv
     load_dotenv(workspace_root() / '.env')
+    from shared.networks import apply_proxy_bypass, apply_to_brain_config
+    apply_proxy_bypass()
     from shared.log_setup import attach_process_log
     attach_process_log('master')
     from brain.app import create_service
     from brain.application import BrainApplication
     from brain.api.app import create_app
     from shared.config import load_config
-    config = load_config(args.config)
+    config = apply_to_brain_config(load_config(args.config))
     if not isinstance(config, dict):
         raise ValueError('大脑配置必须是 YAML 映射')
     if (config.get('brain') or {}).get('scheduler', 'runtime') != 'runtime':

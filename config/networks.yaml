@@ -1,0 +1,31 @@
+# 现场局域网。脚本只读 active，再取该 WiFi 下各端 IP。
+# 切网时只改 active。账号和端口不随 WiFi 变化。密码仍在本机 .env。
+active: ForgeAI-研发办公
+
+roles:
+  brain:
+    name: 大脑
+  nav:
+    name: 导航
+    ssh_user: fq
+    http_port: 8001
+    review_port: 9882
+  control:
+    name: 操控
+    ssh_user: lgj_4090
+    http_port: 8091
+  robot:
+    name: 真机
+    camera_port: 5555
+
+wifis:
+  FangqiBot:
+    brain: 192.168.5.35
+    nav: 192.168.5.18
+    control: 192.168.5.194
+    robot: 192.168.5.240
+  ForgeAI-研发办公:
+    brain: 192.168.31.33
+    nav: 192.168.31.41
+    control: 192.168.31.55
+    robot: 192.168.31.5

@@ -23,9 +23,7 @@ from typing import Callable, Optional
 
 from ops.services import _load_dotenv
 
-DEFAULT_SSH_TARGET = "gpu4090"
 DEFAULT_REMOTE_DIR = "/home/lgj_4090/文档/sonic_wbc/g1_brain_vla_bridge"
-DEFAULT_HTTP = "http://192.168.5.194:8091"
 START_ACK = "PHYSICAL_ESTOP_READY"
 ASKPASS = Path(__file__).resolve().parent / "ssh_askpass.sh"
 ALLOWED_ACTIONS = {"start", "stop", "status"}
@@ -35,16 +33,16 @@ Runner = Callable[..., subprocess.CompletedProcess]
 
 def settings() -> dict[str, str]:
     _load_dotenv()
+    from shared.networks import lan
+
+    site = lan()
     return {
-        "ssh_target": os.getenv("VLA_SSH_TARGET", DEFAULT_SSH_TARGET).strip()
-        or DEFAULT_SSH_TARGET,
+        "ssh_target": site.ssh_target("control"),
         "remote_dir": os.getenv("VLA_REMOTE_DIR", DEFAULT_REMOTE_DIR).strip()
         or DEFAULT_REMOTE_DIR,
         "ack": os.getenv("BRAIN_VLA_REAL_ACTION_ACK", START_ACK).strip() or START_ACK,
         "password": os.getenv("VLA_SSH_PASSWORD", "").strip(),
-        "http_base": (
-            os.getenv("VLA_BASE_URL", DEFAULT_HTTP).strip() or DEFAULT_HTTP
-        ).rstrip("/"),
+        "http_base": site.http("control"),
     }
 
 
@@ -141,17 +139,15 @@ def _friendly_error(exc: BaseException, output: str = "") -> str:
     text = " ".join(part for part in (str(exc), output) if part).strip()
     lowered = text.lower()
     if "permission denied" in lowered:
+        target = settings()["ssh_target"]
         return (
-            "4090 SSH 登录失败。"
-            "请确认 gpu3080 的 VLA_SSH_PASSWORD 与 lgj_4090 密码一致。"
+            "操控机 SSH 登录失败。"
+            f"请确认 VLA_SSH_PASSWORD 与 {target} 的密码一致。"
         )
     if "timed out" in lowered or "timeout" in lowered:
         return f"SSH 等待超时: {text}"
     if "name or service not known" in lowered or "could not resolve" in lowered:
-        return (
-            "找不到 SSH 主机 gpu4090。"
-            "请确认 ~/.ssh/config 已写入 Host gpu4090，或设置 VLA_SSH_TARGET。"
-        )
+        return f"找不到操控机 {settings()['ssh_target']}。请核对 config/networks.yaml 里的当前 WiFi。"
     return text or "SSH 调用失败"
 
 

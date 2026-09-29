@@ -9,9 +9,8 @@ from ops import dream_remote
 
 class DreamRemoteTests(unittest.TestCase):
     def setUp(self):
-        from unittest.mock import patch
-        env = patch.dict(os.environ, {"DREAM_SSH_TARGET": "dream"})
-        env.start(); self.addCleanup(env.stop)
+        from shared.networks import lan
+        self.nav_ssh = lan().ssh_target("nav")
         self.logdir = tempfile.TemporaryDirectory()
         os.environ["FQPLANNER_LOG_ROOT"] = self.logdir.name
         os.environ["DREAM_FOLLOW_MARKER"] = str(
@@ -26,7 +25,7 @@ class DreamRemoteTests(unittest.TestCase):
         argv, timeout, env = dream_remote.ssh_argv("start")
         self.assertGreaterEqual(timeout, 30)
         self.assertIn("ssh", argv)
-        self.assertEqual(argv[-2], "dream")
+        self.assertEqual(argv[-2], self.nav_ssh)
         remote = argv[-1]
         self.assertIn("tmux new-session -d -s g1_panel_oneclick", remote)
         self.assertIn("g1_three_party_oneclick.sh start", remote)
@@ -94,7 +93,7 @@ class DreamRemoteTests(unittest.TestCase):
         self.assertIn("-N", argv)
         self.assertIn("-L", argv)
         self.assertIn("0.0.0.0:9882:127.0.0.1:9882", argv)
-        self.assertEqual("dream", argv[-1])
+        self.assertEqual(self.nav_ssh, argv[-1])
 
     def test_stop_preserves_sonic_by_using_official_stop(self):
         argv, _timeout, _env = dream_remote.ssh_argv("stop")
