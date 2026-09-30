@@ -92,7 +92,19 @@ class BrainService:
     def _adopt(self, runtime):
         self.runtime = runtime
 
-    def attach(self):
+    def _execution_backend(self, existing):
+        backend = existing.get("execution_backend")
+        if backend:
+            return backend
+        # Compatibility with the already-reviewed single reception / generic slice.
+        return {"generic": "desk", "look": "camera", "reception": "reception_real"}.get(existing.get("package"))
+
+    def _target_changed(self, existing) -> bool:
+        target = existing.get("execution_target")
+        backend = self._execution_backend(existing)
+        return bool(target) and target != target_identity(self.config, backend)
+
+    def attach(self, *, ignore_target_change=False):
         existing = load_existing(runtime_dir(self.config)) or {}
         if not existing.get("task_id"):
             raise Rejected("没有内核任务；旧账本不能作为内核断点续跑")
@@ -100,15 +112,16 @@ class BrainService:
         if runtime and runtime.record.get("task_id") == existing["task_id"]:
             runtime.public_status()
             return runtime
-        backend = existing.get("execution_backend")
-        if not backend:
-            # Compatibility with the already-reviewed single reception / generic slice.
-            backend = {"generic": "desk", "look": "camera", "reception": "reception_real"}.get(existing.get("package"))
-        target = existing.get("execution_target")
-        if target and target != target_identity(self.config, backend):
+        backend = self._execution_backend(existing)
+        changed = self._target_changed(existing)
+        if changed and not ignore_target_change:
             raise Rejected("执行地址或后端已变化，先恢复原配置再核对原命令")
         from brain.adapters.ports import UnselectedPort
-        port = UnselectedPort() if backend == "unselected" else self._port(backend or "")
+        # A stale address must not receive a cancel for a command that was never sent.
+        if changed or backend == "unselected":
+            port = UnselectedPort()
+        else:
+            port = self._port(backend or "")
         runtime = self.runtime_factory(self.config, port, package=existing.get("package") or "reception")
         self._adopt(runtime)
         return runtime
@@ -129,7 +142,14 @@ class BrainService:
                 return {'accepted': True, 'completed': True, 'no_op': True,
                         'task_id': current_id, 'state': existing.get('state'),
                         'message': '当前没有进行中的任务，无需操作'}
-            runtime = self.attach()
+            # Address changes still block pause, continue and skip. Cancel of a task
+            # that never dispatched a command only closes the ledger.
+            local_cancel = (
+                action == "cancel"
+                and not existing.get("open_command_id")
+                and not existing.get("command_unknown")
+            )
+            runtime = self.attach(ignore_target_change=local_cancel)
             if action == 'continue' and (step_id is not None or expected_command_id is not None):
                 current = runtime.public_status()
                 if ((step_id is not None and step_id != (current.get('control_step_id') or ''))

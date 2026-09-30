@@ -127,6 +127,36 @@ class UnifiedBrainTests(unittest.TestCase):
         self.assertEqual(self.service.runtime.record["dispatch_counts"], {})
         self.assertTrue(self.service.control('cancel')["completed"])
 
+    def test_cancel_without_command_closes_ledger_after_address_change(self):
+        self.publish("开始接待")
+        self.assertIsNone(self.service.runtime.record.get("open_command_id"))
+        self.assertFalse(self.service.runtime.record.get("command_unknown"))
+        before = list(self.real_body.mock_calls)
+        from brain.storage.tasks import KernelStore
+        store = KernelStore(self.tmp.name)
+        record = store.load_state()
+        record["execution_target"] = {
+            "dream": "http://192.0.2.18:8001",
+            "vla": "http://192.0.2.194:8091",
+        }
+        record["open_command_id"] = "cmd-old"
+        store.save_state(record)
+        self.service.runtime = None
+        with self.assertRaisesRegex(Rejected, "执行地址或后端已变化"):
+            self.service.control("cancel")
+        record = store.load_state()
+        record["open_command_id"] = None
+        record["command_unknown"] = False
+        store.save_state(record)
+        self.service.runtime = None
+        with self.assertRaisesRegex(Rejected, "执行地址或后端已变化"):
+            self.service.control("continue")
+        self.service.runtime = None
+        result = self.service.control("cancel")
+        self.assertTrue(result["completed"])
+        self.assertEqual(result["state"], "cancelled")
+        self.assertEqual(list(self.real_body.mock_calls), before)
+
     def test_look_entry_observes_without_commands(self):
         self.publish("桌上有什么")
         runtime = self.service.runtime
