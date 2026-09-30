@@ -1,8 +1,8 @@
 """Independent browser entry: pages plus HTTP forwarding, no brain imports."""
-import os
 import uuid
 from flask import Flask, request, render_template, jsonify, Response
 from clients.brain import BrainClient
+from shared.networks import entry_url
 
 
 ROUTES = {
@@ -27,8 +27,8 @@ ROUTES = {
 def create_app(brain_url=None, *, client=None, ops_client=None):
     app = Flask(__name__)
     app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024
-    brain = client or BrainClient(brain_url or os.environ.get('MASTER_URL', 'http://127.0.0.1:5000'), timeout=90, source='web')
-    ops = ops_client or BrainClient(os.environ.get('CONNECTION_OPS_URL', 'http://127.0.0.1:5678'), source='web')
+    brain = client or BrainClient(brain_url or entry_url('MASTER_URL'), timeout=90, source='web')
+    ops = ops_client or BrainClient(entry_url('CONNECTION_OPS_URL', 'ops_port'), source='web')
 
     @app.get('/')
     def index():

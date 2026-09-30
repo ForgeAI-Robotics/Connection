@@ -55,7 +55,7 @@ venv/core/bin/python -m ops
 venv/core/bin/python -m execution.slaver
 ```
 
-网页 `:8888` 与语音文本入口 `:8890` 使用 `MASTER_URL` 连接大脑 `:5000`；飞书使用 `LARK_BRAIN_URL` 直连 `:5000`。语音入口只转发已识别文本。运维面板 `:5678` 独立运行。沿用的面板服务 ID `master` / `deploy` 只是既有管理 API 标识，启动的都是新模块。
+网页 `:8888`、语音文本入口 `:8890` 和飞书默认从 `config/networks.yaml` 当前 Wi-Fi 解析大脑地址与端口；网页访问运维面板也使用同一地址表。独立部署可显式设置 `MASTER_URL`、`LARK_BRAIN_URL`、`CONNECTION_OPS_URL` 覆盖，现场部署应留空，避免换机后残留旧地址。语音入口只转发已识别文本。运维面板 `:5678` 独立运行。沿用的面板服务 ID `master` / `deploy` 只是既有管理 API 标识，启动的都是新模块。
 
 从仓库外部署时设置 `CONNECTION_WORKSPACE` 指向配置和数据根目录。配置不会从进程工作目录猜测。入口可独立部署，无需挂载大脑的数据。
 

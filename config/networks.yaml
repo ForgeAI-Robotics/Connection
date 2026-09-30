@@ -5,9 +5,13 @@ active: ForgeAI-研发办公
 roles:
   brain:
     name: 大脑
+    http_port: 5000
+    web_port: 8888
+    ops_port: 5678
+    ssh_user: lgj_4090
   nav:
     name: 导航
-    ssh_user: fq
+    ssh_user: dev
     http_port: 8001
     review_port: 9882
   control:
@@ -16,16 +20,17 @@ roles:
     http_port: 8091
   robot:
     name: 真机
+    ssh_user: dev
     camera_port: 5555
 
 wifis:
   FangqiBot:
-    brain: 192.168.5.35
-    nav: 192.168.5.18
+    brain: 192.168.5.194
+    nav: 192.168.5.240
     control: 192.168.5.194
     robot: 192.168.5.240
   ForgeAI-研发办公:
     brain: 192.168.31.55
-    nav: 192.168.31.41
+    nav: 192.168.31.5
     control: 192.168.31.55
     robot: 192.168.31.5

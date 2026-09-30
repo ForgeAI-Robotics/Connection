@@ -42,10 +42,10 @@ class Lan:
             raise ValueError(f"{role} 没有 ssh_user")
         return f"{user}@{self.ip(role)}"
 
-    def http(self, role: str) -> str:
-        port = int((self._roles.get(role) or {}).get("http_port") or 0)
+    def http(self, role: str, port_key: str = "http_port") -> str:
+        port = int((self._roles.get(role) or {}).get(port_key) or 0)
         if port <= 0:
-            raise ValueError(f"{role} 没有 http_port")
+            raise ValueError(f"{role} 没有 {port_key}")
         return f"http://{self.ip(role)}:{port}"
 
     def review_url(self) -> str:
@@ -63,6 +63,18 @@ def load_lan(path: Path | None = None) -> Lan:
 
 def lan() -> Lan:
     return load_lan()
+
+
+def entry_url(env_name: str, port_key: str = "http_port") -> str:
+    """现场入口默认跟随地址表；独立部署可显式提供完整 URL。"""
+    value = os.environ.get(env_name, "").strip().rstrip("/")
+    if value:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise ValueError(f"{env_name} 必须是完整 HTTP(S) URL")
+        return value
+    return lan().http("brain", port_key)
 
 
 def apply_to_brain_config(config: dict) -> dict:

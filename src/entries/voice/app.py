@@ -1,16 +1,16 @@
 """Recognized text in, brain publish out. No capture and no filtering."""
-import os
 import uuid
 
 from flask import Flask, Response, jsonify, request
 
 from clients.brain import BrainClient
+from shared.networks import entry_url
 
 
 def create_app(brain_url=None, *, client=None):
     app = Flask(__name__)
     brain = client or BrainClient(
-        brain_url or os.environ.get("MASTER_URL", "http://127.0.0.1:5000"),
+        brain_url or entry_url("MASTER_URL"),
         timeout=90,
         source="voice",
     )

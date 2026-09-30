@@ -75,9 +75,8 @@ def load_settings(*, require_credentials: bool = True) -> Settings:
     if mode not in {"dry_run", "active"}:
         raise ValueError("LARK_TASK_MODE 只能是 dry_run 或 active")
 
-    brain_url = os.getenv("LARK_BRAIN_URL", "http://127.0.0.1:5000").strip().rstrip("/")
-    if not brain_url.startswith(("http://", "https://")):
-        raise ValueError("LARK_BRAIN_URL 必须以 http:// 或 https:// 开头")
+    from shared.networks import entry_url
+    brain_url = entry_url("LARK_BRAIN_URL")
 
     settings = Settings(
         app_id=os.getenv("LARK_APP_ID", "").strip(),
