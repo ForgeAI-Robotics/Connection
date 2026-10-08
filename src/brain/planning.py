@@ -16,7 +16,10 @@ class PlanningService:
             if runtime.record["execution_backend"] == "reception_mock":
                 from brain.packages.reception_mock import plan
                 return Plan(tuple(plan(runtime.port, options)), "接待业务流程交给统一 Runtime 管理。")
-            from brain.packages.reception import PHASES
+            from brain.packages.reception import NAV_ONLY_PHASES, NAV_ONLY_SOP, PHASES
+            sop = (runtime.record.get("selection") or {}).get("sop") or {}
+            if sop.get("id") == NAV_ONLY_SOP["id"]:
+                return Plan(NAV_ONLY_PHASES, "仅导航联调：依次执行接待四段导航，不派发抓取与放置。")
             return Plan(tuple(PHASES), "接待业务流程交给统一 Runtime 管理。")
         if package == "look":
             from brain.packages.look import PHASES

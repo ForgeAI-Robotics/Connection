@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as _replace
 
 from contracts.tasks import CONTRACT_VERSION, OBJECT_ID
 
@@ -92,6 +92,20 @@ PHASES = (
     ),
     StepSpec("VERIFYING_PLACE", "verify", evidence="object_at_target"),
 )
+
+
+# Joint debugging while manipulation is unavailable: the same four navigation legs and
+# wire bodies, with no pick/place. Selected only by its exact trigger, never by the model.
+NAV_ONLY_SOP = {
+    "id": "reception.single_can.nav_only", "version": "1",
+    "description": "仅导航联调：按单罐接待路线依次导航 table_2、relay2、relay3、table_1，不派发抓取与放置。",
+    "constraints": "只验证大脑调度与导航；不含操控，任务成功不代表接待完成。路段与导航请求同单罐接待。",
+    "triggers": ["开始接待（仅导航）", "开始接待(仅导航)", "仅导航接待"],
+}
+
+# Without a manipulation step every transition stays within one navigation source.
+NAV_ONLY_PHASES = tuple(_replace(step, handoff_before="") for step in PHASES
+                        if step.kind in {"local", "navigate"})
 
 
 def matches(task) -> bool:

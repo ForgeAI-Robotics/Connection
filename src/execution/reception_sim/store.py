@@ -15,7 +15,7 @@ from contracts.control_receipt import VERSION, CONTROLLERS
 from contracts.tasks import CONTRACT_VERSION, OBJECT_ID
 
 SCENARIOS = {"success", "nav_failure", "pick_failure", "place_failure", "hand_state_only",
-             "missing_receipt", "waiting_navigation"}
+             "missing_receipt", "waiting_navigation", "nav_only"}
 TERMINAL = {"succeeded", "failed", "cancelled"}
 
 
@@ -161,7 +161,8 @@ class Store:
             if role == "nav":
                 if body["leg_index"] != scene["leg"] + 1:
                     raise Conflict("ROUTE_ORDER_INVALID", "必须使用同一任务按既定导航段顺序执行")
-                if body["leg_index"] > 1 and scene["holding"] != OBJECT_ID:
+                # The DREAM contract only orders legs; nav_only models runs without manipulation.
+                if body["leg_index"] > 1 and scene["holding"] != OBJECT_ID and scenario != "nav_only":
                     raise Conflict("OBJECT_NOT_HELD", "搬运前需要已抓取物体")
             else:
                 proof = next((r for r in records if r["role"] == "nav" and

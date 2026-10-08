@@ -3,16 +3,16 @@ from copy import deepcopy
 import json
 
 from brain.kernel.planner import extract_json
-from brain.packages.registry import SOPS, match_name
+from brain.packages.registry import SOPS, VARIANTS, match_name
 from contracts.tasks import Rejected
 
 
 RECOVERY_STATES = {"waiting_human", "recovery_required", "paused"}
 
 
-def selection(package, source, reason):
+def selection(package, source, reason, sop=None):
     return {"package": package, "source": source, "reason": reason,
-            "sop": deepcopy(SOPS.get(package))}
+            "sop": deepcopy(sop or SOPS.get(package))}
 
 
 class TaskReasoner:
@@ -26,6 +26,10 @@ class TaskReasoner:
         for package, sop in SOPS.items():
             if text in sop.get("triggers", ()):
                 return selection(package, "registered_trigger", "执行已登记 SOP。")
+        for package, variants in VARIANTS.items():
+            for sop in variants:
+                if text in sop.get("triggers", ()):
+                    return selection(package, "registered_trigger", "执行已登记 SOP 变体。", sop=sop)
         matched = match_name(text)
         if matched in {"look", "desk"}:
             return selection(matched, "registered_trigger", "执行已登记业务包。")

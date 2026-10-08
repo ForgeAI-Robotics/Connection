@@ -71,6 +71,32 @@ class ReasoningIntegrationTests(unittest.TestCase):
                 expected["navigation_proof"]["dream_command_id"] = proof
             self.assertEqual(attempt["request"]["body"], expected)
 
+    def test_nav_only_trigger_runs_the_four_legs_without_manipulation_or_handoff(self):
+        from brain.packages.reception import NAV_ONLY_PHASES
+        def model(_):
+            raise AssertionError("仅导航变体只由固定触发词选择")
+        self.body.handoff_confirmed = {"to_vla": False, "to_nav": False, "safe_idle": False}
+        service = self.service(model)
+        service.publish("开始接待（仅导航）", "nav-only")
+        record = service.runtime.record
+        self.assertEqual(record["state"], "succeeded")
+        self.assertEqual(record["package"], "reception")
+        self.assertEqual(record["selection"]["sop"]["id"], "reception.single_can.nav_only")
+        self.assertEqual(record["phase_order"], [step.step_id for step in NAV_ONLY_PHASES])
+        self.assertEqual(self.body.handoff_queries, [])
+        self.assertEqual([c.rsplit("-", 1)[0] for c in self.body.submits],
+                         ["nav-table2", "nav-relay2", "nav-relay3", "nav-table1"])
+        golden = {item["step_id"]: item["body"] for item in json.loads(
+            (Path(__file__).parents[1] / "contracts/reception_wire.json").read_text())}
+        for step in NAV_ONLY_PHASES:
+            if step.kind != "navigate":
+                continue
+            attempt = record["steps"][step.step_id]["attempts"][-1]
+            expected = dict(golden[step.step_id], task_id=record["task_id"], command_id=attempt["command_id"])
+            self.assertEqual(attempt["request"]["body"], expected)
+        # The full SOP is unchanged.
+        self.assertEqual(TaskReasoner(model, {}).select("开始接待", {})["sop"]["id"], "reception.single_can")
+
     def test_exact_sop_runs_without_model_and_pins_version(self):
         def model(_):
             raise AssertionError("固定触发词不需要重新生成步骤")
