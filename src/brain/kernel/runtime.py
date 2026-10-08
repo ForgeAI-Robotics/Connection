@@ -842,12 +842,20 @@ class TaskRuntime:
                 if not self._requery_outside(step, contract):
                     return self.state
                 continue
-            if step.requires_gate and self.port.gate_open is not True:
+            gate_error = ""
+            if step.requires_gate:
+                # An unreachable gate is a closed gate: nothing was dispatched, so the
+                # operator's continue re-checks it instead of querying a command.
+                try:
+                    gate_open = self.port.gate_open is True
+                except Exception as exc:
+                    gate_open, gate_error = False, str(exc) or type(exc).__name__
+            if step.requires_gate and not gate_open:
                 with self._exclusive():
                     self._reload_locked()
                     if self._halted() or self.state != "running":
                         return self.state
-                    self.record["blocked_reason"] = getattr(self.port, "gate_reason", "navigation_gate")
+                    self.record["blocked_reason"] = gate_error or getattr(self.port, "gate_reason", "navigation_gate")
                     self.record["breakpoint_phase"] = step.step_id
                     self.apply("gate")
                     self._save("gate")
