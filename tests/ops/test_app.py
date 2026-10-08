@@ -125,16 +125,16 @@ class PanelAppTests(unittest.TestCase):
         self.assertNotIn("tmux attach", payload["text"])
         self.assertNotIn("HTTP 探测", payload["text"])
 
-    def test_master_logs_default_to_brain_journal(self):
+    def test_master_logs_default_to_full_process_output(self):
         day = Path(self.logdir.name) / datetime.now().strftime("%Y-%m-%d") / "master"
         day.mkdir(parents=True)
-        (day / "12-00-00.log").write_text("werkzeug noise\n", encoding="utf-8")
+        (day / "12-00-00.log").write_text("INFO startup ready\nordinary print\nTraceback\nRuntimeError: failed\n", encoding="utf-8")
         (day / "brain.log").write_text("INBOUND publish text=开始接待\n", encoding="utf-8")
         response = self.client.get("/api/services/master/logs")
         payload = response.get_json()
-        self.assertIn("开始接待", payload["text"])
-        self.assertNotIn("werkzeug noise", payload["text"])
-        self.assertTrue(payload["path"].endswith("master/brain.log"))
+        self.assertIn("ordinary print", payload["text"])
+        self.assertIn("Traceback\nRuntimeError: failed", payload["text"])
+        self.assertTrue(payload["path"].endswith("master/12-00-00.log"))
 
     def test_master_http_kind_reads_access_log(self):
         day = Path(self.logdir.name) / datetime.now().strftime("%Y-%m-%d") / "master"
@@ -145,10 +145,11 @@ class PanelAppTests(unittest.TestCase):
         self.assertIn("task_status", payload["text"])
         self.assertTrue(payload["path"].endswith("master/http-access.log"))
 
-    def test_master_brain_kind_returns_pin(self):
+    def test_master_history_never_returns_a_live_failure_pin(self):
         day = Path(self.logdir.name) / datetime.now().strftime("%Y-%m-%d") / "master"
         day.mkdir(parents=True)
         (day / "brain.log").write_text("TASK fail error=timeout\n", encoding="utf-8")
         (day / "brain.pin").write_text("TASK fail error=timeout\n", encoding="utf-8")
         payload = self.client.get("/api/services/master/logs?kind=brain").get_json()
-        self.assertEqual("TASK fail error=timeout", payload["pin"])
+        self.assertIsNone(payload["pin"])
+        self.assertIn('timeout', payload['text'])  # Historical evidence remains available.

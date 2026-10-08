@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import quote
 import requests
 import yaml
-from flask import jsonify, request, Response, send_from_directory
+from flask import g, jsonify, request, Response, send_from_directory
 from shared.paths import workspace_root, data_path
 from brain.api.media import observation_url
 from brain.storage.tasks import KernelStore
@@ -21,12 +21,16 @@ def register_views(app, application):
     application.extra_workers.append(demo)
 
     def raw_proxy(path, *, method='GET', payload=None):
+        g.poll_diagnostic = {'reason': '大脑观察模块不可用，尚未发出下游请求'}
         try:
             url = observation_url() + path
+            g.poll_diagnostic = {'target': url, 'reason': '下游观察服务返回异常'}
             response = requests.request(method, url, json=payload, timeout=30)
             return Response(response.content, status=response.status_code,
                             content_type=response.headers.get('content-type', 'application/octet-stream'))
         except Exception as exc:
+            if g.poll_diagnostic.get('target'):
+                g.poll_diagnostic['reason'] = '大脑访问下游观察服务失败'
             return jsonify({'error': str(exc), 'success': False}), 503
 
     def static_scene():
@@ -95,12 +99,20 @@ def register_views(app, application):
 
     @app.get('/api/belief')
     def belief():
+        g.poll_diagnostic = {'reason': '大脑场景认知接口配置不可用'}
         try:
             from execution.robot_api.config import load_robot_api_config
             config = load_robot_api_config()
-            response = requests.get(config.server_url.rstrip('/') + '/belief', timeout=5)
+            url = config.server_url.rstrip('/') + '/belief'
+            g.poll_diagnostic = {'target': url, 'reason': '下游场景认知服务返回异常'}
+            response = requests.get(url, timeout=5)
             return jsonify(response.json()), response.status_code
         except Exception as exc:
+            if isinstance(exc, (requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema,
+                                requests.exceptions.InvalidURL)):
+                g.poll_diagnostic['reason'] = '大脑场景认知接口的目标地址为空或格式无效，尚未发出下游请求'
+            elif g.poll_diagnostic.get('target'):
+                g.poll_diagnostic['reason'] = '大脑访问下游场景认知服务或解析其响应失败'
             return jsonify({'objects': {}, 'error': str(exc)}), 503
 
     @app.post('/api/update_scene')

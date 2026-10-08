@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQPlanner 控制面板</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=12">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=17">
 </head>
 <body>
   <div class="app">
@@ -14,7 +14,7 @@
         <p class="hint">大脑与入口 · 运行环境 · 真机服务</p>
       </div>
       <div class="header-right">
-        <code id="attach">tmux ls</code>
+        <span id="server-address"></span>
         <span id="poll">自动刷新 3s</span>
       </div>
     </header>
@@ -22,7 +22,7 @@
       <nav>
         <button type="button" class="layer active" data-layer="brain">
           <span>大脑层</span>
-          <small>日志与两个入口</small>
+          <small>状态 · 输入通道 · 日志</small>
           <span id="brain-dots" class="dots"></span>
         </button>
         <button type="button" class="layer" data-layer="environment">
@@ -45,7 +45,7 @@
         <p id="action-status" role="status" hidden></p>
         <section id="execution-settings" class="execution-settings" hidden>
           <h3>环境配置</h3>
-          <p class="hint">全局选择可被模块覆盖。应用时重启本机大脑服务；有未核清任务时拒绝切换。不会启动远端机器人，也不会打开真机动作许可。</p>
+          <p class="hint">全局选择可被模块覆盖。应用时重启本机大脑服务；有未核清任务时拒绝切换。不会启动远端机器人。接待选真机会打开真机动作许可，选仿真、协议模拟或停用会关闭。下游闸门仍可拦住派发。</p>
           <div class="execution-fields">
             <label>全局环境 <select id="exec-mode"><option value="simulation">仿真</option><option value="real">真机</option></select></label>
             <label>默认仿真器 <select id="exec-sim"><option value="desk">Desk（无画面）</option><option value="mujoco">MuJoCo</option><option value="mujoco_3dgs">3DGS</option><option value="simple_o7">SIMPLE（O6 远端）</option></select></label>
@@ -73,20 +73,16 @@
         <div class="log-wrap">
           <div class="log-head">
             <h3 id="log-title">运行日志</h3>
-            <div id="log-kinds" class="log-kinds" hidden>
-              <button type="button" data-kind="brain" class="active">指挥</button>
-              <button type="button" data-kind="raw">原始</button>
-              <button type="button" data-kind="http">HTTP</button>
-            </div>
             <span id="log-meta"></span>
           </div>
-          <div id="log-pin" class="log-pin" hidden></div>
-          <pre id="log">选择服务查看运行日志。</pre>
+          <div id="log-pin" class="log-pin" role="status" hidden></div>
+          <div id="log" tabindex="0" aria-label="运行日志">选择服务查看运行日志。</div>
         </div>
       </section>
     </div>
   </div>
-  <script src="{{ url_for('static', filename='panel.js') }}?v=12"></script>
+  <script id="initial-services" type="application/json">{{ bootstrap|tojson }}</script>
+  <script src="{{ url_for('static', filename='panel.js') }}?v=18"></script>
   <script src="{{ url_for('static', filename='execution.js') }}?v=2"></script>
 </body>
 </html>

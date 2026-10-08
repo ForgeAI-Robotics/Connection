@@ -4,6 +4,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import tempfile
 import time
 import uuid
@@ -31,6 +32,30 @@ def atomic_write(path, text):
 
 def read_yaml(path):
     return yaml.safe_load(Path(path).read_text(encoding='utf-8')) or {}
+
+
+_KERNEL_TOKEN = r'(?:true|false|True|False|yes|no|Yes|No|on|off|~|null)'
+
+
+def reception_motion_permitted(profile):
+    route = (profile.get('routes') or {}).get('reception') or {}
+    return route.get('available') is True and route.get('backend') == 'reception_real'
+
+
+def render_kernel_enabled(text, enabled):
+    """Flip only reception_real.kernel_enabled. Leave every other line as written."""
+    flag = 'true' if enabled else 'false'
+    pattern = re.compile(rf'(kernel_enabled[ \t]*:[ \t]*){_KERNEL_TOKEN}')
+    if pattern.search(text):
+        return pattern.sub(rf'\g<1>{flag}', text, count=1)
+    block = re.compile(r'(?m)^(reception_real[ \t]*:[ \t]*(?:#.*)?\n)')
+    if block.search(text):
+        return block.sub(rf'\g<1>  kernel_enabled: {flag}\n', text, count=1)
+    flow = re.compile(r'(reception_real[ \t]*:[ \t]*\{)')
+    if flow.search(text):
+        return flow.sub(rf'\g<1>kernel_enabled: {flag}, ', text, count=1)
+    suffix = '' if text.endswith('\n') or not text else '\n'
+    return text + suffix + f'reception_real:\n  kernel_enabled: {flag}\n'
 
 
 def assert_idle(status):
@@ -182,6 +207,7 @@ class Switcher:
         if routes['reception']['available'] and routes['reception']['backend'] == 'reception_protocol':
             needed.update({'reception_nav', 'reception_vla'})
         started_dependencies = []
+        brain_backup = None
         try:
             atomic_write(self.block, 'Environment application in progress.\n')
             atomic_write(self.result, json.dumps({'state': 'applying', 'revision': profile['revision']}))
@@ -195,6 +221,7 @@ class Switcher:
                     services.start(name)
             services.healthy(sorted(needed))
             services.targets_healthy(routes)
+            brain_backup = self._sync_motion_permit(profile)
             atomic_write(self.state, json.dumps(profile, ensure_ascii=False, indent=2))
             for name in ['slaver', 'master']:
                 if name in desired:
@@ -216,6 +243,8 @@ class Switcher:
                     self.state.unlink(missing_ok=True)
                 else:
                     atomic_write(self.state, previous)
+                if brain_backup is not None:
+                    atomic_write(self.root / 'config' / 'brain.yaml', brain_backup)
                 for name in started_dependencies:
                     services.stop(name)
                 for name in ['slaver', 'master']:
@@ -228,3 +257,31 @@ class Switcher:
             atomic_write(self.result, json.dumps({'state': 'failed', 'error': str(exc),
                          'rollback_error': rollback_error}, ensure_ascii=False))
             raise RuntimeError(f'切换失败：{exc}；' + (f'回退未完成：{rollback_error}，已阻止新任务' if rollback_error else '已恢复原运行配置')) from exc
+
+    def _sync_motion_permit(self, profile):
+        """Open the real-motion permit exactly when reception is the real route."""
+        path = self.root / 'config' / 'brain.yaml'
+        if not path.exists():
+            raise ValueError('缺少 config/brain.yaml，不能同步真机动作许可')
+        original = path.read_text(encoding='utf-8')
+        before = yaml.safe_load(original) or {}
+        if not isinstance(before, dict):
+            raise ValueError('config/brain.yaml 无法读取')
+        real = before.get('reception_real') or {}
+        if not isinstance(real, dict):
+            raise ValueError('config/brain.yaml 的 reception_real 必须是映射')
+        enabled = reception_motion_permitted(profile)
+        if (real.get('kernel_enabled') is True) == enabled:
+            return None
+        updated = render_kernel_enabled(original, enabled)
+        after = yaml.safe_load(updated) or {}
+        if not isinstance(after, dict):
+            raise ValueError('真机动作许可写入后配置无法读取')
+        expected = dict(before)
+        expected_real = dict(real)
+        expected_real['kernel_enabled'] = enabled
+        expected['reception_real'] = expected_real
+        if after != expected:
+            raise ValueError('真机动作许可写入改变了其它配置')
+        atomic_write(path, updated)
+        return original

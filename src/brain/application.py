@@ -86,6 +86,8 @@ class BrainApplication:
                 if record.get('state') in {'succeeded', 'failed', 'cancelled', 'recovery_required'}:
                     self.learning.enqueue(record)
                 self._started = True
+                if record.get('task_id'):
+                    emit('task_restored', record)
             except Exception:
                 self.close()
                 raise

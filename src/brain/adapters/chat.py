@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import requests
@@ -51,31 +52,53 @@ class DeepSeekChat:
     ) -> str:
         if not self.api_key:
             raise RuntimeError("未配置 CLOUD_API_KEY，无法回答通用问题")
-        response = requests.post(
-            self._endpoint(),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.model,
-                "messages": messages,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-            },
-            timeout=timeout or self.timeout,
-        )
+        endpoint = self._endpoint()
+        started = time.perf_counter()
+        request_text = next((str(item.get('content') or '') for item in reversed(messages)
+                             if isinstance(item, dict) and item.get('role') == 'user'), '')
+        try:
+            response = requests.post(
+                endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                },
+                timeout=timeout or self.timeout,
+            )
+        except Exception as exc:
+            self._log_forward(endpoint, started, request_text, error=exc)
+            raise
         if not response.ok:
-            raise RuntimeError(f"DeepSeek 接口返回 HTTP {response.status_code}")
+            error = f"DeepSeek 接口返回 HTTP {response.status_code}"
+            self._log_forward(endpoint, started, request_text, status=response.status_code, error=error)
+            raise RuntimeError(error)
         payload = response.json()
         choices = payload.get("choices") or []
         if not choices:
+            self._log_forward(endpoint, started, request_text, status=response.status_code,
+                              error="DeepSeek 没有返回内容")
             raise RuntimeError("DeepSeek 没有返回内容")
         message = (choices[0].get("message") or {}).get("content")
         answer = str(message or "").strip()
         if not answer:
+            self._log_forward(endpoint, started, request_text, status=response.status_code, error=empty_error)
             raise RuntimeError(empty_error)
+        self._log_forward(endpoint, started, request_text, status=response.status_code, result=answer)
         return answer
+
+    def _log_forward(self, endpoint, started, request_text, **fields):
+        try:
+            from shared.log_setup import log_forward
+            log_forward('闲聊回复（chat）', 'POST', endpoint, model=self.model,
+                        duration_s=time.perf_counter() - started, request_text=request_text, **fields)
+        except Exception:
+            pass
 
     def _reply(self, text: str) -> str:
         return self._complete(

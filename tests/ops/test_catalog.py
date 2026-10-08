@@ -156,9 +156,12 @@ class CatalogTests(unittest.TestCase):
             newer.write_text("new\n", encoding="utf-8")
             os.utime(older, (1, 1))
             os.utime(newer, (2, 2))
+            retired = Path(raw) / "retired" / "master"
+            retired.mkdir(parents=True)
+            (retired / "master_agent.log").write_text("old archived server log")
             self.assertEqual(newer, latest_log_file(by_id("master")))
 
-    def test_remote_probe_rate_limits_monitor_file(self):
+    def test_remote_probe_logs_changes_without_repeating_latency_changes(self):
         import os
         from pathlib import Path
         from tempfile import TemporaryDirectory
@@ -173,14 +176,16 @@ class CatalogTests(unittest.TestCase):
             self.addCleanup(os.environ.pop, log_setup.LOG_ROOT_ENV, None)
             self.addCleanup(services.PROBE_HISTORY.clear)
             self.addCleanup(services._LAST_MONITOR.clear)
-            services._record_probe("vla", "down", ok=False)
-            services._record_probe("vla", "still down", ok=False)
+            services._record_probe("vla", "down 3ms", ok=False, signature=('url', 'refused'))
+            services._record_probe("vla", "still down 8ms", ok=False, signature=('url', 'refused'))
+            services._record_probe("vla", "timeout", ok=False, signature=('url', 'timeout'))
             services._record_probe("vla", "up", ok=True)
             files = list(Path(raw).glob("*/vla/monitor.log"))
             self.assertEqual(1, len(files))
             text = files[0].read_text(encoding="utf-8")
         self.assertIn("down", text)
         self.assertNotIn("still down", text)
+        self.assertIn("timeout", text)
         self.assertIn("up", text)
 
     def test_tail_file_reads_from_the_end(self):

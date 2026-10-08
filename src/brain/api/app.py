@@ -4,7 +4,6 @@ import re
 import psutil
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from shared.log_setup import note_task_request
 from shared.brain_journal import emit as journal_emit, inbound_from_flask
 from contracts.intent import Intent, classify_task
 from brain.api.facade import HttpFacade
@@ -16,6 +15,8 @@ def create_app(application, *, facade=None):
     CORS(app, resources={r"/*": {"origins": "*"}})
     master_agent = facade if facade is not None else HttpFacade(application)
     app.extensions['brain'] = application
+    from shared.quiet_http_log import install_poll_diagnostics
+    install_poll_diagnostics(app)
 
     def _validated_task_id(value):
         if value is None:
@@ -28,7 +29,10 @@ def create_app(application, *, facade=None):
         return value
 
     def _inbound():
-        return inbound_from_flask(request)
+        fields = inbound_from_flask(request)
+        fields['method'] = request.method
+        fields['path'] = request.path
+        return fields
 
     def _control(action):
         data = request.get_json(silent=True) or {}
@@ -129,16 +133,8 @@ def create_app(application, *, facade=None):
                 blockers=report.get("blockers"),
                 inherit_task=False,
             )
-            note_task_request(
-                "preflight",
-                task,
-                ready=report.get("ready"),
-                required=report.get("required"),
-                blockers=report.get("blockers"),
-            )
             return jsonify(report), 200
         except Exception as exc:
-            note_task_request("preflight", data.get("task") if isinstance(data, dict) else "", error=str(exc))
             return jsonify({
                 "ready": False,
                 "required": True,
@@ -285,7 +281,6 @@ def create_app(application, *, facade=None):
                         ok=False,
                         inherit_task=False,
                     )
-                    note_task_request("intent", task, intent="chat", risk=entry.risk.value)
                     return jsonify(
                         {
                             "status": "rejected",
@@ -319,13 +314,6 @@ def create_app(application, *, facade=None):
                         id=task_id,
                         inherit_task=False,
                     )
-                    note_task_request(
-                        "preflight",
-                        task,
-                        ready=report.get("ready"),
-                        required=report.get("required"),
-                        blockers=report.get("blockers"),
-                    )
                     if report.get("required") and not report.get("ready"):
                         blockers = report.get("blockers") or []
                         journal_emit(
@@ -350,7 +338,6 @@ def create_app(application, *, facade=None):
                                 "task": task,
                             }
                         ), 200
-                note_task_request("publish", task, task_id=task_id, resume=resume)
                 subtask_list = master_agent.publish_global_task(
                     task, data["refresh"], task_id,
                     force_new_task=bool(data.get("force_new_task")),

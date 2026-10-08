@@ -1,6 +1,6 @@
 """Process control and health; no Flask or task imports."""
 from ops.services import (by_id, catalog, display_log_path, feishu_ready_from_text,
-    latest_log_file, master_pin_text, port_open, start_shell, tail_file)
+    latest_log_file, port_open, start_shell, tail_file)
 from ops import dream_remote, tmuxctl, vla_remote, simple_remote
 
 def _tmux_name(service) -> str:
@@ -15,14 +15,14 @@ def _brain_state(service) -> str:
     return "stopped"
 
 
-def _service_status(service) -> dict:
+def _service_status(service, *, include_pids=True) -> dict:
     state = "stopped"
     pids = []
     if service.controllable:
         state = _brain_state(service)
-        if state == "tmux":
+        if include_pids and state == "tmux":
             pids = sorted(tmuxctl.tmux_pids_for(service))
-        elif state == "unmanaged":
+        elif include_pids and state == "unmanaged":
             pids = tmuxctl.unmanaged_pids(service)
     health = {"ok": False, "detail": "未运行"}
     if not service.controllable:
@@ -35,6 +35,17 @@ def _service_status(service) -> dict:
         elif service.health:
             health = service.health(service)
     return {
+        **service_description(service),
+        **_review_page(service),
+        "state": state if service.controllable else ("up" if health.get("ok") else "down"),
+        "health": health,
+        "pids": pids,
+    }
+
+
+def service_description(service) -> dict:
+    """Static card data. Rendering a page must not probe hosts or processes."""
+    return {
         "id": service.id,
         "name": service.name,
         "layer": service.layer,
@@ -45,19 +56,19 @@ def _service_status(service) -> dict:
         "confirm_stop": service.confirm_stop,
         "confirm_stop_message": service.confirm_stop_message,
         "action_confirms": dict(service.action_confirms),
-        **_review_page(service),
         "remote_control": service.remote_control,
         "remote_actions": list(service.remote_actions),
         "disabled_action": service.disabled_action,
         "disabled_reason": service.disabled_reason,
         "note": service.note,
         "port": service.port,
-        "state": state if service.controllable else ("up" if health.get("ok") else "down"),
-        "health": health,
-        "pids": pids,
+        "state": "checking",
+        "health": {"ok": None, "detail": "正在检查…"},
+        "pids": [],
         "tmux": _tmux_name(service) if service.controllable else None,
         "attach": f"tmux attach -t {_tmux_name(service)}" if service.controllable else None,
     }
+
 
 
 def _review_page(service) -> dict:
@@ -89,13 +100,13 @@ def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None
         return simple_remote.logs(lines)
     selected = str(kind or "auto").strip().lower()
     log_path = latest_log_file(service, selected)
-    pin = master_pin_text() if service.id == "master" and selected in {"auto", "brain"} else None
+    # Historical failure pins are archival, not current task alerts.
+    pin = None
     if not log_path:
         name = service.log_service or service.id
         if service.id == "master" and selected == "brain":
             return (
-                "暂无指挥日志。重启 Master 后写入 logs/<日期>/master/brain.log。"
-                "可先切到「原始」看当前进程输出。",
+                "暂无大脑日志。可展开高级诊断查看进程输出。",
                 None,
                 pin,
             )

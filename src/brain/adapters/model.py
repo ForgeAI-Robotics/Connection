@@ -2,6 +2,39 @@
 from openai import OpenAI, AzureOpenAI
 from typing import Dict
 import logging
+import time
+
+
+def _purpose(messages):
+    blob = []
+    for item in messages or []:
+        content = item.get('content') if isinstance(item, dict) else ''
+        if isinstance(content, str):
+            blob.append(content)
+        elif isinstance(content, list):
+            blob.extend(part.get('text', '') for part in content
+                        if isinstance(part, dict) and isinstance(part.get('text'), str))
+    text = '\n'.join(blob)
+    if '任务异常分析器' in text:
+        return '异常建议（recovery_advice）'
+    if '选择任务业务包' in text:
+        return '业务包选择（package_select）'
+    return '模型调用（llm）'
+
+
+def _excerpt(messages, limit=500):
+    for item in messages or []:
+        content = item.get('content') if isinstance(item, dict) else ''
+        if isinstance(content, str) and content.strip():
+            text = content.strip()
+            return text if len(text) <= limit else text[:limit - 3] + '...'
+        if isinstance(content, list):
+            texts = [part.get('text', '').strip() for part in content
+                     if isinstance(part, dict) and part.get('type') == 'text']
+            joined = ' '.join(piece for piece in texts if piece)
+            if joined:
+                return joined if len(joined) <= limit else joined[:limit - 3] + '...'
+    return ''
 
 class ModelClient:
     def __init__(self, config):
@@ -47,14 +80,22 @@ class ModelClient:
 
         from datetime import datetime
         start_inference = datetime.now()
-        response = self.global_model.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=0.2,
-            top_p=0.9,
-            max_tokens=2048,
-            seed=42,
-        )
+        started = time.perf_counter()
+        base = str(getattr(self.global_model, 'base_url', '') or '').rstrip('/')
+        endpoint = base + ('' if base.endswith('/chat/completions') else '/chat/completions')
+        purpose = _purpose(messages)
+        try:
+            response = self.global_model.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.2,
+                top_p=0.9,
+                max_tokens=2048,
+                seed=42,
+            )
+        except Exception as exc:
+            self._log_forward(purpose, endpoint, started, request_text=_excerpt(messages), error=exc)
+            raise
         end_inference = datetime.now()
 
         self.display_profiling_info(
@@ -74,4 +115,20 @@ class ModelClient:
             )
         elif not isinstance(raw, str):
             raw = str(raw)
+        self._log_forward(purpose, endpoint, started, request_text=_excerpt(messages),
+                          result=raw, status=200)
         return raw
+
+    def _log_forward(self, purpose, endpoint, started, **fields):
+        # 正常的异常建议留在账本，不把提示词和 JSON 打进进程日志。
+        if str(purpose).startswith('异常建议') and 'error' not in fields:
+            return
+        if str(purpose).startswith('异常建议'):
+            fields.pop('request_text', None)
+            fields.pop('result', None)
+        try:
+            from shared.log_setup import log_forward
+            log_forward(purpose, 'POST', endpoint, model=self.model_name,
+                        duration_s=time.perf_counter() - started, **fields)
+        except Exception:
+            logging.getLogger('model').debug('forward log failed', exc_info=True)

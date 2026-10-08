@@ -29,8 +29,7 @@ from shared.paths import workspace_root
 ROOT = workspace_root()
 PROBE_HISTORY: dict[str, deque[str]] = {}
 _MAX_PROBES = 80
-_LAST_MONITOR: dict[str, tuple[object, float]] = {}
-_MONITOR_HEARTBEAT_SEC = 60.0
+_LAST_MONITOR: dict[str, tuple[object, object]] = {}
 
 
 @dataclass(frozen=True)
@@ -150,21 +149,25 @@ def _tcp_open(port: int, host: str = "127.0.0.1") -> bool:
         sock.close()
 
 
-def _record_probe(service_id: str, line: str, *, ok: Optional[bool] = None) -> None:
+def _record_probe(service_id: str, line: str, *, ok: Optional[bool] = None, signature=None) -> None:
     stamp = datetime.now().astimezone().strftime("%H:%M:%S")
     formatted = f"[{stamp}] {line}"
     bucket = PROBE_HISTORY.setdefault(service_id, deque(maxlen=_MAX_PROBES))
     bucket.append(formatted)
-    previous, last_write = _LAST_MONITOR.get(service_id, (object(), 0.0))
-    changed = previous is not ok
-    heartbeat = (time.monotonic() - last_write) >= _MONITOR_HEARTBEAT_SEC
-    if not changed and not heartbeat:
+    previous, last_signature = _LAST_MONITOR.get(service_id, (None, None))
+    signature = line if signature is None else signature
+    if ok is True and previous is not False:
+        _LAST_MONITOR[service_id] = (True, signature)
+        return  # Healthy polling stays silent, including the first probe.
+    if previous is ok and signature == last_signature:
         return
+    if ok is True:
+        formatted = f"[{stamp}] 监测恢复：{line}"
     try:
         append_monitor_log(service_id, formatted, stamped=True)
     except OSError:
         return
-    _LAST_MONITOR[service_id] = (ok, time.monotonic())
+    _LAST_MONITOR[service_id] = (ok, signature)
 
 
 def probe_history(service_id: str) -> str:
@@ -215,7 +218,7 @@ def _health_remote(service_id: str, base: str):
         url = f"{base.rstrip('/')}/health"
         ok, status, ms, body = _http_get(url)
         detail = format_http_health_detail(ok, status, body)
-        _record_probe(service_id, f"{'通' if ok else '不通'} {url} {ms}ms {detail}", ok=ok)
+        _record_probe(service_id, f"{'通' if ok else '不通'} {url} {ms}ms {detail}", ok=ok, signature=(url, detail))
         return {
             "ok": ok,
             "detail": detail,
@@ -261,7 +264,7 @@ def catalog() -> list[Service]:
             confirm_restart=True,
             match="-m brain",
             log_service="master",
-            health=_health_http("http://127.0.0.1:5000/api/task_status"),
+            health=_health_http("http://127.0.0.1:5000/health"),
         ),
         Service(
             id="deploy",
@@ -538,7 +541,7 @@ def descendants(pid: int) -> list[int]:
 def latest_log_file(service: Service, kind: str | None = None) -> Optional[Path]:
     name = service.log_service
     selected = str(kind or "auto").strip().lower()
-    if name == "master" and selected in {"auto", "brain"}:
+    if name == "master" and selected == "brain":
         found = latest_named_log("master", BRAIN_LOG)
         if found:
             return found
@@ -552,7 +555,7 @@ def latest_log_file(service: Service, kind: str | None = None) -> Optional[Path]
     if name and root.exists():
         try:
             days = sorted(
-                (path for path in root.iterdir() if path.is_dir()),
+                (path for path in root.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]") if path.is_dir()),
                 key=lambda path: path.name,
                 reverse=True,
             )

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
 import time
 from datetime import datetime
@@ -25,6 +26,7 @@ BRAIN_LOG = "brain.log"
 BRAIN_JSONL = "brain.jsonl"
 HTTP_ACCESS_LOG = "http-access.log"
 PIN_FILE = "brain.pin"
+
 
 _FIELD_ORDER = (
     "source",
@@ -84,7 +86,7 @@ def _json_ready(value):
     return compact_log_text(value, 240)
 
 
-def _fmt_value(value):
+def _fmt_value(value, *, compact=True):
     if value is None or value == "" or value == []:
         return None
     if isinstance(value, bool):
@@ -99,10 +101,10 @@ def _fmt_value(value):
             )
             return f"({inner})"
         value = "；".join(str(item) for item in value if str(item).strip())
-    return compact_log_text(value, 240)
+    return compact_log_text(value, 240) if compact else str(value)
 
 
-def format_human(kind: str, event: str | None, fields: dict, *, moment=None) -> str:
+def format_human(kind: str, event: str | None, fields: dict, *, moment=None, compact=True) -> str:
     stamp = _stamp(moment)
     clock = stamp.strftime("%Y-%m-%d %H:%M:%S.") + f"{stamp.microsecond // 1000:03d}"
     parts = [clock, f"{kind:<9}", event or "-"]
@@ -111,14 +113,14 @@ def format_human(kind: str, event: str | None, fields: dict, *, moment=None) -> 
         if key not in fields:
             continue
         seen.add(key)
-        rendered = _fmt_value(fields[key])
+        rendered = _fmt_value(fields[key], compact=compact)
         if rendered is None:
             continue
         parts.append(f"{key}={rendered}")
     for key, value in fields.items():
         if key in seen or key.startswith("_"):
             continue
-        rendered = _fmt_value(value)
+        rendered = _fmt_value(value, compact=compact)
         if rendered is None:
             continue
         parts.append(f"{key}={rendered}")
@@ -156,9 +158,9 @@ def call_reason(payload, error=None) -> str | None:
     if error is not None:
         text = str(error).strip()
         if text:
-            return compact_log_text(text, 300)
+            return text
     if not isinstance(payload, dict):
-        return compact_log_text(payload, 300) if payload else None
+        return str(payload) if payload else None
     error_body = payload.get("error") if isinstance(payload.get("error"), dict) else {}
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     for candidate in (
@@ -168,7 +170,7 @@ def call_reason(payload, error=None) -> str | None:
         (payload.get("progress") or {}).get("message")
         if isinstance(payload.get("progress"), dict) else None,
     ):
-        text = compact_log_text(candidate, 300) if candidate else ""
+        text = str(candidate) if candidate else ""
         if text:
             return text
     return None
@@ -214,6 +216,9 @@ def summarize_remote(payload) -> dict:
     reason = call_reason(payload)
     if reason:
         fields["reason"] = reason
+    # Error codes, nested detail and remote tracebacks must survive the summary.
+    if payload.get("error"):
+        fields["error"] = payload["error"]
     return {key: value for key, value in fields.items() if value is not None}
 
 
@@ -230,9 +235,10 @@ def summarize_vla_request(payload) -> dict:
 
 
 class BrainJournal:
-    def __init__(self, *, service: str = "master", enabled: bool = True):
+    def __init__(self, *, service: str = "master", enabled: bool = True, echo_process=False):
         self.service = service
         self.enabled = enabled
+        self.echo_process = echo_process
         self._lock = threading.RLock()
         self._current_task_id = None
         self._day = None
@@ -310,15 +316,25 @@ class BrainJournal:
                 handle.flush()
             kind_u = record["kind"]
             event_l = str(event or "").lower()
-            if kind_u == "TASK" and event_l == "start":
+            if kind_u == "TASK" and (event_l in {"start", "task_opened"}
+                                    or payload.get('state') in {'succeeded', 'cancelled'}):
                 self._pin = None
                 if paths["pin"].exists():
                     paths["pin"].unlink()
-            elif kind_u in {"TASK", "CALL", "STEP"} and (
+            elif kind_u in {"TASK", "CALL", "STEP"} and payload.get('state') != 'cancelled' and (
                 payload.get("ok") is False or event_l in {"fail", "failure"}
             ):
                 self._pin = line
                 paths["pin"].write_text(line + "\n", encoding="utf-8")
+            if self.echo_process and kind_u != 'DIAGNOSTIC':
+                # Ordinary logging and uncaught exceptions already reach stderr.
+                # Business events also belong in the same readable process stream.
+                from shared.task_text import format_process_event
+                rendered = format_process_event(record)
+                if rendered is None:
+                    rendered = format_human(kind_u, event, payload, moment=moment, compact=False)
+                if rendered:
+                    print(rendered, flush=True)
         return record
 
     def append_http_access(self, line: str):
@@ -371,6 +387,46 @@ class NullJournal:
 
 _JOURNAL: BrainJournal | NullJournal = NullJournal()
 _ATTACHED = False
+_EXCEPTION_HOOKS = None
+
+
+def _restore_exception_hooks():
+    global _EXCEPTION_HOOKS
+    if _EXCEPTION_HOOKS:
+        old_main, old_thread, main, thread = _EXCEPTION_HOOKS
+        if sys.excepthook is main:
+            sys.excepthook = old_main
+        if threading.excepthook is thread:
+            threading.excepthook = old_thread
+        _EXCEPTION_HOOKS = None
+
+
+def _install_exception_hooks(journal):
+    global _EXCEPTION_HOOKS
+    _restore_exception_hooks()
+    old_main, old_thread = sys.excepthook, threading.excepthook
+
+    def report(kind, value, tb, component):
+        if issubclass(kind, (KeyboardInterrupt, SystemExit)):
+            return
+        try:
+            journal.emit('DIAGNOSTIC', event='exception', inherit_task=False,
+                         component=component, level='CRITICAL', message=str(value),
+                         exception=logging.Formatter().formatException((kind, value, tb)))
+        except Exception:
+            pass
+
+    def main(kind, value, tb):
+        report(kind, value, tb, 'brain.process')
+        old_main(kind, value, tb)
+
+    def thread(args):
+        report(args.exc_type, args.exc_value, args.exc_traceback,
+               'brain.thread.' + (args.thread.name if args.thread else 'unknown'))
+        old_thread(args)
+
+    sys.excepthook, threading.excepthook = main, thread
+    _EXCEPTION_HOOKS = old_main, old_thread, main, thread
 
 
 def get_journal():
@@ -394,13 +450,15 @@ def attach_master_journal() -> BrainJournal:
     """Create today's journal files and capture Werkzeug access logs."""
 
     global _JOURNAL, _ATTACHED
-    journal = BrainJournal(service="master", enabled=True)
+    journal = BrainJournal(service="master", enabled=True, echo_process=True)
     _JOURNAL = journal
     _redirect_werkzeug(journal)
+    root = logging.getLogger()
+    root.handlers = [handler for handler in root.handlers if not isinstance(handler, _JournalDiagnosticHandler)]
+    root.addHandler(_JournalDiagnosticHandler(journal))
+    _install_exception_hooks(journal)
     _ATTACHED = True
-    paths = journal.paths()
-    print(f"[log] master brain -> {paths['brain']}", flush=True)
-    print(f"[log] master http-access -> {paths['http']}", flush=True)
+    journal.paths()
     journal.emit("PREFLIGHT", event="boot", note="Master指挥日志已就绪")
     return journal
 
@@ -409,11 +467,34 @@ def reset_journal_for_tests(journal=None):
     global _JOURNAL, _ATTACHED
     _JOURNAL = journal if journal is not None else NullJournal()
     _ATTACHED = False
+    _restore_exception_hooks()
+    root = logging.getLogger()
+    root.handlers = [handler for handler in root.handlers if not isinstance(handler, _JournalDiagnosticHandler)]
     logger = logging.getLogger("werkzeug")
     logger.handlers = [
         handler for handler in logger.handlers
         if not isinstance(handler, _JournalHttpHandler)
     ]
+
+
+class _JournalDiagnosticHandler(logging.Handler):
+    """Project warnings and exceptions into the business journal without HTTP polling noise."""
+    def __init__(self, journal):
+        super().__init__(logging.WARNING)
+        self.journal = journal
+
+    def emit(self, record):
+        if record.name == 'werkzeug':
+            return
+        try:
+            self.journal.emit('DIAGNOSTIC', event='exception' if record.exc_info else 'log',
+                              inherit_task=False, task_id=getattr(record, 'task_id', None),
+                              component=record.name, level=record.levelname,
+                              message=record.getMessage(),
+                              exception=logging.Formatter().formatException(record.exc_info)
+                              if record.exc_info else None)
+        except Exception:
+            pass  # A diagnostic must never interrupt task execution or recurse into logging.
 
 
 class _JournalHttpHandler(logging.Handler):
@@ -431,7 +512,7 @@ class _JournalHttpHandler(logging.Handler):
 def _redirect_werkzeug(journal: BrainJournal):
     logger = logging.getLogger("werkzeug")
     logger.setLevel(logging.INFO)
-    logger.propagate = False
+    logger.propagate = True
     logger.handlers = [
         handler for handler in logger.handlers
         if not isinstance(handler, _JournalHttpHandler)
@@ -521,6 +602,13 @@ class OutboundCall:
         reason = call_reason(payload, error=error)
         if reason:
             extra["reason"] = reason
+        if error is not None:
+            extra['exception'] = str(error)
+            if isinstance(error, BaseException) and error.__traceback__ is not None:
+                import traceback
+                extra['exception'] = ''.join(traceback.format_exception(type(error), error, error.__traceback__))
+        if not ok and isinstance(payload, dict) and payload.get('result') is not None:
+            extra['result'] = payload['result']
         if extra.get("state") is None and isinstance(payload, dict):
             extra["state"] = payload.get("state")
         self._emit("end", **extra)
@@ -582,7 +670,7 @@ def latest_named_log(service: str, filename: str) -> Path | None:
         return None
     try:
         days = sorted(
-            (path for path in root.iterdir() if path.is_dir()),
+            (path for path in root.glob("[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]") if path.is_dir()),
             key=lambda path: path.name,
             reverse=True,
         )

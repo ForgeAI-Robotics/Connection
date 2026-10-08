@@ -89,6 +89,7 @@ class ExecutionSwitchTests(unittest.TestCase):
                          ['reception_nav', 'reception_vla', 'master'])
         self.assertEqual((self.root / 'config/brain.yaml').read_text(),
                          'brain: {scheduler: runtime}\nreception_real: {kernel_enabled: false}\n')
+        self.assertFalse(self.switcher.status()['real_motion_enabled'])
         real = resolve(dict(value, mode='real'), ROBOT)['routes']['reception']
         self.assertEqual(real['backend'], 'reception_real')
         self.assertNotIn('endpoints', real)
@@ -130,6 +131,7 @@ class ExecutionSwitchTests(unittest.TestCase):
             self.switcher.apply({'mode': 'real'})
         self.assertFalse(self.switcher.state.exists())
         self.assertEqual(self.services.up, {'redis', 'master', 'deploy', 'feishu', 'slaver', 'desk'})
+        self.assertIn('kernel_enabled: false', (self.root / 'config/brain.yaml').read_text())
 
     def test_failed_health_restores_previous_profile(self):
         old = self.switcher.apply({'mode': 'simulation'})
@@ -158,6 +160,57 @@ class ExecutionSwitchTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, '回退未完成'):
             self.switcher.apply({'mode': 'real'})
         self.assertTrue(self.switcher.block.exists())
+        self.assertIn('kernel_enabled: false', (self.root / 'config/brain.yaml').read_text())
+
+    def test_motion_permit_edit_keeps_the_rest_of_brain_yaml(self):
+        text = (
+            'brain:\n  scheduler: runtime\nreception_real:\n  enabled: false\n'
+            '  kernel_enabled: false  # keep\n  dream_base_url: http://192.168.31.5:8001\n')
+        (self.root / 'config/brain.yaml').write_text(text)
+        self.switcher.apply({'mode': 'real'})
+        self.assertEqual(
+            (self.root / 'config/brain.yaml').read_text(),
+            text.replace('kernel_enabled: false', 'kernel_enabled: true'))
+
+    def test_real_reception_opens_motion_permit_without_starting_robots(self):
+        before = (self.root / 'config/brain.yaml').read_text()
+        self.switcher.apply({'mode': 'real'})
+        self.assertEqual((self.root / 'config/brain.yaml').read_text(),
+                         before.replace('kernel_enabled: false', 'kernel_enabled: true'))
+        self.assertTrue(self.switcher.status()['real_motion_enabled'])
+        started = [name for action, name in self.services.calls if action == 'start']
+        self.assertNotIn('dream', started)
+        self.assertNotIn('vla', started)
+
+    def test_non_real_reception_closes_motion_permit(self):
+        self.switcher.apply({'mode': 'simulation', 'modules': {'reception': {'mode': 'real'}}})
+        self.assertIs(
+            yaml.safe_load((self.root / 'config/brain.yaml').read_text())['reception_real']['kernel_enabled'], True)
+        for config in (
+                {'mode': 'simulation'},
+                {'mode': 'simulation', 'modules': {'reception': {'simulation_backend': 'reception_protocol'},
+                                                   'execution': {'mode': 'disabled'},
+                                                   'observation': {'mode': 'disabled'}}},
+                {'mode': 'real', 'modules': {'reception': {'mode': 'disabled'}}},
+                {'mode': 'real', 'modules': {'reception': {'mode': 'simulation', 'simulation_backend': 'reception_mock'}}}):
+            self.switcher.apply({'mode': 'real'})
+            self.switcher.apply(config)
+            self.assertIs(
+                yaml.safe_load((self.root / 'config/brain.yaml').read_text())['reception_real']['kernel_enabled'],
+                False)
+
+    def test_failed_apply_restores_motion_permit(self):
+        self.switcher.apply({'mode': 'real'})
+        opened = (self.root / 'config/brain.yaml').read_text()
+        old = json.loads(self.switcher.state.read_text())
+        original = self.services.healthy
+        self.services.healthy = lambda names, revision=None: (
+            (_ for _ in ()).throw(RuntimeError('bad health')) if revision and revision != old['revision']
+            else original(names, revision))
+        with self.assertRaisesRegex(RuntimeError, '已恢复'):
+            self.switcher.apply({'mode': 'simulation'})
+        self.assertEqual((self.root / 'config/brain.yaml').read_text(), opened)
+        self.assertEqual(json.loads(self.switcher.state.read_text())['revision'], old['revision'])
 
     def test_admission_cannot_overlap_switch(self):
         lock = self.root / 'lock'

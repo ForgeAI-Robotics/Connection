@@ -2,7 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from flask import Flask, jsonify, render_template, request
 from ops.services import *
-from ops.control import (_start, _stop, _brain_state, _service_status, _remote_extra, _logs)
+from ops.control import (_start, _stop, _brain_state, _service_status, _remote_extra, _logs, service_description)
 from ops import dream_remote, tmuxctl, vla_remote
 
 
@@ -11,7 +11,10 @@ def create_app(*, switch_pool=None):
     _STATUS_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix='ops-health')
     @app.get("/")
     def index():
-        return render_template("index.html")
+        descriptions = [service_description(service) for service in catalog()]
+        bootstrap = {layer: [item for item in descriptions if item['layer'] == layer]
+                     for layer in ('brain', 'environment', 'support', 'robot')}
+        return render_template("index.html", bootstrap=bootstrap)
 
 
     # Environment application runs outside the request thread; polling reports progress.
@@ -62,8 +65,11 @@ def create_app(*, switch_pool=None):
 
     @app.get("/api/status")
     def api_status():
-        services = catalog()
-        items = list(_STATUS_POOL.map(_service_status, services))
+        layer = request.args.get('layer')
+        if layer and layer not in {'brain', 'environment', 'support', 'robot'}:
+            return jsonify({'error': '未知服务层'}), 400
+        services = [s for s in catalog() if not layer or s.layer == layer]
+        items = list(_STATUS_POOL.map(lambda s: _service_status(s, include_pids=False), services))
         return jsonify(
             {
                 "tmux": tmuxctl.tmux_available(),
@@ -90,15 +96,19 @@ def create_app(*, switch_pool=None):
         lines = max(20, min(wanted, 8000))
         kind = request.args.get("kind") or "auto"
         text, path, pin = _logs(service, lines, kind)
-        return jsonify(
-            {
+        payload = {
                 "id": service.id,
                 "kind": kind,
                 "text": text,
                 "path": path,
                 "pin": pin,
             }
-        )
+        return jsonify(payload)
+
+    @app.get('/api/brain/overview')
+    def brain_overview():
+        from ops.brain_view import overview
+        return jsonify(overview())
 
 
     @app.post("/api/services/<service_id>/<action>")

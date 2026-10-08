@@ -32,9 +32,15 @@ def main():
         raise SystemExit(0)
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, stop)
+    from werkzeug.serving import make_server
+    from shared.log_setup import print_beijing
+    app = create_app(application)
+    server = make_server(args.host, args.port, app, threaded=True)
+    print_beijing('INFO', 'master', f'大脑服务已监听（listen）\n  http://{args.host}:{server.port}')
     try:
-        create_app(application).run(host=args.host, port=args.port, threaded=True, use_reloader=False)
+        server.serve_forever()
     finally:
+        server.server_close()
         application.close()
 
 

@@ -22,7 +22,7 @@
         .btn-sm { padding: 8px 14px; font-size: 13px; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
-        .result { margin-top: 14px; padding: 14px; background: #0f172a; border-radius: 8px; white-space: pre-wrap; font-size: 13px; font-family: monospace; display: none; max-height: 400px; overflow-y: auto; }
+        .result { margin-top: 14px; padding: 14px; background: #0f172a; border-radius: 8px; white-space: pre-wrap; font-size: 13px; font-family: inherit; line-height: 1.6; display: none; max-height: 180px; overflow-y: auto; }
         .status-bar { display: flex; gap: 16px; justify-content: center; font-size: 13px; color: #64748b; margin-bottom: 20px; }
         .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
         .dot.ok { background: #22c55e; }
@@ -146,7 +146,9 @@
                 <input type="text" id="task" placeholder="输入任务，如：前往卧室" autofocus>
                 <button class="btn btn-primary" id="btn-send" onclick="sendTask()">发送</button>
             </div>
-            <div class="result" id="task-result"></div>
+            <div class="result" id="task-result" role="status"></div>
+            <button id="copy-task-response" class="btn btn-outline btn-sm" style="display:none;margin-top:8px" onclick="copyTaskResponse()">复制原始响应</button>
+            <span id="copy-task-status" style="font-size:12px;color:#94a3b8" role="status"></span>
             <div class="task-progress" id="task-progress"></div>
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
@@ -195,6 +197,42 @@
     </div>
 
     <script>
+        const TASK_LABELS = {{ task_labels|tojson }};
+        let lastTaskResponse = null;
+        function taskReason(value) {
+            const raw = value == null ? '' : (typeof value === 'string' ? value : JSON.stringify(value));
+            return TASK_LABELS.reasons[raw] ? TASK_LABELS.reasons[raw] + '（' + raw + '）' : raw;
+        }
+        function taskPhase(value) { return TASK_LABELS.phases[value] || value || ''; }
+        function showTaskResponse(data, heading) {
+            lastTaskResponse = data;
+            document.getElementById('copy-task-response').style.display = 'inline-block';
+            const lines = [heading];
+            if (data.task_id) lines.push('任务：' + data.task_id.slice(0, 8));
+            if (data.state) lines.push('状态：' + (TASK_LABELS.states[data.state] || data.state));
+            const reason = data.blocked_reason || data.error || data.message;
+            if (reason) lines.push('说明：' + taskReason(reason));
+            if (Array.isArray(data.blockers) && data.blockers.length) lines.push('原因：' + data.blockers.map(taskReason).join('；'));
+            const result = document.getElementById('task-result');
+            result.style.display = 'block';
+            result.textContent = lines.join('\n');
+        }
+        async function copyTaskResponse() {
+            const text = JSON.stringify({response: lastTaskResponse, current_task: displayedTask}, null, 2);
+            const status = document.getElementById('copy-task-status');
+            try {
+                if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
+                else {
+                    const area = document.createElement('textarea');
+                    area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
+                    document.body.append(area); area.select();
+                    try { if (!document.execCommand('copy')) throw new Error('copy failed'); }
+                    finally { area.remove(); }
+                }
+                status.textContent = '已复制';
+            } catch (e) { status.textContent = '复制失败，请重试或从浏览器网络面板查看原始响应'; }
+        }
+
         // 状态检测
         async function checkStatus() {
             try {
@@ -299,7 +337,7 @@
                 }
                 const st = await readTaskStatus();
                 if (st.blocks_new_motion) {
-                    result.textContent = st.blocked_reason || '存在未完成任务，请先暂停、继续或取消原任务。';
+                    showTaskResponse(st, '当前任务尚未结束，请先处理原任务。');
                     return;
                 }
                 const preflightResp = await fetch('/api/task_preflight', {
@@ -309,7 +347,7 @@
                 });
                 const preflight = await preflightResp.json();
                 if (preflight.required && preflight.ready === false) {
-                    result.textContent = '预检未通过:\n' + JSON.stringify(preflight, null, 2);
+                    showTaskResponse(preflight, '预检未通过，任务尚未提交。');
                     return;
                 }
                 const payload = {task: task};
@@ -320,8 +358,9 @@
                     body: JSON.stringify(payload)
                 });
                 const data = await resp.json();
-                result.textContent = JSON.stringify(data, null, 2);
-                if (data.accepted === false) {
+                showTaskResponse(data, !resp.ok || data.accepted === false || data.status === 'rejected'
+                    ? '任务未被接受' : data.status === 'success' || data.accepted === true ? '任务已接收，进度见下方。' : '已收到大脑响应，请查看说明。');
+                if (!resp.ok || data.accepted === false) {
                     return;
                 }
                 if (data.status === 'success') {
@@ -406,6 +445,7 @@
 
         function renderTaskProgress(data) {
             displayedTask = data;
+            if (data.task_id) document.getElementById('copy-task-response').style.display = 'inline-block';
             updateTaskButtons();
             if (!data.all_done) document.getElementById('report-card').innerHTML = '';
             const el = document.getElementById('task-progress');
@@ -427,7 +467,7 @@
             let statusLabel, statusCls;
             if (recovery) {
                 const reason = (data.reception_state && data.reception_state.failure_reason) || data.blocked_reason || data.reasoning || '';
-                statusLabel = reason ? ('待恢复：' + reason) : '待恢复（未确认远端已停）';
+                statusLabel = reason ? ('待恢复：' + taskReason(reason)) : '待恢复（未确认远端已停）';
                 statusCls = 'status-recovery';
             } else if (data.state === 'paused') {
                 statusLabel = '已暂停';
@@ -460,23 +500,30 @@
             const barCls = recovery ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');
             let html = `<div class="task-progress-header">
                 <span>${taskText(taskName)} (${completed}/${total})${data.execution_backend === 'reception_protocol' ? ' · 导航／操控模拟' : ''}</span>
-                <span class="${statusCls}">${statusLabel}</span>
+                <span class="${statusCls}">${taskText(statusLabel)}</span>
             </div>
             <div class="task-bar"><div class="${barCls}" style="width:${pct}%"></div></div>`;
 
             if (data.reasoning) {
                 html += `<div style="margin:10px 0;padding:10px 12px;background:#0f172a;border-radius:8px;font-size:12px;color:#a5b4fc;line-height:1.6">`
-                      + `<b style="color:#818cf8">🧠 Master 思考:</b> ${data.reasoning}</div>`;
+                      + `<b style="color:#818cf8">🧠 Master 思考:</b> ${taskText(data.reasoning)}</div>`;
             }
 
+            const phase = data.phase || data.control_step_id;
+            const reason = data.blocked_reason || '';
             const advice = data.recovery_advice;
-            if (advice && advice.applicable) {
-                const actions = {query_original: '查询原命令', request_help: '请求人工协助',
-                    wait: '等待条件就绪', cancel: '取消任务', continue: '通过原任务入口继续'};
-                html += `<div style="margin:10px 0;padding:10px 12px;background:#0f172a;border-radius:8px;font-size:12px;line-height:1.6">`
-                    + `<b>异常分析${advice.source === 'llm' ? '' : '（规则回退）'}</b><br>`
-                    + `${taskText(advice.summary)}<br>${taskText(advice.reason)}<br>`
-                    + `建议：${taskText(actions[advice.action] || advice.action)}。建议尚未执行。</div>`;
+            if (phase || reason || (advice && advice.applicable)) {
+                const lines = [];
+                if (phase) lines.push('当前步骤：' + taskPhase(phase));
+                if (reason) lines.push('原因：' + taskReason(reason));
+                if (reason === 'real_execution_disabled') {
+                    lines.push('建议：请现场负责人确认真机执行条件，再通过原任务入口继续；也可取消本任务。');
+                } else if (advice && advice.applicable) {
+                    if (advice.summary) lines.push('分析：' + advice.summary);
+                    lines.push('建议：' + (TASK_LABELS.actions[advice.action] || advice.action || '请人工检查') + '（尚未执行）');
+                }
+                html += '<div style="margin:10px 0;padding:10px 12px;background:#0f172a;border-radius:8px;font-size:13px;line-height:1.6">'
+                    + lines.map(taskText).join('<br>') + '</div>';
             }
 
             for (const t of (data.subtask_list || [])) {
@@ -506,8 +553,8 @@
                 }
                 html += `<div class="subtask-item ${cls}">
                     <div class="check" style="${checkStyle}">${checkIcon}</div>
-                    <span class="subtask-text">${taskText(t.subtask)}${insertedTag}${blockedTag}</span>
-                    <span class="subtask-robot">${t.robot_name}</span>
+                    <span class="subtask-text">${taskText(TASK_LABELS.phases[t.step_id] || TASK_LABELS.phases[t.subtask] || t.subtask)}${insertedTag}${blockedTag}</span>
+                    <span class="subtask-robot">${taskText(t.robot_name)}</span>
                 </div>`;
             }
             el.innerHTML = html;

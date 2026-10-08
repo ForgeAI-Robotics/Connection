@@ -32,7 +32,8 @@ def create_app(brain_url=None, *, client=None, ops_client=None):
 
     @app.get('/')
     def index():
-        return render_template('index.html')
+        from shared.task_text import presentation_labels
+        return render_template('index.html', task_labels=presentation_labels())
 
     @app.get('/teach')
     def teach():
