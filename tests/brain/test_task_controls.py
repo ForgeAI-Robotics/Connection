@@ -198,6 +198,38 @@ class SkipControlTests(unittest.TestCase):
         self.assertEqual(runtime.record['blocked_reason'], 'handoff_unconfirmed')
         self.assertEqual(len(port.submits), 1)
 
+    def test_unreachable_gate_waits_for_human_and_continue_rechecks_it(self):
+        class FlakyGate(FakeBody):
+            reachable = False
+            @property
+            def gate_open(self):
+                if not self.reachable:
+                    raise RuntimeError('服务不可达 http://dream:8001/v1/status: [Errno 111] Connection refused')
+                return True
+            @gate_open.setter
+            def gate_open(self, value):
+                pass
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        port = FlakyGate()
+        runtime = _runtime(root.name, port)
+        runtime.drive()
+        self.assertEqual(runtime.state, 'waiting_human')
+        self.assertIn('Connection refused', runtime.record['blocked_reason'])
+        self.assertEqual(port.submits, [])
+        status = runtime.public_status()
+        self.assertTrue(status['can_resume'])
+        self.assertFalse(status['can_skip'])  # never skip the leg that was never sent
+        runtime.continue_current()
+        runtime.drive()
+        self.assertEqual(runtime.state, 'waiting_human')  # still unreachable: re-check, no submit
+        self.assertEqual(port.submits, [])
+        port.reachable = True
+        runtime.continue_current()
+        runtime.drive()
+        self.assertEqual(port.submits[0].rsplit('-', 1)[0], 'nav-table2')
+        self.assertEqual(runtime.record['dispatch_counts']['NAVIGATING_TO_TABLE2'], 1)
+
     def test_skip_requires_stop_release_and_same_command(self):
         from contracts.tasks import Rejected
         for change in ({'stopped': False}, {'resources_released': False}, {'command_id': 'other'},
