@@ -461,4 +461,4 @@ DREAM收到导航请求时，如果 VLA 仍占用动作通路，必须拒绝或�
 
 本轮另增加可选状态字段 `control_receipt`，版本 `fq/control-receipt/v1`。NAV 在 `/v1/status` 中返回 `to_nav/navigation`。字段绑定 `task_id`、`source_command_id`、`kind`、`controller`、`active_command_id=null`、`confirmed=true` 和带时区的 `observed_at`。具体时效与来源要求见上述说明。
 
-这是新增目标契约，尚未声称真机实现。旧服务无此字段时，大脑保持 `controller_receipt_unavailable`；单独的 `navigation_stopped`、`policy_stopped`、`navigation_port_ready` 或空闲状态不能替代目标控制器接管／最终待机凭证。真机适配必须从实际控制器生成并验证该凭证。
+这是新增目标契约，尚未声称真机实现。2026-10-08 起大脑把它当作可选：服务无此字段时，在原命令已停止、两侧无活动命令且通路就绪的条件下放行，记为 `transport_ready_without_receipt`；返回了该字段的仍须核验通过。这只是联调放行规则，通路空闲仍不等于目标控制器已经接管，真机适配仍应从实际控制器生成该凭证。详见[规划第 21 节](规划说明_具身大脑重构.md#21-真机联调放行规则2026-10-08)。

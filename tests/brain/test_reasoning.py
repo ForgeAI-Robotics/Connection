@@ -224,23 +224,36 @@ class EvidenceAndHandoffTests(unittest.TestCase):
         self.assertEqual(viewed["raw"]["state"], "waiting_operator_approval")
         self.assertFalse(viewed["evidence"])
 
-    def test_idle_transport_is_never_promoted_to_controller_takeover(self):
+    def test_receipt_is_optional_but_idle_transport_and_source_stop_are_required(self):
         request, raw = self.payload()
+        nav = {"active_command_id": "", "active_command_state": None, "navigation_transport_ready": True}
+        vla = {"active_command_id": None, "policy_running": False, "action_port": {"navigation_port_ready": True}}
         class Dream:
             def status(self):
-                return {"active_command_id": "", "active_command_state": None, "navigation_transport_ready": True}
+                return deepcopy(nav)
         class Vla:
             def task(self, command_id):
                 return deepcopy(raw)
             def control_status(self):
-                return {"active_command_id": None, "policy_running": False,
-                        "action_port": {"navigation_port_ready": True}}
+                return deepcopy(vla)
         adapter = BodyAdapter(Dream(), Vla())
         context = {"task_id": "task", "kind": "to_nav", "source_command_id": "pick", "source_request": request}
         result = adapter.handoff_with_context(context)
         self.assertTrue(result["transport_ready"])
+        self.assertTrue(result["confirmed"])
+        self.assertEqual(result["reason"], "transport_ready_without_receipt")
+        # 5556 not returned by VLA: navigation stays blocked.
+        vla["action_port"] = {"navigation_port_ready": False}
+        result = adapter.handoff_with_context(context)
         self.assertFalse(result["confirmed"])
-        self.assertEqual(result["reason"], "controller_receipt_unavailable")
+        self.assertEqual(result["reason"], "transport_not_ready")
+        vla["action_port"] = {"navigation_port_ready": True}
+        # A receipt that is present must still be valid.
+        nav["control_receipt"] = {"contract_version": "fq/control-receipt/v1", "confirmed": False}
+        result = adapter.handoff_with_context(context)
+        self.assertFalse(result["confirmed"])
+        self.assertEqual(result["reason"], "controller_receipt_invalid")
+        del nav["control_receipt"]
         raw["task_id"] = "foreign"
         result = adapter.handoff_with_context(context)
         self.assertFalse(result["confirmed"])

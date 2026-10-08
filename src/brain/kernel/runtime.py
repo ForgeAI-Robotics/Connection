@@ -933,23 +933,35 @@ class TaskRuntime:
 
     def _handoff(self, step_id, kind):
         contextual = getattr(self.port, "handoff_with_context", None)
-        if not callable(contextual):
-            return self.port.handoff(step_id, kind)
         with self._exclusive():
             self._reload_locked()
             snapshot = deepcopy(self.record)
             command_id = None
             boundary = self._index(step_id) + (1 if kind == 'safe_idle' else 0)
-            for previous in reversed(self.phases[:boundary]):
+            source_index = 0
+            for index in range(boundary - 1, -1, -1):
+                previous = self.phases[index]
                 attempts = (snapshot.get("steps", {}).get(previous.step_id) or {}).get("attempts") or []
                 submitted = [a for a in attempts if a.get('submitted') and a.get('command_id')]
                 if submitted:
                     command_id = submitted[-1]['command_id']
+                    source_index = index
                     break
             context = {"task_id": snapshot["task_id"], "step_id": step_id, "kind": kind,
                        "source_command_id": command_id,
                        "source_request": self._request_of(command_id) if command_id else None}
-        answer = contextual(context)
+            # The operator's skip already confirmed that step's command stopped and
+            # released its resources. A handoff across it is filled in, not re-asked.
+            skipped = {item.get("step_id") for item in snapshot.get("manual_skips") or []}
+            bridged = [step.step_id for step in self.phases[source_index:boundary] if step.step_id in skipped]
+        if bridged:
+            answer = {"available": True, "confirmed": True, "reason": "manual_skip",
+                      "kind": kind, "task_id": context["task_id"],
+                      "source_command_id": command_id, "skipped_steps": bridged}
+        elif not callable(contextual):
+            return self.port.handoff(step_id, kind)
+        else:
+            answer = contextual(context)
         if not isinstance(answer, dict):
             answer = {"available": False, "confirmed": False, "reason": "invalid_handoff_response"}
         with self._exclusive():
@@ -1208,12 +1220,9 @@ class TaskRuntime:
         )
 
     def _envelope(self, step, command_id: str) -> dict:
-        request = self.policy.request(step, self.record["task_id"], command_id, self._last_command)
-        proof = (request.get("body") or {}).get("navigation_proof")
-        if proof and any(item.get("command_id") == proof.get("dream_command_id")
-                         for item in self.record.get("manual_skips") or []):
-            raise Rejected("所需导航已被人工跳过，缺少导航成功凭证，不能下发操控")
-        return request
+        # After a skipped leg the operator has moved the robot. The proof still names the
+        # real DREAM command; VLA checks it against DREAM before taking the action port.
+        return self.policy.request(step, self.record["task_id"], command_id, self._last_command)
 
     def _contract(self, step, attempt_id: str, command_id: str, request: dict) -> SkillContract:
         return SkillContract(

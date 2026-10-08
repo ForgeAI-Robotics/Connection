@@ -158,15 +158,45 @@ class SkipControlTests(unittest.TestCase):
         self.assertEqual(episode['final'], 'failure')
         self.assertEqual(episode['manual_skips'][0]['command_id'], old_command)
 
-    def test_skip_does_not_forge_navigation_proof_even_if_handoff_port_says_ready(self):
+    def test_skipped_navigation_still_dispatches_pick_with_the_real_command_as_proof(self):
         runtime, port = self.failed_runtime('NAVIGATING_TO_TABLE2')
+        skipped = runtime.record['open_command_id']
+        port.handoff_confirmed['to_vla'] = False  # bridged by the skip, never asked
         runtime.skip_current(step_id='NAVIGATING_TO_TABLE2')
         self.assertEqual(runtime.record['phase'], 'VLA_PICKING')
         runtime.drive()
+        pick = runtime.record['steps']['VLA_PICKING']['attempts'][0]['request']['body']
+        # The proof names the real DREAM command; VLA checks it against DREAM itself.
+        self.assertEqual(pick['navigation_proof']['dream_command_id'], skipped)
+        self.assertEqual(len(port.submits), 5)
+        # Only the handoff across the skip is filled in; the later place handoff is still checked.
         self.assertEqual(runtime.state, 'recovery_required')
-        self.assertIn('缺少导航成功凭证', runtime.record['blocked_reason'])
-        self.assertEqual(len(port.submits), 1)
+        self.assertEqual(runtime.record['phase'], 'VLA_PLACING')
+        self.assertEqual(runtime.record['blocked_reason'], 'handoff_unconfirmed')
+        self.assertTrue(runtime.public_status()['has_failures'])
+
+    def test_skipped_failed_pick_bridges_next_handoff_and_dispatches_navigation(self):
+        runtime, port = self.failed_runtime('VLA_PICKING')
+        port.handoff_confirmed['to_nav'] = False  # bridged by the skip, never asked
+        runtime.skip_current(step_id='VLA_PICKING')
+        runtime.drive()
+        self.assertIn('NAVIGATING_TO_RELAY2', runtime.record['steps'])
+        self.assertTrue(runtime.record['steps']['NAVIGATING_TO_RELAY2']['attempts'][0]['submitted'])
         self.assertIsNone(runtime.record['holding'])
+        self.assertEqual(runtime.state, 'failed')
+        self.assertEqual([item['step_id'] for item in runtime.record['manual_skips']], ['VLA_PICKING'])
+
+    def test_unskipped_handoff_is_still_checked(self):
+        root = tempfile.TemporaryDirectory()
+        self.addCleanup(root.cleanup)
+        from tests.brain.test_kernel_reception import FakeBody, _runtime
+        port = FakeBody()
+        port.handoff_confirmed['to_vla'] = False
+        runtime = _runtime(root.name, port)
+        runtime.drive()
+        self.assertEqual(runtime.state, 'recovery_required')
+        self.assertEqual(runtime.record['blocked_reason'], 'handoff_unconfirmed')
+        self.assertEqual(len(port.submits), 1)
 
     def test_skip_requires_stop_release_and_same_command(self):
         from contracts.tasks import Rejected

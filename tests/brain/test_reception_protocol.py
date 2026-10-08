@@ -313,13 +313,13 @@ class ProtocolProcessTests(unittest.TestCase):
         with store.transaction() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM commands').fetchone()[0], 12)
 
-    def test_missing_controller_receipt_blocks_after_first_navigation(self):
+    def test_missing_controller_receipt_is_optional_when_transport_is_idle(self):
         self.start_pair(scenario='missing_receipt')
         service = self.service(); service.publish('开始接待', 'no-receipt')
-        self.assertEqual(service.status()['state'], 'recovery_required')
-        self.assertEqual(service.runtime.record['handoff_observation']['reason'], 'controller_receipt_unavailable')
+        self.assertEqual(service.status()['state'], 'succeeded')
+        self.assertEqual(service.runtime.record['handoff_observation']['reason'], 'transport_ready_without_receipt')
         with Store(self.root / 'sim.sqlite3').transaction() as db:
-            self.assertEqual(db.execute('SELECT count(*) FROM commands').fetchone()[0], 1)
+            self.assertEqual(db.execute('SELECT count(*) FROM commands').fetchone()[0], 6)
 
     def test_deployed_weak_evidence_blocks_without_regrasp(self):
         self.start_pair(scenario='hand_state_only')
