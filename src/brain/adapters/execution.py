@@ -83,12 +83,17 @@ class BodyAdapter:
                     and vla.get("policy_running") is False
                     and (vla.get("action_port") or {}).get("navigation_port_ready") is True)
         answer["transport_ready"] = nav_idle and vla_idle
-        answer["reason"] = "controller_receipt_unavailable" if answer["transport_ready"] else "transport_not_ready"
+        answer["reason"] = "transport_not_ready"
         if answer["transport_ready"]:
+            # The controller receipt is optional until NAV/VLA implement it: an idle
+            # transport with the source stopped and 5556 returned lets the task proceed.
+            # A receipt that is present must still be valid.
             from contracts.control_receipt import valid_receipt
             target = nav if context["kind"] == "to_nav" else vla
             receipt = target.get("control_receipt")
-            if receipt is not None:
+            if receipt is None:
+                answer.update(available=True, confirmed=True, reason="transport_ready_without_receipt")
+            else:
                 answer["controller_receipt"] = receipt
                 answer["reason"] = "controller_receipt_invalid"
                 if valid_receipt(receipt, context, completed_at=(source.get("raw") or {}).get("completed_at")):

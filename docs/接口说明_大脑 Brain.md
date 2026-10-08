@@ -17,7 +17,7 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | `GET /api/task_status` | 读取内核账本，支持 paused、waiting_human、cancelling、recovery_required；不改写旧账本 |
 | `GET /api/sops` | 返回已登记业务包的 SOP 标识、版本、范围和明确触发词；不是候选经验文件 |
 | `POST /api/task_pause`、`task_continue`、`task_cancel` | 送到 Runtime 所有者线程；取消受理不等于已经停止 |
-| `POST /api/task_skip` | 人工跳过指定待恢复／已暂停未完成步骤；必填 `task_id`、`step_id`，核对停止/资源后前移，保留失败，不伪造前置成功 |
+| `POST /api/task_skip` | 人工跳过指定待恢复／已暂停未完成步骤；必填 `task_id`、`step_id`，核对停止/资源后前移，保留失败，不伪造前置成功；跨越该跳过的下一次交接由大脑补齐，导航被跳过后照常下发操控（见规划第 21 节） |
 | `POST /api/task_preflight` | 只读提示，不等于下游已就绪或已取得真机许可 |
 | `GET /health`、`/api/execution_profile` | 进程工作器状态与已应用配置版本 |
 | `POST /api/reception/run`、`GET /api/reception/report` | 同一 Runtime 的 mock 演示与报告，不另起旧接待循环 |
@@ -565,7 +565,7 @@ LLM固定输出：
 
 运行环境的接待模块可选 `simulation_backend: reception_protocol`。从正式 `/publish_task` 入口执行「开始接待」，任务状态与账本标记 `execution_backend=reception_protocol`，仍执行 `reception.single_can` v1。独立下游默认延时成功，任务核验不设模拟特例。旧 `/api/reception/run` 是旧会议演示入口，不用它验证本流程。
 
-`handoff_observation` 现可包含共用可选合同 `fq/control-receipt/v1` 的核验结果；缺少该凭证仍阻断。详细启动、端点和真机差异见[接待协议模拟使用说明](使用说明_接待协议模拟.md)。
+`handoff_observation` 现可包含共用可选合同 `fq/control-receipt/v1` 的核验结果。2026-10-08 起缺少该凭证时，以通路空闲作为确认（`transport_ready_without_receipt`），见[规划第 21 节](规划说明_具身大脑重构.md#21-真机联调放行规则2026-10-08)。详细启动、端点和真机差异见[接待协议模拟使用说明](使用说明_接待协议模拟.md)。
 
 ## 语音文本入口（2026-09-29）
 
