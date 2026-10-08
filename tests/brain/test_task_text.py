@@ -53,6 +53,35 @@ class TaskTextTests(unittest.TestCase):
         self.assertEqual(line, '')  # Advice is archived, not another visible report.
         self.assertEqual(journal.call_args.kwargs['recovery_advice'], record['recovery_advice'])
 
+    def test_skip_and_pass_lines_name_the_step_they_are_about(self):
+        import tempfile
+        from brain.observability.events import emit
+        from tests.brain.test_kernel_reception import FakeBody, _runtime
+        port = FakeBody()
+        port.outcomes['VLA_PICKING'] = dict(terminal='failed', stopped=True, resources_released=True)
+        port.handoff_confirmed['to_nav'] = False  # bridged by the skip
+        with tempfile.TemporaryDirectory() as root:
+            runtime = _runtime(root, port)
+            runtime.drive()
+            lines = {}
+            def sink(event, record):
+                with patch('brain.observability.events.journal_emit') as journal:
+                    emit(event, record)
+                lines.setdefault(event, format_process_event(dict(kind='TASK', **journal.call_args.kwargs)))
+            runtime.event_sink = sink
+            runtime.skip_current(step_id='VLA_PICKING')
+            runtime.drive()
+        skipped = lines['step_manually_skipped'].splitlines()[0]
+        self.assertIn('人工跳过，未确认成功：抓取饮料（VLA_PICKING）', skipped)
+        self.assertIn('下一步：导航到中转点 2', skipped)
+        self.assertIn('cmd=vla-pick-', skipped)
+        handoff = lines['handoff_observed'].splitlines()[0]
+        self.assertIn('导航到中转点 2', handoff)
+        self.assertIn('因人工跳过由大脑补齐', handoff)
+        self.assertIn('跨越：抓取饮料', handoff)
+        passed = lines['step_passed'].splitlines()[0]
+        self.assertIn('核验通过：导航到中转点 2（NAVIGATING_TO_RELAY2）', passed)
+
     def test_current_alert_translates_but_retains_unknown_command_warning(self):
         task = {'task_id': 't', 'phase': 'NAVIGATING_TO_TABLE2', 'state': 'waiting_human',
                 'blocked_reason': 'real_execution_disabled', 'command_unknown': True}

@@ -73,6 +73,16 @@ REASONS = {
     'handoff_blocked': '导航与操控之间的控制权交接尚未确认',
     'Task accepted': '任务已接收', 'Task was not accepted': '任务未被接受',
 }
+HANDOFFS = {
+    'manual_skip': '因人工跳过由大脑补齐，未向下游核验',
+    'transport_ready_without_receipt': '下游未提供控制器凭证，按通路空闲放行',
+    'controller_confirmed': '控制器凭证核验通过',
+    'transport_not_ready': '导航或操控仍在占用动作通路',
+    'source_stop_unconfirmed': '上一动作的停止或资源归还未确认',
+    'source_command_unavailable': '找不到上一动作的原指令',
+    'control_status_unavailable': '无法读取导航或操控状态',
+    'controller_receipt_invalid': '控制器凭证无效',
+}
 ACTIONS = {'query_original': '查询原指令的执行状态', 'request_help': '请现场负责人确认执行条件',
            'wait': '等待执行条件就绪', 'cancel': '通过原任务入口取消任务',
            'continue': '确认执行条件后，通过原任务入口继续'}
@@ -184,6 +194,16 @@ def format_process_event(record):
             message += '：' + PHASES.get(phase, phase)
             if phase in PHASES:
                 message += f'（{phase}）'
+        if event == 'step_manually_skipped' and record.get('next_step_id'):
+            following = record['next_step_id']
+            message += '；下一步：' + PHASES.get(following, following)
+        if event == 'handoff_observed' and record.get('handoff_reason'):
+            outcome = record['handoff_reason']
+            message += '；' + ('已确认' if record.get('handoff_confirmed') else '未确认')
+            message += '，' + HANDOFFS.get(outcome, outcome) + f'（{outcome}）'
+            skipped = record.get('skipped_steps') or []
+            if skipped:
+                message += '；跨越：' + '、'.join(PHASES.get(step, step) for step in skipped)
         if event == 'gate':
             tag = '等待'
         elif event == 'recovery_advised':
@@ -274,7 +294,8 @@ def format_process_event(record):
     used = {'time', 'kind', 'event', 'task_id', 'id', 'source', 'from', 'via', 'component',
             'state', 'backend', 'revision', 'environment_revision', 'release_id', 'step_id',
             'command_id', 'cmd', 'attempt_id', 'blocked_reason', 'advice_action', 'task_desc', 'step_count',
-            'diagnostic', 'recovery_advice', 'method', 'path', 'plan_steps'}
+            'diagnostic', 'recovery_advice', 'method', 'path', 'plan_steps',
+            'next_step_id', 'handoff_reason', 'handoff_confirmed', 'skipped_steps'}
     if kind == 'INBOUND':
         used.update({'text', 'intent', 'risk'})
         for flag in ('force_new', 'resume'):
