@@ -1,4 +1,6 @@
 const STATE_LABEL = {
+  checking: "检查中",
+  unknown: "状态未知",
   tmux: "运行中",
   unmanaged: "未托管",
   stopped: "已停止",
@@ -15,14 +17,21 @@ const REMOTE_ACTION_LABEL = {restart: "重启",
 let selectedLayer = "brain";
 let selected = "master";
 let busy = false;
-let snapshot = { brain: [], environment: [], support: [], robot: [] };
+let snapshot = JSON.parse(document.getElementById("initial-services").textContent);
 let logToken = 0;
 let logAbort = null;
-let statusInFlight = false;
+const statusInFlight = new Set();
+let overviewInFlight = false;
+let activeLogRequest = "";
 let logPath = "";
-let logKind = "brain";
 let reviewWasReady = null;
 let reviewOpened = false;
+let brainOverview = {};
+let renderedLog = "";
+
+const TASK_STATE = {running: "执行中", verifying: "核验中", succeeded: "已完成", failed: "已失败",
+  cancelled: "已取消", cancelling: "取消确认中", paused: "已暂停", waiting_human: "等待人工处理",
+  recovery_required: "待恢复"};
 
 function $(id) {
   return document.getElementById(id);
@@ -33,7 +42,6 @@ function layerItems() {
 }
 
 function logItems() {
-  if (selectedLayer === "brain") return layerItems().filter((item) => item.id === "master");
   if (selectedLayer === "environment" && $("execution-support").open) {
     return [...layerItems(), ...(snapshot.support || [])];
   }
@@ -54,6 +62,9 @@ function currentItem() {
 
 function selectLayer(layer) {
   selectedLayer = layer;
+  if (layer === "brain") {
+    selected = "master";
+  }
   ensureSelection();
   logPath = "";
   document.querySelectorAll(".layer").forEach((button) => {
@@ -61,8 +72,8 @@ function selectLayer(layer) {
   });
   render(true);
   showLogPlaceholder();
-  updateLogKinds();
   loadLogs(true);
+  refresh();
 }
 
 function selectService(id) {
@@ -75,7 +86,6 @@ function selectService(id) {
   logPath = "";
   markActive();
   showLogPlaceholder();
-  updateLogKinds();
   loadLogs(true);
 }
 
@@ -99,6 +109,11 @@ function escapeHtml(value) {
 }
 
 function healthLine(item) {
+  if (item.id === "master") {
+    if (brainOverview.errors?.health) return "大脑健康接口不可达";
+    const health = brainOverview.health;
+    if (health) return health.ready && health.state === "healthy" ? "大脑已就绪" : "大脑尚未就绪";
+  }
   const health = item.health || {};
   const latency = health.latency_ms != null ? `${health.latency_ms}ms` : "";
   return [health.detail, latency].filter(Boolean).join(" · ");
@@ -131,7 +146,7 @@ function card(item) {
   el.dataset.review = String(item.review_ok);
   const entry = item.id === "deploy" || item.id === "feishu" || item.id === "voice";
   el.classList.toggle("entry-card", entry);
-  if (!entry) el.onclick = () => selectService(item.id);
+  el.onclick = () => selectService(item.id);
   const port = item.port ? `端口 ${item.port}` : "无本地端口";
   const line = healthLine(item);
   el.innerHTML = `
@@ -160,6 +175,7 @@ function card(item) {
         url.pathname = "/";
         url.search = "";
         url.hash = "";
+        link.onclick = (event) => event.stopPropagation();
         link.href = url.href;
         link.target = "_blank";
         link.rel = "noopener";
@@ -201,7 +217,40 @@ function card(item) {
     hasActions = true;
   }
   if (hasActions) el.appendChild(actions);
+  if (["checking", "unknown"].includes(item.state)) {
+    actions.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  }
+  if (item.id === "master") {
+    el.classList.add("brain-primary");
+    const summary = document.createElement("div");
+    summary.className = "brain-summary";
+    el.insertBefore(summary, actions);
+    updateBrainSummary(el);
+  }
   return el;
+}
+
+function updateBrainSummary(el) {
+  const host = el.querySelector(".brain-summary");
+  if (!host) return;
+  const task = brainOverview.task || {};
+  const profile = brainOverview.profile || {};
+  const mode = profile.config?.mode;
+  const route = profile.routes?.reception;
+  const modeText = mode === "real" ? "真机" : mode === "simulation" ? "仿真" : "未知";
+  const unfinished = task.task_id && !["succeeded", "failed", "cancelled", "completed_hand_state_only"].includes(task.state);
+  const taskText = brainOverview.errors?.task ? "无法读取任务状态" : task.active || unfinished
+    ? `${TASK_STATE[task.state] || task.state || "处理中"} · ${task.task_id || ""}`
+    : task.task_id ? `无活动任务 · 上一任务${TASK_STATE[task.state] || task.state || ""}` : "无活动任务";
+  host.textContent = `${modeText}${route?.backend === "reception_protocol" ? " · 协议模拟" : ""} · ${taskText}`;
+  if (!brainOverview.health) host.textContent = "正在读取状态…";
+  host.title = host.textContent;
+  const badge = el.querySelector(".badge");
+  if (badge && brainOverview.health) {
+    const ready = brainOverview.health.ready && brainOverview.health.state === "healthy";
+    badge.textContent = ready ? "已就绪" : "未就绪";
+    badge.className = `badge ${ready ? "up" : "down"}`;
+  }
 }
 
 function tab(item) {
@@ -234,27 +283,8 @@ function markActive() {
     el.classList.toggle("active", el.dataset.id === selected);
   });
   const current = currentItem();
-  const titles = {
-    brain: "指挥日志",
-    raw: "原始日志",
-    http: "HTTP 访问日志",
-  };
-  if (current && current.id === "master") {
-    $("log-title").textContent = `大脑 ${titles[logKind] || "指挥日志"}`;
-  } else {
-    $("log-title").textContent = current ? `${current.name} 运行日志` : "运行日志";
-  }
+  $("log-title").textContent = current ? `${current.name} 日志` : "运行日志";
   $("log-meta").textContent = logPath;
-}
-
-function updateLogKinds() {
-  const host = $("log-kinds");
-  const current = currentItem();
-  const show = Boolean(current && current.id === "master");
-  host.hidden = !show;
-  host.querySelectorAll("button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.kind === logKind);
-  });
 }
 
 function showLogPlaceholder() {
@@ -262,7 +292,7 @@ function showLogPlaceholder() {
   log.classList.remove("error");
   log.classList.add("loading");
   log.textContent = "加载中…";
-  $("log-pin").hidden = true;
+  renderedLog = "";
 }
 
 function patchCard(el, item) {
@@ -279,6 +309,7 @@ function patchCard(el, item) {
   }
   const health = el.querySelector(".health");
   if (health) health.textContent = healthLine(item);
+  if (item.id === "master") updateBrainSummary(el);
 }
 
 function render(full) {
@@ -286,9 +317,9 @@ function render(full) {
   const environment = selectedLayer === "environment";
   const brain = selectedLayer === "brain";
   $("layer-title").textContent = {brain: "大脑层", environment: "运行环境", robot: "真机层"}[selectedLayer];
-  $("layer-count").textContent = brain ? "1 个大脑 · 2 个入口" : `${items.length} 个${environment ? "仿真" : "真机"}服务`;
+  $("layer-count").textContent = brain ? `1 个大脑 · ${items.filter((item) => item.id !== "master").length} 个输入通道` : `${items.length} 个${environment ? "仿真" : "真机"}服务`;
   $("layer-hint").textContent = {
-    brain: "任务网页和飞书共用同一个大脑。任务进展统一查看下方大脑日志。",
+    brain: "点击上方卡片查看对应服务的运行日志。",
     environment: "统一配置仿真与真机，也可按模块单独选择。仿真服务在这里启停。",
     robot: "DREAM 导航与 VLA 操控。启停服务不会发布「开始接待」任务。",
   }[selectedLayer];
@@ -297,7 +328,11 @@ function render(full) {
   $("execution-support").hidden = !environment;
   $("services-title").hidden = !environment;
   $("tabs").hidden = brain;
+  document.querySelector(".workspace").classList.toggle("brain", brain);
+  $("layer-hint").hidden = brain;
   renderCards($("cards"), items, full);
+  $("log-pin").hidden = true;
+  $("log-pin").textContent = "";
   if (environment) renderCards($("support-cards"), snapshot.support || [], full);
   const tabs = $("tabs");
   const logs = logItems();
@@ -395,7 +430,8 @@ async function act(item, action) {
     status.classList.add("error");
   } finally {
     busy = false;
-    refresh(true);
+    refresh();
+    loadLogs(true);
   }
 }
 
@@ -403,56 +439,85 @@ async function loadLogs(reset) {
   if (busy) return;
   const current = currentItem();
   if (!current) return;
+  if (!reset && activeLogRequest === current.id) return;
+  activeLogRequest = current.id;
   const token = ++logToken;
   if (logAbort) logAbort.abort();
   logAbort = new AbortController();
   const log = $("log");
   const stick = !reset && stickToBottom(log);
   try {
-    const kindQuery = current.id === "master" ? `&kind=${encodeURIComponent(logKind)}` : "";
+    const params = new URLSearchParams({lines: "8000"});
     const logs = await fetch(
-      `/api/services/${encodeURIComponent(current.id)}/logs?lines=3000${kindQuery}`,
+      `/api/services/${encodeURIComponent(current.id)}/logs?${params}`,
       { signal: logAbort.signal }
     );
     const body = await logs.json();
+    if (!logs.ok) throw new Error(body.error || "日志读取失败");
     if (busy || token !== logToken || body.id !== selected) return;
     log.classList.remove("error", "loading");
-    log.textContent = body.text || "暂无日志";
+    const signature = JSON.stringify([current.id, body.text]);
+    if (signature !== renderedLog) {
+      const scroll = log.scrollTop;
+      log.textContent = (body.text || "暂无日志").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+      renderedLog = signature;
+      if (!reset && !stick) log.scrollTop = scroll;
+    }
     logPath = body.path || "";
     $("log-meta").textContent = logPath;
-    const pinBox = $("log-pin");
-    if (pinBox) {
-      const pinText = current.id === "master" && logKind === "brain" ? body.pin : "";
-      pinBox.hidden = !pinText;
-      pinBox.textContent = pinText ? `失败钉住：${pinText}` : "";
-    }
     if (reset || stick) log.scrollTop = log.scrollHeight;
   } catch (error) {
     if (error.name === "AbortError" || token !== logToken || busy) return;
     log.classList.remove("loading");
+    renderedLog = "";
     log.textContent = String(error);
     log.classList.add("error");
+  } finally {
+    if (token === logToken) activeLogRequest = "";
   }
 }
 
-async function refresh(forceCards) {
-  if (statusInFlight) return;
-  statusInFlight = true;
+async function refreshLayer(layer) {
+  if (statusInFlight.has(layer)) return;
+  statusInFlight.add(layer);
   try {
-    const response = await fetch("/api/status");
+    const response = await fetch(`/api/status?layer=${layer}`, {signal: AbortSignal.timeout(15000)});
+    if (!response.ok) throw new Error("服务状态读取失败");
     const data = await response.json();
-    snapshot = data;
-    popReviewPage(data.robot || []);
-    $("attach").textContent = data.attach || "tmux ls";
-    ensureSelection();
-    render(Boolean(forceCards));
-    updateLogKinds();
-    await loadLogs(false);
+    snapshot[layer] = data[layer];
+    if (layer === "robot") popReviewPage(data.robot || []);
   } catch (error) {
-    $("log-meta").textContent = String(error);
+    snapshot[layer] = (snapshot[layer] || []).map((item) => ({...item,
+      state: "unknown", health: {ok: null, detail: "状态读取失败"}}));
   } finally {
-    statusInFlight = false;
+    statusInFlight.delete(layer);
+    render(false);
   }
+}
+
+async function refreshOverview() {
+  if (overviewInFlight) return;
+  overviewInFlight = true;
+  try {
+    const response = await fetch("/api/brain/overview", {signal: AbortSignal.timeout(5000)});
+    if (!response.ok) throw new Error("大脑状态读取失败");
+    brainOverview = await response.json();
+  } catch (error) {
+    brainOverview = {errors: {health: true, task: true},
+      alert: {level: "ERROR", message: "无法读取大脑当前状态"}};
+  } finally {
+    overviewInFlight = false;
+    render(false);
+  }
+}
+
+function refresh() {
+  // Each layer completes independently. Logs never wait for health checks.
+  refreshLayer(selectedLayer);
+  for (const layer of ["brain", "environment", "support", "robot"]) {
+    if (layer !== selectedLayer) refreshLayer(layer);
+  }
+  refreshOverview();
 }
 
 document.querySelectorAll(".layer").forEach((button) => {
@@ -467,14 +532,15 @@ $("execution-support").ontoggle = () => {
   loadLogs(true);
 };
 
-document.querySelectorAll("#log-kinds button").forEach((button) => {
-  button.onclick = () => {
-    logKind = button.dataset.kind || "brain";
-    updateLogKinds();
-    markActive();
-    loadLogs(true);
-  };
+$("server-address").textContent = window.location.host;
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) { refresh(); loadLogs(false); }
 });
 
-refresh(true);
-setInterval(() => refresh(false), 3000);
+render(true);
+showLogPlaceholder();
+loadLogs(true);
+refresh();
+setInterval(() => {
+  if (!document.hidden) { refresh(); loadLogs(false); }
+}, 3000);

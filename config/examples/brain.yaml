@@ -63,7 +63,7 @@ reception_real:
   vla_base_url: ${VLA_BASE_URL}
   vla_result_policy: hand_state_only
   runtime_dir: data/retired/reception
-  # 真机动作许可，默认关闭。接待仍进 Runtime，在派发前等待，不回落旧流程。
+  # 真机动作许可。应用真机接待时打开，应用非真机接待时关闭。接待仍进 Runtime，闸门未开时在派发前等待。
   kernel_enabled: false
   kernel_runtime_dir: data/tasks
   # 短时上下文窗口。只裁剪读取，不删除任务账本和未核清命令。

@@ -1,5 +1,6 @@
 """Read-only capture/VLM adapter for the existing capture_scene result contract."""
 import json
+import time
 from contracts.look import cameras_for
 from brain.adapters.vlm import _endpoint_cfg, _api_key, _vlm_cfg
 
@@ -21,9 +22,26 @@ def capture_scene(context='', camera_name=''):
     endpoint, config = _endpoint_cfg(), _vlm_cfg()
     client = OpenAI(api_key=_api_key(endpoint['key_names']), base_url=endpoint['api_base'], timeout=60, max_retries=0)
     options = {'extra_body': config['extra_body']} if config.get('extra_body') else {}
-    result = client.chat.completions.create(model=endpoint['model'], messages=[{'role': 'user', 'content': content}],
-        max_tokens=config.get('max_tokens', 1000), temperature=0, **options)
+    url = str(endpoint['api_base']).rstrip('/') + '/chat/completions'
+    started = time.perf_counter()
+    try:
+        result = client.chat.completions.create(model=endpoint['model'], messages=[{'role': 'user', 'content': content}],
+            max_tokens=config.get('max_tokens', 1000), temperature=0, **options)
+    except Exception as exc:
+        _log_capture(url, endpoint['model'], context, started, error=exc)
+        raise
     text = (result.choices[0].message.content or '').strip()
+    _log_capture(url, endpoint['model'], context, started, status=200, result=text)
     if not text:
         raise RuntimeError('VLM 返回空描述')
     return json.dumps(['视野描述（' + '、'.join(captured) + '）：' + text, {'_status': 'success'}], ensure_ascii=False)
+
+
+def _log_capture(url, model, context, started, **fields):
+    try:
+        from shared.log_setup import log_forward
+        log_forward('画面描述（capture）', 'POST', url, model=model,
+                    duration_s=time.perf_counter() - started,
+                    request_text=context or '画面描述（image）', **fields)
+    except Exception:
+        pass

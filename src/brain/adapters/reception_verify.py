@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 
@@ -30,6 +31,31 @@ def _content_text(message_content):
             for item in message_content
         )
     return str(message_content or "")
+
+
+def _text_excerpt(messages):
+    for item in reversed(messages or []):
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        if isinstance(content, list):
+            texts = [part.get("text", "") for part in content
+                     if isinstance(part, dict) and part.get("type") == "text"]
+            joined = " ".join(piece.strip() for piece in texts if str(piece).strip())
+            if joined:
+                return joined
+    return "核验请求（verify）"
+
+
+def _log_model(url, model, request_text, started, **fields):
+    try:
+        from shared.log_setup import log_forward
+        log_forward("结果核验（verify）", "POST", url, model=model,
+                    duration_s=time.perf_counter() - started, request_text=request_text, **fields)
+    except Exception:
+        pass
 
 
 def _parse_json_object(text):
@@ -71,8 +97,9 @@ class ReceptionVerifier:
             "temperature": 0,
             "max_tokens": int(max_tokens),
         }
+        url = api_base + "/chat/completions"
         req = urllib.request.Request(
-            api_base + "/chat/completions",
+            url,
             data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
             method="POST",
             headers={
@@ -80,17 +107,24 @@ class ReceptionVerifier:
                 "Authorization": f"Bearer {key}",
             },
         )
+        started = time.perf_counter()
+        request_text = _text_excerpt(messages)
         try:
             with urllib.request.urlopen(
                 req, timeout=float(endpoint_config.get("timeout_sec", 120))
             ) as response:
+                status = getattr(response, "status", 200)
                 payload = json.loads(response.read().decode("utf-8"))
         except (urllib.error.URLError, urllib.error.HTTPError, ValueError) as exc:
+            _log_model(url, model, request_text, started, error=exc)
             raise VerificationError(f"模型调用失败({model}): {exc}") from exc
         try:
-            return _content_text(payload["choices"][0]["message"]["content"])
+            answer = _content_text(payload["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
+            _log_model(url, model, request_text, started, status=status, error=exc)
             raise VerificationError(f"模型响应结构错误({model})") from exc
+        _log_model(url, model, request_text, started, status=status, result=answer)
+        return answer
 
     @staticmethod
     def _vlm_prompt(operation, object_id, target_id):

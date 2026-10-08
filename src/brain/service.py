@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import threading
-import logging
 import uuid
 from copy import deepcopy
 
@@ -191,7 +190,6 @@ class BrainService:
                     runtime.fail_closed(str(exc))
                 except Rejected:
                     return
-                logging.getLogger("brain").exception("执行异常")
             self._advise(runtime)
             if runtime.state in {"succeeded", "recovery_required", "cancelled", "failed"}:
                 if runtime.record.get("reflection_enabled", True):

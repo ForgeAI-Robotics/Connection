@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from collections import Counter
 
 import yaml
@@ -166,14 +167,19 @@ def judge(current_dir, standard_dir, sop, current_img=None):
     }).encode()
 
     import urllib.request
+    url = ep["api_base"].rstrip("/") + "/chat/completions"
     req = urllib.request.Request(
-        ep["api_base"].rstrip("/") + "/chat/completions", data=body, method="POST",
+        url, data=body, method="POST",
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
+    started = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=120) as r:
+            status = getattr(r, "status", 200)
             raw = json.loads(r.read())["choices"][0]["message"]["content"]
     except Exception as exc:
+        _log_judge(url, ep["model"], started, error=exc)
         return None, f"{ep['model']} 调用失败: {exc}"
+    _log_judge(url, ep["model"], started, status=status, result=raw)
 
     m = re.search(r"\[.*\]", raw, re.S)
     text = m.group(0) if m else raw
@@ -191,6 +197,16 @@ def judge(current_dir, standard_dir, sop, current_img=None):
         if objs:
             return objs, None
         return None, f"JSON 解析失败: {exc}; 原文前 200 字: {raw[:200]}"
+
+
+def _log_judge(url, model, started, **fields):
+    try:
+        from shared.log_setup import log_forward
+        log_forward('桌面视觉（vlm）', 'POST', url, model=model,
+                    duration_s=time.perf_counter() - started,
+                    request_text='桌面照片对比（image）', **fields)
+    except Exception:
+        pass
 
 
 def main():

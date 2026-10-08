@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
+
+_ANSI = re.compile(r'\x1b\[[0-9;]*m')
 
 PROCESS_LOG_ENV = "FQPLANNER_PROCESS_LOG"
 LOG_ROOT_ENV = "FQPLANNER_LOG_ROOT"
@@ -59,6 +62,34 @@ def write_process_note(line: str) -> None:
     print(text, flush=True)
 
 
+def print_beijing(level, name, body):
+    from shared.task_text import beijing_block
+    print(beijing_block(level, body, name=name), flush=True)
+
+
+def log_forward(purpose, method, url, *, status=None, duration_s=None, request_text=None,
+                result=None, error=None, model=None):
+    """One outbound forward in the process log. Secrets are never included."""
+    ok = error is None and (status is None or int(status) < 400)
+    lines = [f'{"转发完成" if ok else "转发失败"}：{purpose} {method} {url}']
+    meta = []
+    if model:
+        meta.append(f'model={model}')
+    if status is not None:
+        meta.append(f'HTTP {status}')
+    if duration_s is not None:
+        meta.append(f'耗时={duration_s:.2f}s')
+    if meta:
+        lines.append('  ' + '  '.join(meta))
+    if request_text:
+        lines.append('  请求=' + compact_log_text(request_text, 500))
+    if result is not None and str(result).strip():
+        lines.append('  结果=' + compact_log_text(result, 800))
+    if error is not None:
+        lines.append('  error=' + str(error))
+    print_beijing('INFO' if ok else 'ERROR', 'master', '\n'.join(lines))
+
+
 def compact_log_text(value, limit: int = 180) -> str:
     text = str(value or "").replace("\n", " ").strip()
     if len(text) > limit:
@@ -91,6 +122,8 @@ class _BytesTee:
             return 0
         if isinstance(data, str):
             data = data.encode("utf-8", "replace")
+        elif isinstance(data, bytes):
+            data = _ANSI.sub('', data.decode("utf-8", "replace")).encode("utf-8")
         self._original.write(data)
         self._file.write(data.decode("utf-8", "replace"))
         self._file.flush()
@@ -115,6 +148,7 @@ class _Tee:
             return 0
         if isinstance(data, bytes):
             return self.buffer.write(data)
+        data = _ANSI.sub('', data)
         self._original.write(data)
         self._file.write(data)
         self._file.flush()
@@ -152,12 +186,15 @@ def attach_process_log(service: str) -> Path:
     sys.stdout = _Tee(sys.stdout, handle)
     sys.stderr = _Tee(sys.stderr, handle)
     _ATTACHED = True
-    print(f"[log] {service} -> {path}", flush=True)
+    from shared.quiet_http_log import configure_process_logging
+    configure_process_logging(service)
     if service == "master":
-        print(f"[log] reception archive -> {os.environ[RECEPTION_RUNTIME_ENV]}", flush=True)
+        print_beijing('INFO', 'master', f'大脑进程已启动（master boot）\n  pid={os.getpid()}\n  log={path}')
         from shared.brain_journal import attach_master_journal
 
         attach_master_journal()
+    else:
+        print(f"[log] {service} -> {path}", flush=True)
     return path
 
 

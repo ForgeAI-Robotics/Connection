@@ -13,5 +13,5 @@ modules:
     mode: inherit             # 现场观察及网页画面
     simulation_backend: inherit
 # 接待仿真是 reception_mock；Desk 不出图。
-# 真机动作许可仍由 config/brain.yaml reception_real.kernel_enabled 控制。
+# 应用真机接待会打开 config/brain.yaml 的 kernel_enabled；应用非真机接待会关闭。下游闸门仍可拦住派发。
 # 全局 real 下未接入的真机模块会明确不可用，不会偷偷使用仿真。
