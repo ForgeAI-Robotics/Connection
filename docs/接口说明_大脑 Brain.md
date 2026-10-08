@@ -15,7 +15,7 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | --- | --- |
 | `POST /publish_task` | 保留 task、task_id、refresh、resume 与 accepted 等现有字段；一次只接受一个顶层任务，拒绝时不自动重发 |
 | `GET /api/task_status` | 读取内核账本，支持 paused、waiting_human、cancelling、recovery_required；不改写旧账本 |
-| `GET /api/sops` | 返回已登记业务包的 SOP 标识、版本、范围和明确触发词；不是候选经验文件 |
+| `GET /api/sops` | 返回已登记业务包的 SOP 标识、版本、范围和明确触发词（`packages`），以及只能由明确触发词选中的 SOP 变体（`variants`，如仅导航接待）；不是候选经验文件 |
 | `POST /api/task_pause`、`task_continue`、`task_cancel` | 送到 Runtime 所有者线程；取消受理不等于已经停止 |
 | `POST /api/task_skip` | 人工跳过指定待恢复／已暂停未完成步骤；必填 `task_id`、`step_id`，核对停止/资源后前移，保留失败，不伪造前置成功；跨越该跳过的下一次交接由大脑补齐，导航被跳过后照常下发操控（见规划第 21 节） |
 | `POST /api/task_preflight` | 只读提示，不等于下游已就绪或已取得真机许可 |

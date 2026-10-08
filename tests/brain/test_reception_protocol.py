@@ -313,6 +313,32 @@ class ProtocolProcessTests(unittest.TestCase):
         with store.transaction() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM commands').fetchone()[0], 12)
 
+    def test_nav_only_entry_drives_four_legs_over_http_and_never_calls_vla(self):
+        from brain.application import BrainApplication
+        from brain.api.app import create_app as brain_app
+        self.start_pair(scenario='nav_only')
+        application = BrainApplication(self.service()).start()
+        self.addCleanup(application.close)
+        client = brain_app(application).test_client()
+        response = client.post('/publish_task', json={'task': '开始接待（仅导航）', 'task_id': 'nav-only-e2e'})
+        self.assertEqual(response.status_code, 200, response.json)
+        self.assertTrue(response.json['accepted'], response.json)
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            status = client.get('/api/task_status').json
+            if status.get('state') in {'succeeded', 'failed', 'recovery_required'}:
+                break
+            time.sleep(.05)
+        self.assertEqual(status['state'], 'succeeded', status)
+        self.assertEqual(status['selection']['sop']['id'], 'reception.single_can.nav_only')
+        self.assertEqual([item['step_id'] for item in status['subtask_list']],
+                         ['INITIALIZING', 'FETCHING_WORLD', 'NAVIGATING_TO_TABLE2', 'NAVIGATING_TO_RELAY2',
+                          'LATERAL_TO_RELAY3', 'NAVIGATING_TO_TABLE1'])
+        with Store(self.root / 'sim.sqlite3').transaction() as db:
+            rows = db.execute('SELECT id, role FROM commands ORDER BY rowid').fetchall()
+        self.assertEqual({role for _, role in rows}, {'nav'})  # the VLA simulator received nothing
+        self.assertEqual([c.rsplit('-', 1)[0] for c, _ in rows], ['nav-table2', 'nav-relay2', 'nav-relay3', 'nav-table1'])
+
     def test_missing_controller_receipt_is_optional_when_transport_is_idle(self):
         self.start_pair(scenario='missing_receipt')
         service = self.service(); service.publish('开始接待', 'no-receipt')

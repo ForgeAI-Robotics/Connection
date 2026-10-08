@@ -143,8 +143,8 @@ def register_views(app, application):
 
     @app.get('/api/sops')
     def registered_sops():
-        from brain.packages.registry import SOPS
-        return jsonify({'success': True, 'packages': SOPS})
+        from brain.packages.registry import SOPS, VARIANTS
+        return jsonify({'success': True, 'packages': SOPS, 'variants': VARIANTS})
 
     @app.get('/api/sop')
     @app.get('/api/reception/sop')

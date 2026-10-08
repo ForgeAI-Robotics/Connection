@@ -153,6 +153,7 @@
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
                 <button id="task-start" class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
+                <button id="task-start-nav" class="btn btn-sm" style="background:#0369a1;color:#fff" title="大脑+导航联调：只跑四段导航，不派发抓取与放置" onclick="startReception('开始接待（仅导航）')">🧭 开始接待（仅导航）</button>
                 <button id="task-skip" class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
                 <button id="task-pause" class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
                 <button id="task-continue" class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
@@ -289,6 +290,7 @@
             const active = !!displayedTask?.task_id && !displayedTask.terminal;
             const enabled = {
                 start: !taskSubmitting && !taskControlPending && !active,
+                'start-nav': !taskSubmitting && !taskControlPending && !active,
                 skip: !taskControlPending && !!displayedTask?.can_skip,
                 pause: !taskControlPending && ['running', 'verifying'].includes(state),
                 continue: !taskControlPending && !!displayedTask?.can_resume,
@@ -378,8 +380,8 @@
             }
         }
         // 会议接待:一键触发(填"开始接待"→ master 命中接待 skill → 复用 task_status 显示 🧠+子任务✓)
-        function startReception() {
-            document.getElementById('task').value = '开始接待';
+        function startReception(text) {
+            document.getElementById('task').value = text || '开始接待';
             sendTask({skipConfirm: true});
         }
         async function controlReception(action) {

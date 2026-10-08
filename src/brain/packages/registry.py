@@ -11,6 +11,8 @@ SOPS = {
     "look": {"id": "look.describe", "version": "1", "description": "只观察并描述现场，不移动物体。"},
     "desk": {"id": "desk.tidy", "version": "1", "description": "按当前桌面关系整理，展开已有技能并核验。"},
 }
+# Alternative SOPs of a package, reachable only by their exact triggers.
+VARIANTS = {"reception": (reception.NAV_ONLY_SOP,)}
 
 
 def match_name(task) -> str:
