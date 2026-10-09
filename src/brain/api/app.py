@@ -103,7 +103,7 @@ def create_app(application, *, facade=None):
 
     @app.route("/api/task_cancel", methods=["POST"])
     def task_cancel():
-        """请求取消当前 Runtime 任务。受理不等于已经取消完成。"""
+        """废弃本轮大脑任务，不向执行端发送停止指令。"""
         return _control('cancel')
 
     @app.route("/api/task_preflight", methods=["POST"])
@@ -404,6 +404,8 @@ def create_app(application, *, facade=None):
             return jsonify({"success": False, "error": "当前没有接待任务"}), 404
         return jsonify({"success": True, "report": {
             "task_id": status.get("task_id"), "verdict": status.get("state") == "succeeded",
+            "attempt_summary": status.get("attempt_summary", {}),
+            "failure_history": status.get("failure_history", []),
             "state": status.get("state"), "checks": [
                 {"name": item["subtask"], "pass": item["status"] == "success", "detail": item["result"]}
                 for item in status.get("subtask_list", [])],

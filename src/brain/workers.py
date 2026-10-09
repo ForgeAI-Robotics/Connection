@@ -85,6 +85,11 @@ class RuntimeOwner:
         self.stopping = threading.Event()
         self._guard = threading.Lock()
         self._control_depth = 0
+        self._wait_generation = 0
+
+    def interrupt_waits(self):
+        """Release the task owner from abandoned I/O without sending remote controls."""
+        self._wait_generation += 1
 
     def start(self):
         with self._guard:
@@ -124,11 +129,15 @@ class RuntimeOwner:
     def wait(self, future):
         if threading.current_thread() is not self.thread or self._control_depth:
             return future.result()
+        generation = self._wait_generation
         while not future.done():
             try:
                 self._execute(self.control.get(timeout=.02), control=True)
             except queue.Empty:
                 pass
+            if generation != self._wait_generation:
+                future.cancel()
+                raise Rejected('本轮任务已取消，结束本地等待')
         return future.result()
 
     def _run(self):

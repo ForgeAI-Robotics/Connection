@@ -637,14 +637,14 @@ class ReplayTests(unittest.TestCase):
             self.assertNotEqual(runtime.drive(), "succeeded")
             self.assertNotEqual(runtime.record["object_location"], "table_1")
 
-    def test_cancel_accepted_is_not_cancelled(self):
+    def test_task_cancel_completes_locally(self):
         with tempfile.TemporaryDirectory() as root:
             port = FakeBody()
             runtime = _runtime(root, port)
             result = runtime.request_cancel()
             self.assertTrue(result["accepted"])
-            self.assertFalse(result["completed"])
-            self.assertEqual(runtime.state, "cancelling")
+            self.assertTrue(result["completed"])
+            self.assertEqual(runtime.state, "cancelled")
 
     def test_cancel_cleared_becomes_cancelled(self):
         with tempfile.TemporaryDirectory() as root:
@@ -655,14 +655,14 @@ class ReplayTests(unittest.TestCase):
             )
             self.assertEqual(runtime.state, "cancelled")
 
-    def test_cancel_unclear_becomes_recovery(self):
+    def test_remote_stop_uncertainty_does_not_reopen_cancelled_task(self):
         with tempfile.TemporaryDirectory() as root:
             runtime = _runtime(root)
             runtime.request_cancel()
             runtime.resolve_cancel(
                 command_terminal=True, stopped=False, resources_released=False,
             )
-            self.assertEqual(runtime.state, "recovery_required")
+            self.assertEqual(runtime.state, "cancelled")
 
     def test_navigation_gate_waits_for_human(self):
         with tempfile.TemporaryDirectory() as root:
@@ -750,13 +750,11 @@ class SwitchTests(unittest.TestCase):
         self.assertFalse(kernel_enabled({"reception_real": {}}))
         self.assertFalse(kernel_enabled({"reception_real": {"kernel_enabled": False}}))
         self.assertTrue(kernel_enabled({"reception_real": {"kernel_enabled": True}}))
-        for relative in (
-            os.path.join("config", "examples", "brain.yaml"),
-            os.path.join("config", "brain.yaml"),
-        ):
-            with open(os.path.join(ROOT, relative), "r", encoding="utf-8") as handle:
-                loaded = yaml.safe_load(handle)
-            self.assertIs(loaded["reception_real"]["kernel_enabled"], False)
+        # The tracked template defines the default. The local ignored config is
+        # intentionally changed by the panel when applying a real environment.
+        with open(os.path.join(ROOT, "config", "examples", "brain.yaml"), "r", encoding="utf-8") as handle:
+            loaded = yaml.safe_load(handle)
+        self.assertIs(loaded["reception_real"]["kernel_enabled"], False)
 
     def test_control_routes_are_wired(self):
         with open(os.path.join(ROOT, "src/brain/api/app.py"), encoding="utf-8") as handle:
@@ -959,17 +957,17 @@ class ReviewTests(unittest.TestCase):
             thread.start()
             self.assertTrue(port.in_wait.wait(5))
             runtime.request_cancel()
-            self.assertTrue(port.seen.get("dispatch_closed"))
-            self.assertEqual(port.seen.get("state"), "running")
-            self.assertEqual(port.seen.get("control_request"), "cancel")
-            self.assertEqual(runtime.state, "cancelling")
+            self.assertTrue(runtime.record["dispatch_closed"])
+            self.assertEqual(port.seen, {})
+            self.assertEqual(runtime.record["control_request"], "cancel")
+            self.assertEqual(runtime.state, "cancelled")
             port.release_wait.set()
             thread.join(5)
             self.assertFalse(thread.is_alive())
             self.assertEqual(errors, [])
             self.assertEqual(len(port.submits), 1)
             self.assertEqual(runtime.dispatch_count("VLA_PICKING"), 0)
-            self.assertEqual(runtime.state, "cancelling")
+            self.assertEqual(runtime.state, "cancelled")
 
     def test_pause_persists_before_downstream_and_is_not_paused_without_stop(self):
         with tempfile.TemporaryDirectory() as root:
@@ -1197,9 +1195,8 @@ class ReviewTests(unittest.TestCase):
             self.assertFalse(thread.is_alive())
             self.assertEqual(errors, [])
             cancelled, runtime = control_task(config, "cancel", runtime=runtime)
-            self.assertNotEqual(cancelled["state"], "cancelled")
-            self.assertFalse(cancelled["completed"])
-            self.assertEqual(cancelled["state"], "recovery_required")
+            self.assertEqual(cancelled["state"], "cancelled")
+            self.assertTrue(cancelled["completed"])
             self.assertEqual(len(port.submits), 1)
             self.assertEqual(runtime.dispatch_count("VLA_PICKING"), 0)
 

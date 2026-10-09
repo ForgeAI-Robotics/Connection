@@ -141,14 +141,13 @@ class BrainService:
                 return {'accepted': True, 'completed': True, 'no_op': True,
                         'task_id': current_id, 'state': existing.get('state'),
                         'message': '当前没有进行中的任务，无需操作'}
-            # Address changes still block pause, continue and skip. Cancel of a task
-            # that never dispatched a command only closes the ledger.
-            local_cancel = (
-                action == "cancel"
-                and not existing.get("open_command_id")
-                and not existing.get("command_unknown")
-            )
-            runtime = self.attach(ignore_target_change=local_cancel)
+            if action == 'cancel':
+                from brain.adapters.ports import UnselectedPort
+                runtime = self.runtime_factory(self.config, UnselectedPort(),
+                                               package=existing.get('package') or 'reception')
+                self._adopt(runtime)
+            else:
+                runtime = self.attach()
             if action == 'continue' and (step_id is not None or expected_command_id is not None):
                 current = runtime.public_status()
                 if ((step_id is not None and step_id != (current.get('control_step_id') or ''))

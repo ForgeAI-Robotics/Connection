@@ -7,6 +7,14 @@ from ops.brain_view import current_alert
 
 
 class TaskTextTests(unittest.TestCase):
+    def test_saved_downstream_error_is_not_an_advice_generation_failure(self):
+        record = {'kind': 'TASK', 'event': 'recovery_advised', 'state': 'recovery_required',
+                  'recovery_advice': {'action': 'query_original'},
+                  'diagnostic': {'error': 'HTTP 409 INVALID_LEG_ORDER'}}
+        self.assertEqual(format_process_event(record), '')
+        record['recovery_advice']['error'] = 'model unavailable'
+        self.assertIn('生成处理建议时出错', format_process_event(record))
+
     def record(self, **fields):
         return dict(time='2026-09-30T15:58:44.208+08:00', kind='TASK', event='gate',
                     task_id='ca5700b038bd4fe880003fc831c35888', step_id='NAVIGATING_TO_TABLE2',

@@ -2,8 +2,112 @@
 import tempfile
 import threading
 import unittest
+from copy import deepcopy
+from unittest.mock import Mock
 
 from tests.brain.test_kernel_reception import FakeBody, _runtime
+
+
+class OfflineCancelTests(unittest.TestCase):
+    def test_service_cancel_never_constructs_executor_and_allows_new_task(self):
+        from brain.app import create_service
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.failed_runtime(root)
+            with runtime._exclusive():
+                runtime._reload_locked()
+                runtime.record.update(command_unknown=True, stopped_confirmed=False, resources_cleared=False)
+                runtime._save('test_transport_unknown')
+            factory = Mock(side_effect=AssertionError('executor must not be constructed'))
+            service = create_service({'reception_real': {'kernel_runtime_dir': root}}, model=Mock(), port_factory=factory)
+            task_id = runtime.record['task_id']
+            result = service.control('cancel', task_id=task_id)
+            self.assertTrue(result['completed'])
+            factory.assert_not_called()
+            current = service.runtime.snapshot()
+            self.assertFalse(current['stopped_confirmed'])
+            self.assertTrue(current['task_cancellation']['remote_command_unknown'])
+            self.assertFalse(service.status()['blocks_new_motion'])
+            self.assertTrue(service.control('cancel', task_id=task_id)['no_op'])
+            runtime.open_task('new-round', task_desc='new round')
+            self.assertEqual(runtime.state, 'running')
+            port.cancel.assert_not_called()
+            port.query.assert_not_called()
+
+    def failed_runtime(self, root):
+        port = FakeBody()
+        port.outcomes['NAVIGATING_TO_TABLE2'] = {
+            'terminal': 'failed', 'stopped': True, 'resources_released': True,
+            'evidence': {'identity': 'nav-table2-abcdef123456', 'identity_ok': True, 'time_ok': True}}
+        runtime = _runtime(root, port)
+        runtime.drive()
+        self.assertEqual(runtime.state, 'recovery_required')
+        port.cancel = Mock(side_effect=ConnectionError('navigation offline'))
+        port.query = Mock(side_effect=ConnectionError('navigation offline'))
+        return runtime, port
+
+    def test_cancel_after_restart_uses_persisted_stop_without_recontacting_executor(self):
+        from brain.kernel.runtime import TaskRuntime
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.failed_runtime(root)
+            attempt = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][-1])
+            runtime = TaskRuntime(runtime.store, port, config=runtime.config,
+                                  policy=runtime.policy, release_reader=runtime.release_reader)
+            result = runtime.request_cancel()
+            self.assertTrue(result['accepted'])
+            self.assertTrue(result['completed'])
+            self.assertEqual(runtime.state, 'cancelled')
+            self.assertFalse(runtime.public_status()['blocks_new_motion'])
+            self.assertIsNone(runtime.record['open_command_id'])
+            self.assertEqual(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][-1], attempt)
+            self.assertEqual(attempt['verdict'], 'FAIL')
+            self.assertEqual(len(port.submits), 1)
+            port.cancel.assert_not_called()
+            port.query.assert_not_called()
+
+    def test_task_cancel_does_not_require_remote_receipts(self):
+        mutations = [
+            (('finished',), False), (('submitted',), False), (('action_ended',), False),
+            (('publisher_stopped',), False), (('outcome',), 'pending'),
+            (('progress', 'terminal'), ''), (('progress', 'timed_out'), True),
+            (('progress', 'publisher_stopped'), False), (('progress', 'action_ended'), False),
+            (('progress', 'task_id'), 'another-task'), (('progress', 'step_id'), 'VLA_PICKING'),
+            (('progress', 'attempt_id'), 'another-attempt'), (('progress', 'command_id'), 'another-command'),
+            (('progress', 'evidence', 'identity'), 'another-command'),
+            (('progress', 'evidence', 'identity_ok'), False),
+            (('progress', 'evidence', 'time_ok'), False),
+            (('progress', 'evidence', 'resources_released'), False),
+        ]
+        for path, value in mutations:
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as root:
+                runtime, port = self.failed_runtime(root)
+                with runtime._exclusive():
+                    runtime._reload_locked()
+                    target = runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][-1]
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = value
+                    runtime._save('test_incomplete_receipt')
+                result = runtime.request_cancel()
+                self.assertTrue(result['accepted'])
+                self.assertEqual(runtime.state, 'cancelled')
+                self.assertFalse(runtime.public_status()['blocks_new_motion'])
+                port.cancel.assert_not_called()
+                port.query.assert_not_called()
+
+    def test_task_cancel_archives_inflight_command_without_claiming_it_stopped(self):
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.failed_runtime(root)
+            with runtime._exclusive():
+                runtime._reload_locked()
+                original = runtime.record['open_command_id']
+                runtime.record['open_command_id'] = original + '-r1'
+                runtime._save('test_new_command')
+            self.assertTrue(runtime.request_cancel()['accepted'])
+            self.assertEqual(runtime.state, 'cancelled')
+            self.assertEqual(runtime.record['task_cancellation']['abandoned_command_id'], original + '-r1')
+            port.cancel.assert_not_called()
+            port.query.assert_not_called()
+
 
 
 class PausingBody(FakeBody):
@@ -120,6 +224,32 @@ class TaskControlTests(unittest.TestCase):
         self.assertEqual(runtime.public_status()['completed'], 11)
 
 class SkipControlTests(unittest.TestCase):
+    def test_skip_running_stops_current_once_and_advances_once(self):
+        with tempfile.TemporaryDirectory() as root:
+            port = PausingBody()
+            runtime = _runtime(root, port)
+            errors = []
+            def drive():
+                try:
+                    runtime.drive()
+                except Exception as exc:
+                    errors.append(exc)
+            thread = threading.Thread(target=drive)
+            thread.start()
+            try:
+                self.assertTrue(port.entered.wait(2))
+                old = runtime.record['open_command_id']
+                result = runtime.skip_current(step_id='NAVIGATING_TO_TABLE2')
+                self.assertEqual(result['next_step_id'], 'VLA_PICKING')
+                self.assertEqual(port.cancels, [old])
+                self.assertEqual(runtime.record['steps']['NAVIGATING_TO_TABLE2']['status'], 'manual_skipped')
+            finally:
+                port.release.set()
+                thread.join(3)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(port.submits, [old])
+
     def failed_runtime(self, step='LATERAL_TO_RELAY3', **outcome):
         root = tempfile.TemporaryDirectory()
         self.addCleanup(root.cleanup)
@@ -219,7 +349,7 @@ class SkipControlTests(unittest.TestCase):
         self.assertEqual(port.submits, [])
         status = runtime.public_status()
         self.assertTrue(status['can_resume'])
-        self.assertFalse(status['can_skip'])  # never skip the leg that was never sent
+        self.assertTrue(status['can_skip'])  # operator may abandon this unstarted leg
         runtime.continue_current()
         runtime.drive()
         self.assertEqual(runtime.state, 'waiting_human')  # still unreachable: re-check, no submit
@@ -286,10 +416,10 @@ class SkipControlTests(unittest.TestCase):
             self.assertFalse(t['effect_verified'])
         self.assertEqual(runtime.record['holding'], 'cola_can_1')
 
-    def test_skip_rejects_running_waiting_and_passed_step(self):
+    def test_skip_rejects_terminal_and_passed_step(self):
         from contracts.tasks import Rejected
         runtime, port = self.failed_runtime()
-        for state in ('running', 'succeeded', 'waiting_human'):
+        for state in ('succeeded', 'cancelled', 'failed'):
             runtime.record['state'] = state
             runtime._save('test_state')
             self.assertFalse(runtime.public_status()['can_skip'])
@@ -360,5 +490,5 @@ class ContinueAttemptTests(unittest.TestCase):
         port.query = cancelled
         with self.assertRaises(Rejected):
             runtime.continue_current()
-        self.assertEqual(runtime.state, 'cancelling')
+        self.assertEqual(runtime.state, 'cancelled')
         self.assertEqual(len(runtime.record['steps']['VLA_PICKING']['attempts']), 1)

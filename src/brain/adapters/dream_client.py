@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+import threading
 import urllib.parse
 
 from .http_client import HttpClient, HttpContractError
@@ -29,6 +30,10 @@ class DreamClient:
         )
         self.contract_version = contract_version
         self.calls = CallBook("dream")
+        self._wait_abandoned = threading.Event()
+
+    def abandon_waits(self):
+        self._wait_abandoned.set()
 
     def health(self):
         return self.http.request_json("GET", "/health")[0]
@@ -180,6 +185,8 @@ class DreamClient:
         last_uncertain_error = None
         call = self.calls.ensure("wait", command_id)
         while time.monotonic() < deadline:
+            if self._wait_abandoned.is_set():
+                raise HttpContractError("本轮大脑任务已取消，结束本地轮询")
             try:
                 last = self.command(command_id)
                 uncertain_count = 0
@@ -205,7 +212,7 @@ class DreamClient:
                             "last": last,
                         },
                     ) from exc
-                time.sleep(float(poll_interval_sec))
+                self._wait_abandoned.wait(float(poll_interval_sec))
                 continue
             if on_update:
                 on_update(last)
@@ -215,7 +222,7 @@ class DreamClient:
                 if state != "succeeded":
                     self.calls.complete(command_id, False, payload=last)
                 return last
-            time.sleep(float(poll_interval_sec))
+            self._wait_abandoned.wait(float(poll_interval_sec))
         error = HttpContractError(
             f"DREAM命令等待终态超时: {command_id}",
             payload=last,

@@ -81,8 +81,12 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(entered.wait(1))
         before = time.monotonic()
         result = app.control('cancel')
-        self.assertFalse(result.get('completed'))
-        self.assertNotEqual(app.status()['state'], 'cancelled')
+        self.assertTrue(result.get('completed'))
+        self.assertEqual(app.status()['state'], 'cancelled')
+        self.assertFalse(app.status()['blocks_new_motion'])
+        self.assertFalse(app.service.runtime.record['stopped_confirmed'])
+        # The old I/O is still blocked, but the task owner can admit new work now.
+        self.assertEqual(app.owner.submit(lambda: 'available').result(timeout=.8), 'available')
         self.assertLess(time.monotonic() - before, .8)
         release.set()
 
