@@ -9,7 +9,7 @@ backends:
     required: 1
     url: http://192.168.31.69:18770
     timeout: 900
-    launch_hint: 远端独立服务，参见 docs/联调说明_SIMPLE_O7仿真.md
+    launch_hint: 远端独立服务，参见 docs/接口说明_simple o6 仿真.md
   mujoco:
     enabled: 1
     provide_state: 1

@@ -1,7 +1,7 @@
 [Unit]
 Description=FQPlanner Linux control panel
 After=network.target
-Documentation=file://@ROOT@/docs/运维面板.md
+Documentation=file://@ROOT@/docs/接口说明_控制面板.md
 
 [Service]
 Type=simple
