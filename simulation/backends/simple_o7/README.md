@@ -15,7 +15,7 @@ The worker uses the existing `simple:260904` image and mounts `SIMPLE-o7-verify`
 The default config selects O6. It runs upstream `validate_g1_o6_cycle.py --task grasp`
 with the complete source overlay at `generated-data/o6-planner-production-20260923/src`.
 This is CuRobo planning with AMO body control and arm torque PD in MuJoCo.
-The only exposed action is `pick_hold_can`, using the calibrated `graspnet1b:2` soup can.
+The generic `/v1/commands` route only exposes `pick_hold_can`, using the calibrated `graspnet1b:2` soup can.
 Native success must also pass independent terminal trajectory checks: unsupported hand contact,
 at least 8 cm lift, speed at most 2 cm/s, a continuous 1 s hold, and collision/tilt limits.
 Seeds 101, 102 and 103 passed through Connection's actual Planner and Runtime on 2026-09-24.
@@ -24,7 +24,7 @@ The backend key and wire version remain `simple_o7` / `connection/simple-o7/v1`.
 Legacy O7 config (no `robot_variant`, or `o7`) still uses `pick_hold_coke` and the original
 prepare → reachability → CuRobo → SONIC pipeline. O7's default Coke scene failed reachability;
 that historical result does not describe the O6 task. The two object identities are distinct.
-Neither variant provides a persistent multi-step world, navigation, release/place, live cameras, or GR00T inference.
+Neither generic-command variant provides a persistent multi-step world, navigation, release/place, live cameras, or GR00T inference. The separate reception route below provides a continuous physical episode.
 
 ## Single-can reception episode (`/reception/nav`, `/reception/vla`)
 
@@ -38,7 +38,7 @@ configuration) read-only; `service/reception_task.py` only adds the walk to the 
 splits the carry into the contract's relay legs. Semantic targets map to formal-room poses
 (`service/reception_task_info.py`); real-map coordinates are not used.
 Results are measured physics (arrival error, grasp contact and lift, placement gate);
-the simulation clock is paused between commands. Cancel ends the episode; a new attempt needs a new task.
+the simulation clock is paused between commands. Recoverable navigation failures or command cancellation may preserve the episode after standing still and checking object retention; a new command can retry the same leg. Manipulation cancellation or unrecoverable physical failure ends the episode and requires a new task. Brain-level task cancellation is local only and does not stop this worker.
 `python -m service.reception_episode <dir>` runs all six segments without HTTP;
 `python -m service.render_reception <episode_dir> --commands commands.json` renders a replay video.
 
@@ -48,4 +48,4 @@ Stop atomically fences new admission and refuses any unresolved command. The pan
 Cancel the original command and check its stop acknowledgement before stopping the container.
 Do not delete the journal or episode files to clear an unresolved command.
 
-Full operator instructions and validation limits: `docs/联调说明_SIMPLE_O7仿真.md` in Connection.
+Full operator instructions and validation limits: [SIMPLE O6 interface](../../../docs/接口说明_simple%20o6%20仿真.md).
