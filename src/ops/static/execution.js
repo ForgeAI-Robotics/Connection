@@ -16,7 +16,8 @@
       const backend = document.createElement('select');
       backend.id = 'exec-' + key + '-sim';
       const choices = key === 'reception'
-        ? {inherit: '默认旧演示', reception_mock: '旧会议补货演示', reception_protocol: '单罐接待 · NAV/VLA 协议模拟'}
+        ? {inherit: '默认旧演示', reception_mock: '旧会议补货演示', reception_protocol: '单罐接待 · NAV/VLA 协议模拟',
+           reception_simple: '单罐接待 · SIMPLE 远端物理仿真'}
         : {inherit: '跟随默认仿真器', desk: 'Desk（无画面）', mujoco: 'MuJoCo', mujoco_3dgs: '3DGS', simple_o7: 'SIMPLE（O6 远端）'};
       for (const [value, text] of Object.entries(choices)) {
         backend.add(new Option(text, value));
@@ -84,13 +85,15 @@
     catch (e) { el('exec-preview-text').textContent = e.message; }
   };
   el('exec-apply').onclick = apply;
-  el('exec-reception-protocol').onclick = () => {
-    fill({mode: 'simulation', simulation_backend: 'desk', modules: {
-      reception: {mode: 'simulation', simulation_backend: 'reception_protocol'},
-      execution: {mode: 'disabled'}, observation: {mode: 'disabled'}
-    }});
-    apply();
-  };
+  for (const [id, backend] of [['exec-reception-protocol', 'reception_protocol'], ['exec-reception-simple', 'reception_simple']]) {
+    el(id).onclick = () => {
+      fill({mode: 'simulation', simulation_backend: 'desk', modules: {
+        reception: {mode: 'simulation', simulation_backend: backend},
+        execution: {mode: 'disabled'}, observation: {mode: 'disabled'}
+      }});
+      apply();
+    };
+  }
   for (const [id, mode] of [['exec-all-sim', 'simulation'], ['exec-all-real', 'real']]) {
     el(id).onclick = () => { fill({mode, simulation_backend: el('exec-sim').value, modules: {}}); apply(); };
   }

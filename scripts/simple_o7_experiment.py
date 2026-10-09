@@ -10,7 +10,7 @@ import uuid
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["health", "run", "query", "resume", "cancel"])
-    parser.add_argument("--url", default="http://192.168.5.21:18770")
+    parser.add_argument("--url", default="http://192.168.31.69:18770")
     parser.add_argument("--ledger", type=Path, help="Experiment ledger, separate from the live brain")
     parser.add_argument("--task", default="抓起桌上的罐子并稳定持有")
     parser.add_argument("--deadline", type=float, default=900)
