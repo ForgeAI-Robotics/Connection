@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+import threading
 import urllib.parse
 from datetime import datetime
 
@@ -31,6 +32,10 @@ class VlaClient:
         )
         self.contract_version = contract_version
         self.calls = CallBook("vla")
+        self._wait_abandoned = threading.Event()
+
+    def abandon_waits(self):
+        self._wait_abandoned.set()
 
     def health(self):
         return self.http.request_json("GET", "/health")[0]
@@ -138,6 +143,8 @@ class VlaClient:
         uncertain_count = 0
         call = self.calls.ensure("wait", command_id)
         while time.monotonic() < deadline:
+            if self._wait_abandoned.is_set():
+                raise HttpContractError("本轮大脑任务已取消，结束本地轮询")
             try:
                 last = self.task(command_id)
                 uncertain_count = 0
@@ -159,7 +166,7 @@ class VlaClient:
                             "last": last,
                         },
                     ) from exc
-                time.sleep(float(poll_interval_sec))
+                self._wait_abandoned.wait(float(poll_interval_sec))
                 continue
             if on_update:
                 on_update(last)
@@ -169,7 +176,7 @@ class VlaClient:
                 if state != "succeeded":
                     self.calls.complete(command_id, False, payload=last)
                 return last
-            time.sleep(float(poll_interval_sec))
+            self._wait_abandoned.wait(float(poll_interval_sec))
         error = HttpContractError(
             f"VLA任务等待终态超时: {command_id}",
             payload=last,

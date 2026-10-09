@@ -49,9 +49,6 @@ class DeskRecoveryTests(unittest.TestCase):
         runtime.drive()
         self.assertEqual(runtime.state, 'recovery_required')
         self.assertTrue(self.world['milk_1']['grasped'])
-        runtime.port.cancel = lambda *a: {'accepted': False, 'error': 'stop_unavailable'}
-        runtime.request_cancel()
-        self.assertEqual(runtime.record['blocked_reason'], 'cancel_not_accepted')
         return runtime
 
     def test_original_task_resumes_after_restart_without_regrasp_or_new_attempt(self):

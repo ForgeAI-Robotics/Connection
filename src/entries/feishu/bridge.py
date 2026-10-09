@@ -239,7 +239,7 @@ class FeishuBridge:
                         answer = result.get('message') or '原任务已经结束，无需操作。'
                     else:
                         state = result.get('state')
-                        label = {'cancelled': '已取消，停止已确认', 'paused': '已暂停',
+                        label = {'cancelled': '本轮任务已取消', 'paused': '已暂停',
                                  'running': '已受理继续执行', 'cancelling': '取消已受理，仍在确认停止',
                                  'recovery_required': '仍需恢复，停止或执行结果尚未核清'}.get(state, str(state))
                         answer = f'任务 {current.task_id}：{label}。'

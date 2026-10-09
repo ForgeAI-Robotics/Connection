@@ -24,7 +24,7 @@ class FakeBrain:
 
     async def control_task(self, action, task_id, **kwargs):
         self.controls.append((action, task_id))
-        return {'accepted': True, 'state': 'cancelled', 'completed': True, 'task_id': task_id}
+        return {'accepted': True, 'state': 'cancelled' if action == 'cancel' else 'paused', 'completed': True, 'task_id': task_id}
 
     async def get_status(self):
         if self.statuses:
@@ -172,11 +172,11 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         bridge = self.make_bridge(brain, router=router)
         await bridge.handle_message(message('stop-1', '停止'))
         await bridge.handle_message(message('stop-1', '停止'))
-        self.assertEqual(brain.controls, [('cancel', 'original')])
+        self.assertEqual(brain.controls, [('pause', 'original')])
         self.assertEqual(brain.published, [])
         self.assertEqual(router.queries, [])
         self.assertEqual(self.messenger.cards, [])
-        self.assertIn('停止已确认', self.messenger.texts[0][1])
+        self.assertIn('已暂停', self.messenger.texts[0][1])
 
     async def test_stop_after_success_does_not_create_task(self):
         brain = FakeBrain([{'active': False, 'all_done': True, 'state': 'succeeded', 'task_id': 'finished'}])
@@ -199,7 +199,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         await bridge.handle_message(message('no-mention', '停止', chat_type='group'))
         self.assertEqual(brain.controls, [])
         await bridge.handle_message(message('mention', '停止', chat_type='group', mentioned_bot=True))
-        self.assertEqual(brain.controls, [('cancel', 'running')])
+        self.assertEqual(brain.controls, [('pause', 'running')])
 
     async def test_cancel_acceptance_does_not_claim_stop_completed(self):
         brain = FakeBrain([{'active': True, 'state': 'running', 'task_id': 'running'}])
@@ -214,7 +214,7 @@ class BridgeTests(unittest.IsolatedAsyncioTestCase):
         from contracts.task_control import control_action
         for text in ('不要停止', '停止了吗？', '到一号桌后停止', '开始接待', '停止抓取并去一号桌'):
             self.assertIsNone(control_action(text))
-        self.assertEqual(control_action('停止！'), 'cancel')
+        self.assertEqual(control_action('停止！'), 'pause')
 
     async def test_runtime_inactive_terminal_is_tracked(self):
         for terminal, expected in (("succeeded", "succeeded"), ("cancelled", "canceled"), ("failed", "failed")):

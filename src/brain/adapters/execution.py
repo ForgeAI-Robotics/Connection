@@ -11,6 +11,7 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 
 from contracts.tasks import CONTRACT_VERSION
+from contracts.submission import submission_refusal
 from brain.kernel.memory import DEFAULT_EVENT_TTL_SEC
 from brain.skills.catalog import by_id
 from brain.adapters.http_client import HttpContractError
@@ -24,6 +25,12 @@ class BodyAdapter:
     def __init__(self, dream, vla):
         self.dream = dream
         self.vla = vla
+
+    def abandon_waits(self):
+        for client in (self.dream, self.vla):
+            abandon = getattr(client, 'abandon_waits', None)
+            if callable(abandon):
+                abandon()
 
     @classmethod
     def from_config(cls, config):
@@ -113,13 +120,16 @@ class BodyAdapter:
             else:
                 raise RuntimeError(f"未知技能: {skill}")
         except HttpContractError as exc:
+            refusal = submission_refusal(exc.status_code, exc.payload,
+                                         command_id=command_id, task_id=body.get("task_id"))
             return {
                 "accepted": False,
-                "unclear": True,
+                "unclear": refusal is None,
                 "completed": False,
                 "command_id": command_id,
                 "error": str(exc),
                 "raw": exc.payload,
+                "submission_rejected": refusal,
             }
         return {
             "accepted": True,

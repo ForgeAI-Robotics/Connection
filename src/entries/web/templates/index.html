@@ -152,12 +152,12 @@
             <div class="task-progress" id="task-progress"></div>
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
-                <button id="task-start" class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
-                <button id="task-start-nav" class="btn btn-sm" style="background:#0369a1;color:#fff" title="大脑+导航联调：只跑四段导航，不派发抓取与放置" onclick="startReception('开始接待（仅导航）')">🧭 开始接待（仅导航）</button>
-                <button id="task-skip" class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
-                <button id="task-pause" class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
-                <button id="task-continue" class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
-                <button id="task-cancel" class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="controlReception('cancel')">取消</button>
+                <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
+                <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="大脑+导航联调：只跑四段导航，不派发抓取与放置" onclick="startReception('开始接待（仅导航）')">🧭 开始接待（仅导航）</button>
+                <button id="task-skip" disabled class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
+                <button id="task-pause" disabled class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
+                <button id="task-continue" disabled class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
+                <button id="task-cancel" disabled class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="controlReception('cancel')">取消任务</button>
                 <button class="btn btn-outline btn-sm" onclick="refreshTaskStatus()">刷新任务进度</button>
             </div>
         </div>
@@ -277,6 +277,8 @@
         }
 
         let taskSubmitting = false, taskControlPending = false, displayedTask = null;
+        let taskReceiptId = null;
+        let taskStatusKnown = false;
         async function readTaskStatus() {
             const response = await fetch('/api/task_status');
             const data = await response.json();
@@ -288,18 +290,22 @@
         function updateTaskButtons() {
             const state = displayedTask?.state;
             const active = !!displayedTask?.task_id && !displayedTask.terminal;
+            const ready = taskStatusKnown && !taskControlPending;
             const enabled = {
-                start: !taskSubmitting && !taskControlPending && !active,
-                'start-nav': !taskSubmitting && !taskControlPending && !active,
-                skip: !taskControlPending && !!displayedTask?.can_skip,
-                pause: !taskControlPending && ['running', 'verifying'].includes(state),
-                continue: !taskControlPending && !!displayedTask?.can_resume,
-                cancel: !taskControlPending && active
+                start: ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion,
+                'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion,
+                skip: ready && active && !!displayedTask?.can_skip,
+                pause: ready && active && ['running', 'verifying'].includes(state),
+                continue: ready && active && !!displayedTask?.can_resume,
+                cancel: ready && active
             };
             for (const [name, allowed] of Object.entries(enabled)) {
                 const button = document.getElementById('task-' + name);
                 button.disabled = !allowed;
-                button.title = allowed ? '' : (taskControlPending ? '控制请求处理中' : '当前任务状态不支持此操作');
+                const descriptions = {start: '开始完整接待流程', 'start-nav': '只执行导航流程',
+                    pause: '暂停整轮流程，并请求停止当前动作', continue: '继续当前环节；未完成则重新下发一次指令',
+                    skip: '放弃当前环节并进入下一步，不记为成功', cancel: '废弃整轮大脑任务；不向导航发送停止指令'};
+                button.title = allowed ? descriptions[name] : (!taskStatusKnown ? '正在确认任务状态' : taskControlPending ? '控制请求处理中' : '当前任务状态不支持此操作');
             }
         }
         // 发布任务
@@ -307,6 +313,7 @@
             options = options || {};
             const task = document.getElementById('task').value.trim();
             if (!task || taskSubmitting) return;
+            taskReceiptId = null;
             taskSubmitting = true;
             updateTaskButtons();
             const btn = document.getElementById('btn-send');
@@ -365,7 +372,8 @@
                 if (!resp.ok || data.accepted === false) {
                     return;
                 }
-                if (data.status === 'success') {
+                if (data.status === 'success' || data.accepted === true) {
+                    taskReceiptId = data.task_id;
                     _prevAllDone = false;
                     startTaskPolling();
                 }
@@ -377,6 +385,7 @@
                 btn.disabled = false;
                 btn.textContent = '发送';
                 document.getElementById('task').value = '';
+                if (taskReceiptId) await refreshTaskStatus();
             }
         }
         // 会议接待:一键触发(填"开始接待"→ master 命中接待 skill → 复用 task_status 显示 🧠+子任务✓)
@@ -386,6 +395,7 @@
         }
         async function controlReception(action) {
             if (taskControlPending) return;
+            taskReceiptId = null;
             const result = document.getElementById('task-result');
             const target = displayedTask?.task_id;
             const skipStep = displayedTask?.skip_step_id;
@@ -407,9 +417,9 @@
                 }
                 if (action === 'skip') {
                     if (!current.can_skip || !skipStep || current.skip_step_id !== skipStep) {
-                        throw new Error('当前失败步骤已变化或不可跳过，请刷新后重试');
+                        throw new Error('当前步骤已变化或不可跳过，请刷新后重试');
                     }
-                    if (!window.confirm(`跳过 ${skipStep} 并进入下一步？该步骤不会记为成功；下一步仍需满足真实接口的前置条件。`)) return;
+                    if (!window.confirm(`跳过 ${taskPhase(skipStep)} 并进入下一步？该步骤不会记为成功；下一步仍需满足真实接口的前置条件。`)) return;
                 }
                 result.textContent = '正在发送控制请求...';
                 const resp = await fetch('/api/task_' + action, {
@@ -419,9 +429,11 @@
                 });
                 const data = await resp.json();
                 if (!resp.ok || data.accepted === false) throw new Error(data.error || '控制未被受理');
+                lastTaskResponse = data;
+                taskReceiptId = current.task_id;
                 const labels = {paused: '已暂停；继续将核对原动作，未完成则重新下发当前环节。',
                     running: '继续请求已受理；结果以下方任务进度为准。', verifying: '正在核验原任务结果。',
-                    cancelled: '已取消，停止已确认。', cancelling: '取消已受理，仍在确认停止。',
+                    cancelled: '本轮任务已取消，不再执行后续步骤。', cancelling: '取消已受理，仍在确认停止。',
                     recovery_required: '前置条件或执行结果尚未满足，请查看任务中的具体原因。'};
                 result.textContent = data.error || data.message || (data.retry_prepared ? '当前环节的新尝试已准备，前置检查通过后下发；执行结果见任务进度。' : null) || (action === 'skip'
                     ? `已人工跳过 ${data.skipped_step_id}；${data.next_step_id ? '下一步：' + data.next_step_id + '，执行结果见任务进度。' : '流程结束，含跳过，未全部成功。'}`
@@ -429,8 +441,8 @@
             } catch (e) {
                 result.textContent = '控制请求未完成：' + e.message;
             } finally {
-                await refreshTaskStatus();
                 taskControlPending = false;
+                await refreshTaskStatus();
                 updateTaskButtons();
             }
         }
@@ -445,8 +457,23 @@
             return node.innerHTML;
         }
 
+        function renderAttemptHistory(data) {
+            const summary = data.attempt_summary || {};
+            if (!summary.failure_count && !summary.retry_count) return '';
+            const title = `历史失败 ${Number(summary.failure_count) || 0} 次 · 重试 ${Number(summary.retry_count) || 0} 次（人工继续触发 ${Number(summary.manual_retry_count) || 0} 次）`;
+            const rows = (data.failure_history || []).map(item =>
+                `<div>${taskText(taskPhase(item.step_id))} · ${taskText(item.command_id)}：${taskText(item.display_message || item.message || item.code)}</div>`).join('');
+            return `<details><summary>${taskText(title)}</summary>${rows}</details>`;
+        }
+
         function renderTaskProgress(data) {
             displayedTask = data;
+            taskStatusKnown = true;
+            const result = document.getElementById('task-result');
+            if (taskReceiptId && taskReceiptId !== data.task_id) {
+                taskReceiptId = null;
+                result.style.display = 'none';
+            }
             if (data.task_id) document.getElementById('copy-task-response').style.display = 'inline-block';
             updateTaskButtons();
             if (!data.all_done) document.getElementById('report-card').innerHTML = '';
@@ -455,21 +482,31 @@
                 el.innerHTML = '<div class="no-task">暂无执行中的任务</div>';
                 return;
             }
-            const completed = Number(data.completed) || 0;
+            const tasks = data.subtask_list || [];
+            const skippedCount = tasks.filter(t => t.status === 'skipped' || t.skipped).length;
+            const completed = tasks.filter(t => t.done && !t.skipped && (!t.status || t.status === 'success')).length;
             const total = Number(data.total) || 0;
+            const remaining = Math.max(0, total - completed - skippedCount);
             const pct = total > 0 ? Math.round(completed / total * 100) : 0;
             const taskName = Array.isArray(data.task) ? data.task[0] : (data.task || '');
             const recovery = data.state === 'RECOVERY_REQUIRED' || data.state === 'recovery_required';
+            const failure = data.failure_detail;
+            const failureReason = failure && (failure.display_message || failure.message || failure.code);
             const anyFailed = !recovery && (data.failed || (data.subtask_list || []).some(
-                t => t.done && t.status && t.status !== 'success' && t.status !== 'blocked'
+                t => t.status === 'failure' || (t.done && t.status && !['success', 'blocked', 'skipped'].includes(t.status))
             ));
             // MuJoCo 判定:任务成功 = 所有子任务都成功(不再用 ALFWorld 的 won 覆盖)。
             // won===true 时额外标"落点已验证"徽章;won===false 是 MuJoCo 非持续模式默认值,不代表失败,忽略。
             const wonSignal = data.hasOwnProperty('won') ? data.won : null;
             let statusLabel, statusCls;
-            if (recovery) {
-                const reason = (data.reception_state && data.reception_state.failure_reason) || data.blocked_reason || data.reasoning || '';
-                statusLabel = reason ? ('待恢复：' + taskReason(reason)) : '待恢复（未确认远端已停）';
+            if (recovery && data.pause_requested) {
+                statusLabel = '流程已暂停，当前动作停止尚未确认';
+                statusCls = 'status-recovery';
+            } else if (recovery) {
+                const reason = (data.reception_state && data.reception_state.failure_reason) || data.blocked_reason || '';
+                statusLabel = failure && failure.kind === 'rejected' ? '指令被拒绝，未开始执行'
+                    : failureReason ? ('待恢复：' + taskReason(failureReason))
+                    : reason ? ('待恢复：' + taskReason(reason)) : '待恢复（未确认远端已停）';
                 statusCls = 'status-recovery';
             } else if (data.state === 'paused') {
                 statusLabel = '已暂停';
@@ -481,14 +518,17 @@
                 statusLabel = '取消中，停止尚未核清';
                 statusCls = 'status-recovery';
             } else if (data.state === 'cancelled') {
-                statusLabel = '已取消';
+                statusLabel = '本轮任务已取消';
                 statusCls = 'status-fail';
             } else if (data.state === 'failed') {
                 statusLabel = data.flow_finished ? '流程结束（含人工跳过，未全部成功）' : '已失败';
                 statusCls = 'status-fail';
             } else if (data.all_done || data.state === 'succeeded') {
-                if (anyFailed) {
-                    statusLabel = '✕ 任务失败(有子任务失败)';
+                if (skippedCount) {
+                    statusLabel = '流程结束（含人工跳过，未全部成功）';
+                    statusCls = 'status-fail';
+                } else if (anyFailed || completed < total) {
+                    statusLabel = '任务未全部成功，请查看各步骤结果';
                     statusCls = 'status-fail';
                 } else {
                     statusLabel = data.execution_backend === 'reception_protocol' ? '✓ 协议模拟完成'
@@ -500,40 +540,39 @@
                 statusLabel = '执行中...';
                 statusCls = 'status-run';
             }
-            const barCls = recovery ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');
+            const barCls = recovery || skippedCount ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');
             let html = `<div class="task-progress-header">
-                <span>${taskText(taskName)} (${completed}/${total})${data.execution_backend === 'reception_protocol' ? ' · 导航／操控模拟' : data.execution_backend === 'reception_simple' ? ' · SIMPLE 物理仿真' : ''}</span>
+                <span>${taskText(taskName)} · 成功 ${completed}/${total} · 跳过 ${skippedCount} · 未完成 ${remaining}${data.execution_backend === 'reception_protocol' ? ' · 导航／操控模拟' : data.execution_backend === 'reception_simple' ? ' · SIMPLE 物理仿真' : ''}</span>
                 <span class="${statusCls}">${taskText(statusLabel)}</span>
             </div>
             <div class="task-bar"><div class="${barCls}" style="width:${pct}%"></div></div>`;
 
-            if (data.reasoning) {
-                html += `<div style="margin:10px 0;padding:10px 12px;background:#0f172a;border-radius:8px;font-size:12px;color:#a5b4fc;line-height:1.6">`
-                      + `<b style="color:#818cf8">🧠 Master 思考:</b> ${taskText(data.reasoning)}</div>`;
-            }
-
             const phase = data.phase || data.control_step_id;
             const reason = data.blocked_reason || '';
-            const advice = data.recovery_advice;
-            if (phase || reason || (advice && advice.applicable)) {
+            if (taskReceiptId && !taskControlPending && !taskSubmitting) {
+                result.style.display = 'block';
+                result.textContent = ['当前任务：' + data.task_id.slice(0, 8), statusLabel,
+                    phase ? '当前步骤：' + taskPhase(phase) : '',
+                    failureReason ? '原因：' + failureReason : ''].filter(Boolean).join('\n');
+            }
+            if (phase || reason || failureReason) {
                 const lines = [];
                 if (phase) lines.push('当前步骤：' + taskPhase(phase));
-                if (reason) lines.push('原因：' + taskReason(reason));
-                if (reason === 'real_execution_disabled') {
-                    lines.push('建议：请现场负责人确认真机执行条件，再通过原任务入口继续；也可取消本任务。');
-                } else if (advice && advice.applicable) {
-                    if (advice.summary) lines.push('分析：' + advice.summary);
-                    lines.push('建议：' + (TASK_LABELS.actions[advice.action] || advice.action || '请人工检查') + '（尚未执行）');
-                }
+                if (failureReason) {
+                    const readable = failureReason;
+                    lines.push('原因：' + readable + (failure.code && !readable.includes(failure.code) ? '（' + failure.code + '）' : ''));
+
+                } else if (reason) lines.push('原因：' + taskReason(reason));
                 html += '<div style="margin:10px 0;padding:10px 12px;background:#0f172a;border-radius:8px;font-size:13px;line-height:1.6">'
                     + lines.map(taskText).join('<br>') + '</div>';
             }
 
+            html += renderAttemptHistory(data);
             for (const t of (data.subtask_list || [])) {
                 const skipped = t.status === 'skipped';
                 const blocked = t.done && (t.status === 'blocked' || skipped);
-                const failed = t.done && t.status && t.status !== 'success' && t.status !== 'blocked' && !skipped;
-                const cls = t.done ? (failed ? 'done fail' : (blocked ? 'done' : 'done ok')) : '';
+                const failed = t.status === 'failure' || (t.done && t.status && t.status !== 'success' && t.status !== 'blocked' && !skipped);
+                const cls = failed ? 'fail' : t.done ? (blocked ? 'done' : 'done ok') : '';
                 const insertedTag = t.inserted
                     ? ' <span style="font-size:10px;color:#fbbf24;border:1px solid #fbbf24;border-radius:4px;padding:1px 5px">↻ 失败重插</span>'
                     : '';
@@ -542,7 +581,7 @@
                     : '';
                 let checkStyle = 'border-color:#475569;';
                 let checkIcon = '';
-                if (t.done) {
+                if (t.done || failed) {
                     if (failed) {
                         checkStyle = 'background:#ef4444;border-color:#ef4444;color:#fff;';
                         checkIcon = '✕';
@@ -584,7 +623,12 @@
                     stopTaskPolling();
                 }
             } catch (e) {
+                taskStatusKnown = false;
+                updateTaskButtons();
                 document.getElementById('task-progress').innerHTML = '<div class="no-task">查询失败</div>';
+                if (taskReceiptId && !taskControlPending && !taskSubmitting) {
+                    document.getElementById('task-result').textContent = '状态查询失败，暂时无法确认最新执行结果。';
+                }
             }
         }
 
@@ -601,7 +645,7 @@
                 const anom = (r.anomalies&&r.anomalies.length)
                     ? `<div class="rc-anom">⚠ 异常：${_e(r.anomalies.join('；'))}</div>` : '';
                 el.innerHTML = `<div class="rc-head ${r.verdict?'ok':'no'}">📋 完成确认报告 · ${r.verdict?'✅ 完成':'❌ 未完成'}</div>`
-                    + checks + anom + `<div class="rc-advice">→ ${_e(r.advice)}</div>`;
+                    + checks + anom + renderAttemptHistory(r);
             } catch (e) { el.innerHTML = ''; }
         }
 
@@ -626,7 +670,10 @@
         async function autoDetectNewTask() {
             if (taskPollingTimer) return;                 // 已在快速轮询,不干预
             try {
-                const d = await (await fetch('/api/task_status')).json();
+                const d = await readTaskStatus();
+                taskStatusKnown = true;
+                displayedTask = d;
+                updateTaskButtons();
                 const tid = d.task_id || '';
                 if (_autoSeenTaskId === null) {
                     _autoSeenTaskId = tid;
@@ -642,9 +689,14 @@
                     _prevAllDone = false;
                     startTaskPolling();
                 }
-            } catch (e) {}
+            } catch (e) {
+                taskStatusKnown = false;
+                updateTaskButtons();
+            }
         }
         setInterval(autoDetectNewTask, 3000);
+        // Fetch immediately after the script has initialized all polling variables.
+        setTimeout(autoDetectNewTask, 0);
 
         // 任务执行期间跟时间线：每步做完截一帧，四宫格切到回放看最新截图
         let timelineRefreshTimer = null, timelineEndTimer = null;

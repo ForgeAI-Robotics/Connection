@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from contracts.tasks import KernelError, ProgressEvent, SkillContract, evidence_filename
+from contracts.submission import submission_refusal, refusal_observation
 
 
 class Runner:
@@ -27,13 +28,20 @@ class Runner:
         submitted = port.submit(contract.command_id, contract.request)
         if not isinstance(submitted, dict):
             submitted = {}
+        receipt = submitted.get("submission_rejected")
+        if submitted.get("accepted") is False and submitted.get("unclear") is False and isinstance(receipt, dict):
+            confirmed = submission_refusal(receipt.get("status_code"), receipt.get("raw"),
+                                           command_id=contract.command_id, task_id=contract.task_id)
+            if (confirmed and receipt.get("command_id") == contract.command_id
+                    and receipt.get("task_id") == contract.task_id):
+                return self._progress(contract, refusal_observation(confirmed))
         if submitted.get("unclear") or submitted.get("accepted") is False:
             return self._progress(
                 contract,
                 {
                     "command_id": contract.command_id,
                     "terminal": None,
-                    "timed_out": True,
+                    "timed_out": submitted.get("timed_out") is True,
                     "started": None,
                     "stopped": False,
                     "evidence": {},

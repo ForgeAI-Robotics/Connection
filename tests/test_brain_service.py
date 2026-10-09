@@ -20,10 +20,10 @@ class IndependentBrainTests(unittest.TestCase):
         self.world = {'milk_1': {'grasped': False, 'pos': [0, 0], 'category': 'milk'}}
         self.zones = {'milk_area': {'pos': [1, 1], 'radius': .1}}
         self.sent = []
-        self.fail = False
+        self.force_failure = False
         def perform(text):
             self.sent.append(text)
-            if self.fail:
+            if self.force_failure:
                 return {'success': False}
             self.world['milk_1'].update(grasped=text.startswith('抓取'),
                                        pos=[0, 0] if text.startswith('抓取') else [1, 1])
@@ -53,7 +53,7 @@ class IndependentBrainTests(unittest.TestCase):
         self.assertEqual(self.sent, ['抓取 milk_1', '放置 milk_1 到 milk_area'])
 
     def test_failed_grasp_does_not_dispatch_place(self):
-        self.fail = True
+        self.force_failure = True
         self.service.publish('把牛奶放好', 'newbrain0002')
         self.assertEqual(self.service.status()['state'], 'recovery_required')
         self.assertEqual(len(self.sent), 1)
@@ -68,14 +68,18 @@ class IndependentBrainTests(unittest.TestCase):
         self.assertEqual(self.service.runtime.belief('scene_description')['certain'], '桌上有牛奶')
 
     def test_restart_queries_original_command_only(self):
-        self.fail = True
+        self.force_failure = True
         self.service.publish('把牛奶放好', 'newbrain0005')
         command = self.service.runtime.record['open_command_id']
         new_sends = []
         restarted = create_service(self.config, model=lambda _: '{}',
             port_factory=lambda _: DeskAdapter(perform=lambda command: new_sends.append(command)))
         restarted._launch = restarted._drive
-        restarted.publish('把牛奶放好', 'newbrain0005', resume=True)
+        # Restoring/querying is distinct from an explicit human continue,
+        # which now authorizes a new attempt after stop/resource checks.
+        runtime = restarted.attach()
+        runtime.resume()
+        restarted._drive(runtime)
         self.assertEqual(restarted.status()['state'], 'recovery_required')
         self.assertEqual(restarted.runtime.record['open_command_id'], command)
         self.assertEqual(new_sends, [])

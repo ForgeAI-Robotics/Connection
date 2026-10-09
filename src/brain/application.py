@@ -27,6 +27,7 @@ class BrainApplication:
         self.learning = ReflectionWorker(root / 'learning', self.config,
                                          processor=reflection_processor, emit=emit)
         self.extra_workers = []
+        self._execution_ports = []
         from brain.api.media import MediaService
         self.media = MediaService(service.status)
         self._lease = None
@@ -41,6 +42,7 @@ class BrainApplication:
             underlying = getattr(port, 'port', port)
             if hasattr(underlying, 'executor'):
                 underlying.executor = self.io
+            self._execution_ports.append(port)
             return CooperativePort(port, self.owner, self.io, self.controls)
 
         def runtime(config, port, **kwargs):
@@ -57,6 +59,13 @@ class BrainApplication:
         service.reflection = self.learning.enqueue
 
     def _event(self, event, record):
+        if event == 'task_cancelled':
+            self.owner.interrupt_waits()
+            for port in self._execution_ports:
+                abandon = getattr(port, 'abandon_waits', None)
+                if callable(abandon):
+                    abandon()
+            self._execution_ports.clear()
         emit(event, record)
         if (self.config.get("brain") or {}).get("capture_timeline", True):
             self.media.event(event, record)

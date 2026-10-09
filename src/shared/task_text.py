@@ -1,5 +1,6 @@
 """Deterministic Chinese presentation; never changes task state or permissions."""
 import json
+import re
 from datetime import datetime
 
 
@@ -67,6 +68,23 @@ PHASES = {
     'VERIFYING_PLACE': '确认饮料已放好',
 }
 REASONS = {
+    'MOTOR_HEALTH_NOT_READY': '电机保护或降温确认中，指令未受理',
+    'SAFETY_NOT_READY': '导航执行条件未就绪，指令未受理',
+    'submission_rejected': '指令被拒绝，未开始执行',
+    'INVALID_LEG_ORDER': '导航步骤顺序不满足要求，具体前置步骤见原始错误',
+    'NAVIGATION_NO_PATH': '导航无法规划可通行路径',
+    'NAVIGATION_NO_PROGRESS': '导航持续无进展',
+    'NAVIGATION_TERMINAL_UNREACHABLE': '导航末端未满足到达条件',
+    'no_reliable_predictive_retry_window': '未满足到达条件，且没有可靠的预测停车重试空间',
+    'stationary_goal_pose_drift': '停车后定位位姿偏离目标',
+    'goal_overshot_without_reverse_token': '已越过目标，当前无可用后退动作',
+    'residual_below_reliable_token_displacement': '剩余距离小于可靠动作位移',
+    'position_hard_failure': '末端位置未达到要求',
+    'final_yaw_position_hard_failure': '最终转向阶段位置未达到要求',
+    'final_yaw_reversal_limit': '最终转向触发反向调整次数限制',
+    'terminal_heading_drift': '末段行进朝向偏离',
+    'fail': '执行未通过核验',
+    'timeout': '未能在期限内确认执行结果',
     'real_execution_disabled': '真机动作许可未开启',
     'navigation_gate': '导航执行条件尚未满足',
     'command_unknown': '原动作指令的执行状态尚未确认',
@@ -100,9 +118,11 @@ EVENTS = {
     'action_finished': '已收到动作返回，等待核验', 'step_passed': '当前步骤核验通过',
     'task_succeeded': '任务完成', 'task_finished_with_skips': '流程结束，含人工跳过的步骤',
     'execution_error': '执行异常', 'unconfirmed': '执行结果尚未确认',
+    'submission_rejected': '指令被下游拒绝，未开始执行',
     'pause_intent': '收到暂停请求', 'pause_requested': '暂停请求已处理',
     'pause_resumed': '任务恢复', 'human_continue': '收到人工继续请求',
     'cancel_intent': '收到取消请求', 'cancel_unclear': '取消结果尚未核清',
+    'task_cancelled': '本轮任务已取消，不再执行后续步骤',
     'cancel_accepted': '取消请求已受理，等待停止确认', 'cancel_resolved': '取消已确认',
     'requery': '查询原指令', 'requery_unknown': '原指令状态未知',
     'requery_not_started_seen': '已确认原指令未开始', 'requery_stopped_seen': '已确认原指令已停止',
@@ -121,7 +141,32 @@ EVENTS = {
 
 def reason_text(reason):
     value = str(reason or '')
+    if value.startswith('submission_rejected:'):
+        code = value.split(':', 1)[1]
+        return '指令被拒绝，未开始执行：' + reason_text(code)
     return f'{REASONS[value]}（{value}）' if value in REASONS else value
+
+
+def failure_text(message, code=None):
+    """Translate recognized downstream failures without inferring a physical cause."""
+    raw = str(message or code or '')
+    phrases = {
+        'localization pose is not in inflated known-free space': '当前定位点不在地图膨胀后的已知可通行区域内',
+        'goal is not in inflated known-free space': '目标点不在地图膨胀后的已知可通行区域内',
+        'no route exists in inflated known-free space': '地图膨胀后的已知可通行区域内不存在连通路径',
+        'terminal pose adjustment made no progress for ': '末端位姿调整持续无进展，导航已报告失败',
+    }
+    chinese = REASONS.get(raw)
+    order = re.fullmatch(r'(\w+) navigation must succeed under the same task_id before (\w+)', raw)
+    if order:
+        targets = {'table2': '2 号桌', 'table_2': '2 号桌', 'relay2': '中转点 2',
+                   'relay3': '中转点 3', 'table1': '1 号桌', 'table_1': '1 号桌'}
+        before, after = (targets.get(name, name) for name in order.groups())
+        chinese = f'导航顺序不满足：同一任务内必须先成功到达{before}，才能前往{after}'
+    if not chinese:
+        chinese = next((text for phrase, text in phrases.items() if phrase in raw), None)
+    chinese = chinese or REASONS.get(code) or '执行异常，详情见原始错误'
+    return f'{chinese}；原始错误：{raw}' + (f'（{code}）' if code and code not in raw else '')
 
 
 def task_context(record):
@@ -166,8 +211,7 @@ def format_process_event(record):
     kind, event = record.get('kind'), record.get('event')
     advice = record.get('recovery_advice') or {}
     if kind == 'TASK' and event == 'recovery_advised' and not any((
-            advice.get('error'), record.get('error'), record.get('exception'),
-            (record.get('diagnostic') or {}).get('error'))):
+            advice.get('error'), record.get('error'), record.get('exception'))):
         return ''
     phase = record.get('step_id')
     task = str(record.get('task_id') or record.get('id') or '')

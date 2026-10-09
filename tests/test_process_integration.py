@@ -24,6 +24,11 @@ class ProcessIntegrationTests(unittest.TestCase):
     def test_web_exit_keeps_brain_task_and_direct_feishu_client_alive(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
+            # The isolated workspace must include the startup LAN configuration.
+            (root / 'config').mkdir()
+            (root / 'config' / 'networks.yaml').write_text(yaml.safe_dump({
+                'active': 'test', 'roles': {role: {'http_port': 1, 'ops_port': 1} for role in ('brain', 'nav', 'control', 'robot')},
+                'wifis': {'test': {role: '127.0.0.1' for role in ('brain', 'nav', 'control', 'robot')}}}))
             config = root / 'config.yaml'
             config.write_text(yaml.safe_dump({'brain': {'capture_timeline': False}, 'reflection': {'enabled': False},
                 'reception_real': {'kernel_runtime_dir': str(root / 'ledger'), 'kernel_enabled': False}}))

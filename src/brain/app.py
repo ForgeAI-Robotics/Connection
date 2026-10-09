@@ -11,6 +11,8 @@ def create_runtime(config, port, *, package="reception"):
     runtime = TaskRuntime(KernelStore(runtime_dir(config)), port,
                           config=deepcopy(config), package=package,
                           policy=PackagePolicy(), release_reader=bound_release)
+    runtime.reconcile_submission_rejection()
+    runtime.reconcile_cancel_intent()
     # Restore execution receipts, not physical actions. Only ports with this capability opt in.
     if runtime.record.get("execution_backend") == "desk":
         restore = getattr(port, "restore_receipts", None)

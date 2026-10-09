@@ -93,14 +93,8 @@ def control_task(config, action, *, port=None, runtime=None, step_id=None):
             return {"accepted": True, "state": runtime.state, **result}, runtime
         if action == "cancel":
             result = runtime.request_cancel()
-            if runtime.state == "cancelling":
-                runtime.settle_cancel()
-            return {
-                "accepted": bool(result.get("accepted")) or runtime.state == "cancelled",
-                "completed": runtime.state == "cancelled",
-                "state": runtime.state,
-                "error": None if result.get("accepted") else (result.get("error") or "取消未被受理"),
-            }, runtime
+            return {**result, "state": runtime.state, "error": None,
+                    "message": "本轮任务已取消，不再执行后续步骤"}, runtime
         raise Rejected(f"未知控制动作: {action}")
     except (Rejected, IllegalTransition) as exc:
         state = None if runtime is None else runtime.state
