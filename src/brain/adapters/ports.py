@@ -350,20 +350,25 @@ def select_backend(config, package, *, mock=False):
     return "desk" if backend == "desk" else "slaver:" + backend
 
 
-def protocol_endpoints():
+SIMULATED_RECEPTION = {'reception_protocol': 'protocol', 'reception_simple': 'simple_physics'}
+
+
+def protocol_endpoints(backend='reception_protocol'):
     from shared.execution_profile import applied_profile, PROTOCOL_URLS
     profile = applied_profile()
     route = (profile or {}).get('routes', {}).get('reception', {})
-    if route.get('backend') != 'reception_protocol' or route.get('endpoints') != PROTOCOL_URLS:
-        raise Rejected('导航／操控协议模拟必须通过运行环境配置显式应用')
-    return dict(PROTOCOL_URLS)
+    endpoints = route.get('endpoints')
+    if (route.get('backend') != backend or not isinstance(endpoints, dict)
+            or (backend == 'reception_protocol' and endpoints != PROTOCOL_URLS)):
+        raise Rejected('导航／操控模拟必须通过运行环境配置显式应用')
+    return dict(endpoints)
 
 
 def target_identity(config, backend):
     from shared.execution_profile import applied_profile
     profile = applied_profile()
-    if backend == 'reception_protocol':
-        return {'backend': backend, **protocol_endpoints()}
+    if backend in SIMULATED_RECEPTION:
+        return {'backend': backend, **protocol_endpoints(backend)}
     if backend == 'simple_o7':
         from brain.adapters.simple_o7 import settings, WIRE_VERSION
         return {'backend': backend, 'url': settings().url, 'contract_version': WIRE_VERSION}
@@ -387,11 +392,11 @@ def build_port(config, backend, *, agent=None):
         return SimpleO7Adapter.from_config()
     if backend == "camera":
         return LookAdapter()
-    if backend == 'reception_protocol':
+    if backend in SIMULATED_RECEPTION:
         from copy import deepcopy
         from shared.protocol_simulation import require_simulator_pair
-        endpoints = protocol_endpoints()
-        require_simulator_pair(endpoints)
+        endpoints = protocol_endpoints(backend)
+        require_simulator_pair(endpoints, kind=SIMULATED_RECEPTION[backend])
         selected = deepcopy(config)
         selected.setdefault('reception_real', {}).update(dream_base_url=endpoints['dream'], vla_base_url=endpoints['vla'])
         return BodyAdapter.from_config(selected)

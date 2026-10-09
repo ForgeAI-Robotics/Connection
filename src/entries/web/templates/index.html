@@ -492,6 +492,7 @@
                     statusCls = 'status-fail';
                 } else {
                     statusLabel = data.execution_backend === 'reception_protocol' ? '✓ 协议模拟完成'
+                        : data.execution_backend === 'reception_simple' ? '✓ SIMPLE 物理仿真完成'
                         : wonSignal === true ? '✓ 任务成功(落点已验证)' : '✓ 任务成功';
                     statusCls = 'status-ok';
                 }
@@ -501,7 +502,7 @@
             }
             const barCls = recovery ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');
             let html = `<div class="task-progress-header">
-                <span>${taskText(taskName)} (${completed}/${total})${data.execution_backend === 'reception_protocol' ? ' · 导航／操控模拟' : ''}</span>
+                <span>${taskText(taskName)} (${completed}/${total})${data.execution_backend === 'reception_protocol' ? ' · 导航／操控模拟' : data.execution_backend === 'reception_simple' ? ' · SIMPLE 物理仿真' : ''}</span>
                 <span class="${statusCls}">${taskText(statusLabel)}</span>
             </div>
             <div class="task-bar"><div class="${barCls}" style="width:${pct}%"></div></div>`;

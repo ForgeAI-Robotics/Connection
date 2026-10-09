@@ -87,11 +87,24 @@ def apply_to_brain_config(config: dict) -> dict:
     return config
 
 
+def remote_simulation_hosts() -> list[str]:
+    """config/robot_api.yaml 里的远端仿真（SIMPLE）也在局域网内，同样不走本机代理。"""
+
+    from urllib.parse import urlsplit
+    try:
+        config = yaml.safe_load((workspace_root() / "config" / "robot_api.yaml").read_text(encoding="utf-8")) or {}
+    except OSError:
+        return []
+    url = str(((config.get("backends") or {}).get("simple_o7") or {}).get("url") or "")
+    host = urlsplit(url).hostname
+    return [host] if host and host not in {"localhost", "127.0.0.1", "::1"} else []
+
+
 def apply_proxy_bypass() -> None:
-    """当前各端 IP 不走代理。"""
+    """当前各端 IP 与远端仿真主机不走代理。"""
 
     site = lan()
-    extras = [site.ip(role) for role in ROLES]
+    extras = [site.ip(role) for role in ROLES] + remote_simulation_hosts()
     for key in ("NO_PROXY", "no_proxy"):
         parts = [item.strip() for item in os.environ.get(key, "").split(",") if item.strip()]
         for ip in extras:

@@ -26,6 +26,22 @@ prepare → reachability → CuRobo → SONIC pipeline. O7's default Coke scene 
 that historical result does not describe the O6 task. The two object identities are distinct.
 Neither variant provides a persistent multi-step world, navigation, release/place, live cameras, or GR00T inference.
 
+## Single-can reception episode (`/reception/nav`, `/reception/vla`)
+
+Since 2026-10-08 the same facade also serves Connection's `fq/reception-lan/v1` NAV and VLA
+endpoints under `/reception/nav` and `/reception/vla` (no bearer token, as on the robot LAN).
+The first `table_2` navigation of a task starts one worker (`service.reception_worker`) that owns
+one persistent MuJoCo episode; each brain command advances one segment of it:
+`nav_table2 → pick → nav_relay2 → nav_relay3 (lateral) → nav_table1 → place`.
+The episode reuses the frozen O6 SONIC release (`sonic_release_v1`, left-hand `cross_table`
+configuration) read-only; `service/reception_task.py` only adds the walk to the pick table and
+splits the carry into the contract's relay legs. Semantic targets map to formal-room poses
+(`service/reception_task_info.py`); real-map coordinates are not used.
+Results are measured physics (arrival error, grasp contact and lift, placement gate);
+the simulation clock is paused between commands. Cancel ends the episode; a new attempt needs a new task.
+`python -m service.reception_episode <dir>` runs all six segments without HTTP;
+`python -m service.render_reception <episode_dir> --commands commands.json` renders a replay video.
+
 Command records survive service restart. A missing/unfinished record is never replayed automatically.
 Use `python3 manage.py start` / `python3 manage.py stop` for the existing container.
 Stop atomically fences new admission and refuses any unresolved command. The panel uses these commands over SSH.

@@ -90,6 +90,9 @@ class LocalServices:
             if route['available'] and route['backend'] == 'reception_protocol':
                 from shared.protocol_simulation import require_simulator_pair
                 require_simulator_pair(route['endpoints'], self.get)
+            if route['available'] and route['backend'] == 'reception_simple':
+                from shared.protocol_simulation import require_simulator_pair
+                require_simulator_pair(route['endpoints'], kind='simple_physics')
             if route['available'] and route['mode'] == 'simulation' and route['url']:
                 endpoint = '/health' if route['backend'] in {'desk', 'simple_o7'} else '/camera/status'
                 if route['backend'] == 'simple_o7':

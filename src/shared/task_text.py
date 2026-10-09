@@ -87,6 +87,7 @@ ACTIONS = {'query_original': '查询原指令的执行状态', 'request_help': '
            'wait': '等待执行条件就绪', 'cancel': '通过原任务入口取消任务',
            'continue': '确认执行条件后，通过原任务入口继续'}
 BACKENDS = {'reception_real': '真机接待', 'reception_protocol': '接待协议模拟',
+            'reception_simple': 'SIMPLE 物理仿真接待',
             'unselected': '尚未选择', 'desk': '桌面仿真'}
 SKILLS = {'local': '本地', 'navigate': '导航', 'inspect': '检查', 'pick': '抓取',
           'place': '放置', 'verify': '核验', 'describe': '观察', 'desk_check': '桌面检查',

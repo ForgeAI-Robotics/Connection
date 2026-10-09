@@ -15,7 +15,7 @@ STATE_PATH = ROOT / 'data' / 'system' / 'execution.json'
 LOCK_PATH = ROOT / 'data' / 'system' / 'execution.lock'
 BLOCK_PATH = ROOT / 'data' / 'system' / 'execution.blocked'
 SIM_BACKENDS = {'desk', 'mujoco', 'mujoco_3dgs', 'simple_o7'}
-RECEPTION_BACKENDS = {'reception_mock', 'reception_protocol'}
+RECEPTION_BACKENDS = {'reception_mock', 'reception_protocol', 'reception_simple'}
 PROTOCOL_URLS = {'dream': 'http://127.0.0.1:18001', 'vla': 'http://127.0.0.1:18091'}
 DEFAULT = {'mode': 'simulation', 'simulation_backend': 'desk', 'modules': {}}
 
@@ -61,6 +61,8 @@ def resolve(value, robot_config):
                 item['simulation_backend'] if item['simulation_backend'] != 'inherit' else 'reception_mock')
             if route['backend'] == 'reception_protocol':
                 route['endpoints'] = dict(PROTOCOL_URLS)
+            elif route['backend'] == 'reception_simple':
+                route['endpoints'] = simple_reception_endpoints(robot_config)
         elif mode == 'real':
             route.update(backend='unavailable', available=False,
                          reason=f'{name} 尚无已接入的完整真机适配；不会回落仿真')
@@ -69,18 +71,28 @@ def resolve(value, robot_config):
         elif name == 'observation' and backend == 'simple_o7':
             route.update(available=False, reason='SIMPLE O7 当前提供物理状态证据，尚未接入现场描述和网页相机')
         else:
-            raw = (robot_config.get('backends') or {}).get(backend) or {}
             # Applied profiles explicitly enable the chosen simulation backend.
-            if not raw.get('url'):
-                raise ValueError(f'config/robot_api.yaml 缺少 {backend}.url')
-            from urllib.parse import urlparse
-            url = str(raw['url']).rstrip('/')
-            parsed = urlparse(url)
-            if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password:
-                raise ValueError(f'{backend}.url 必须是无内嵌凭据的 HTTP 地址')
-            route['url'] = url
+            route['url'] = backend_url(robot_config, backend)
         routes[name] = route
     return {'config': config, 'routes': routes}
+
+
+def backend_url(robot_config, backend):
+    raw = (robot_config.get('backends') or {}).get(backend) or {}
+    if not raw.get('url'):
+        raise ValueError(f'config/robot_api.yaml 缺少 {backend}.url')
+    from urllib.parse import urlparse
+    url = str(raw['url']).rstrip('/')
+    parsed = urlparse(url)
+    if parsed.scheme not in {'http', 'https'} or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError(f'{backend}.url 必须是无内嵌凭据的 HTTP 地址')
+    return url
+
+
+def simple_reception_endpoints(robot_config):
+    """The remote SIMPLE service serves both reception roles under fixed prefixes."""
+    url = backend_url(robot_config, 'simple_o7')
+    return {'dream': url + '/reception/nav', 'vla': url + '/reception/vla'}
 
 
 @lru_cache(maxsize=1)

@@ -242,7 +242,7 @@ function updateBrainSummary(el) {
   const taskText = brainOverview.errors?.task ? "无法读取任务状态" : task.active || unfinished
     ? `${TASK_STATE[task.state] || task.state || "处理中"} · ${task.task_id || ""}`
     : task.task_id ? `无活动任务 · 上一任务${TASK_STATE[task.state] || task.state || ""}` : "无活动任务";
-  host.textContent = `${modeText}${route?.backend === "reception_protocol" ? " · 协议模拟" : ""} · ${taskText}`;
+  host.textContent = `${modeText}${route?.backend === "reception_protocol" ? " · 协议模拟" : route?.backend === "reception_simple" ? " · SIMPLE 物理仿真" : ""} · ${taskText}`;
   if (!brainOverview.health) host.textContent = "正在读取状态…";
   host.title = host.textContent;
   const badge = el.querySelector(".badge");

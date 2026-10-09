@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import yaml
 
-from shared.networks import entry_url, apply_to_brain_config
+from shared.networks import entry_url, apply_to_brain_config, apply_proxy_bypass
 
 
 class NetworkRoutingTests(unittest.TestCase):
@@ -34,6 +34,14 @@ class NetworkRoutingTests(unittest.TestCase):
 
     def write(self):
         self.path.write_text(yaml.safe_dump(self.data))
+
+    def test_proxy_bypass_covers_site_ips_and_remote_simulation_host(self):
+        apply_proxy_bypass()
+        self.assertEqual(os.environ['NO_PROXY'].split(','), ['192.0.2.55', '192.0.2.5'])
+        (self.root / 'config/robot_api.yaml').write_text(yaml.safe_dump(
+            {'backends': {'simple_o7': {'url': 'http://203.0.113.69:18770'}}}))
+        apply_proxy_bypass()
+        self.assertEqual(os.environ['no_proxy'].split(','), ['192.0.2.55', '192.0.2.5', '203.0.113.69'])
 
     def test_wifi_switch_moves_all_entry_defaults_and_downstream_targets(self):
         for name, prefix in [('first', '192.0.2'), ('second', '198.51.100')]:

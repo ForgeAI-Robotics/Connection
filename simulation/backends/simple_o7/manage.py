@@ -7,8 +7,10 @@ from pathlib import Path
 
 if __package__:
     from .service.store import Journal
+    from .service.reception_store import ReceptionStore
 else:
     from service.store import Journal
+    from service.reception_store import ReceptionStore
 
 
 def manage(action, root=None, run=subprocess.run):
@@ -20,9 +22,15 @@ def manage(action, root=None, run=subprocess.run):
         fcntl.flock(lock, fcntl.LOCK_EX)
         if action == "stop":
             journal.close_admission()
+            try:
+                ReceptionStore(root).close_admission()
+            except Exception:
+                (root / "admission.closed").unlink(missing_ok=True)
+                raise
         run(["docker", action, "connection-simple-o7"], check=True, timeout=30)
         if action == "start":
             (root / "admission.closed").unlink(missing_ok=True)
+            (root / "reception.closed").unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

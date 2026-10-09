@@ -57,8 +57,9 @@
             <button type="button" id="exec-all-sim">一键全仿真</button>
             <button type="button" id="exec-all-real">一键全真机</button>
             <button type="button" id="exec-reception-protocol">仅接待协议模拟</button>
+            <button type="button" id="exec-reception-simple">仅接待 SIMPLE 仿真</button>
           </div>
-          <p class="hint">“仅接待协议模拟”启动本机导航与操控进程，停用通用执行和画面模块；在任务网页输入“开始接待”。默认延时成功，无物理运动。“一键全…”会清除模块覆盖；默认接待仍为旧演示。</p>
+          <p class="hint">“仅接待协议模拟”启动本机导航与操控进程，停用通用执行和画面模块；在任务网页输入“开始接待”。默认延时成功，无物理运动。“仅接待 SIMPLE 仿真”把同一接待流程发往远端 SIMPLE（O6 + SONIC MuJoCo 物理执行），不启动本机进程。“一键全…”会清除模块覆盖；默认接待仍为旧演示。</p>
           <pre id="exec-preview-text" hidden></pre>
           <pre id="exec-status">正在读取生效环境…</pre>
         </section>

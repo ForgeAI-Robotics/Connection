@@ -36,6 +36,8 @@ class Bridge:
         self.config = config
         self.store = Journal(config["runtime"])
         self.launcher = launcher or self.launch
+        from .reception_http import Reception
+        self.reception = Reception(config)
 
     def launch(self, command_id):
         log = Path(self.config["runtime"]) / "worker.log"
@@ -81,6 +83,11 @@ class Bridge:
 
     def logs(self, lines):
         records = self.store.records()
+        sessions = self.reception.store.sessions()
+        latest_record = max((r["created_at"] for r in records), default="")
+        if sessions and (not records or sessions[-1]["created"] > __import__("datetime").datetime.fromisoformat(
+                latest_record).timestamp()):
+            return self.reception_logs(sessions[-1], lines)
         if not records:
             return {"text": "尚无仿真命令", "path": None}
         latest = max(records, key=lambda r: r["created_at"])
@@ -100,10 +107,23 @@ class Bridge:
         return {"text": header + "\n" + text, "path": str(files[-1]) if files else str(folder)}
 
 
+    def reception_logs(self, session, lines):
+        folder = Path(session["episode"])
+        summary = {k: session.get(k) for k in ("task_id", "state", "next", "holding", "object_location", "failure")}
+        text = ""
+        for name in ("worker.log", "process.log"):
+            path = folder / name
+            if path.exists():
+                text += f"--- {name}\n" + "\n".join(path.read_text(errors="replace").splitlines()[-lines:]) + "\n"
+        return {"text": "接待物理仿真回合\n" + json.dumps(summary, ensure_ascii=False, indent=2) + "\n" + text,
+                "path": str(folder)}
+
+
 def handler(bridge, token):
     class Handler(BaseHTTPRequestHandler):
-        def respond(self, status, value):
-            body = json.dumps(dict(value, contract_version=VERSION), allow_nan=False).encode()
+        def respond(self, status, value, stamp_version=True):
+            body = json.dumps(dict(value, contract_version=VERSION) if stamp_version else value,
+                              allow_nan=False).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -119,6 +139,9 @@ def handler(bridge, token):
         def dispatch(self):
             self.connection.settimeout(10)
             path = unquote(urlsplit(self.path).path)
+            if path.startswith("/reception/"):
+                self.reception(path)
+                return
             if path == "/health" and self.command == "GET":
                 try:
                     info = scene(bridge.config["source"], bridge.config)
@@ -165,6 +188,25 @@ def handler(bridge, token):
             except Exception as exc:
                 print("bridge error:", repr(exc), flush=True)
                 self.respond(500, {"error": "executor_internal_error"})
+
+        def reception(self, path):
+            # fq/reception-lan/v1 has its own contract_version and no bearer token, as on the robot LAN.
+            try:
+                body = None
+                if self.command == "POST":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if not 0 < length <= 32768:
+                        raise ValueError("invalid_body_length")
+                    body = json.loads(self.rfile.read(length))
+                status, value = bridge.reception.handle(self.command, path, body, self.headers)
+            except (ValueError, TypeError) as exc:
+                status, value = 400, {"success": False, "error": {"code": "INVALID_REQUEST", "message": str(exc),
+                    "retryable": False, "details": {"action_started": False, "action_state_uncertain": False}}}
+            except Exception as exc:
+                print("reception error:", repr(exc), flush=True)
+                status, value = 500, {"success": False, "error": {"code": "INTERNAL_ERROR", "message": repr(exc),
+                    "retryable": False, "details": {"action_started": False, "action_state_uncertain": True}}}
+            self.respond(status, value, stamp_version=False)
     return Handler
 
 

@@ -11,7 +11,7 @@ def base_url():
     from ops.services import ROOT
     import yaml
     config = yaml.safe_load((ROOT / "config/robot_api.yaml").read_text()) or {}
-    return os.environ.get("SIMPLE_O7_URL") or config.get("backends", {}).get("simple_o7", {}).get("url", "http://192.168.5.21:18770")
+    return os.environ.get("SIMPLE_O7_URL") or config.get("backends", {}).get("simple_o7", {}).get("url", "http://192.168.31.69:18770")
 
 
 def request(path):
@@ -47,7 +47,7 @@ def run(action):
         raise ValueError("unsupported SIMPLE action")
     from ops.services import _load_dotenv
     _load_dotenv()
-    target = os.environ.get("SIMPLE_SSH_TARGET", "fangqi@192.168.5.21")
+    target = os.environ.get("SIMPLE_SSH_TARGET", "fangqi@192.168.31.69")
     if target.startswith("-") or any(c.isspace() for c in target):
         raise ValueError("invalid SSH target")
     root = os.environ.get("SIMPLE_REMOTE_DIR", "/home/fangqi/connection-simple-o7")

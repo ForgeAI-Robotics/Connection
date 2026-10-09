@@ -12,7 +12,7 @@ Connection 新增 `simple_o7` 执行适配器，复用现有 Planner、Runtime�
 flowchart LR
     A[网页 / 飞书 / 独立实验命令] --> B[Connection 大脑]
     B --> C[simple_o7 适配器]
-    C -->|HTTP| D[192.168.5.21:18770 独立执行服务]
+    C -->|HTTP| D[192.168.31.69:18770 独立执行服务]
     D --> E[SIMPLE 原生 O6 抓取任务 / CuRobo / AMO]
     E --> F[MuJoCo G1 + O6]
     F -->|执行状态和物体证据| D
@@ -289,3 +289,78 @@ modules:
 后续全仿真验收中，已通过面板临时切换至 `simple_o7`，由正式网页入口发布任务 `simple-web-01-45e8ec11`。大脑规划出单步罐子抓取，原命令 `simple-o7-1-eb0145e8ec11` 完成，Runtime 判定 `succeeded`（1/1）。这项验证使用正式任务账本，补足第 7 节隔离账本实验之外的入口调用证据。
 
 O6 的能力边界没有扩大：此次证明抓取并稳定持有，不证明放置、导航或多步世界持续性。实验结束后日常入口回到 Desk，真机许可保持关闭。四个后端的成功、失败及最终配置见 [仿真通用任务验收](联调说明_仿真通用任务验收.md)。
+
+## 10. 2026-10-08 地址迁移与单罐接待全流程接入
+
+### 地址与环境
+
+SIMPLE 主机地址改为 `192.168.31.69`（主机名 `fangqi-4080s`），容器、端口 18770、令牌和远端目录不变。
+本机修改：`config/robot_api.yaml`（不入库）、`.env` 的 `SIMPLE_SSH_TARGET`、`src/ops/simple_remote.py` 与 `scripts/simple_o7_experiment.py` 的默认值、`config/examples/`。
+
+现场发现并处理：
+
+- 远端容器已运行 10 天，容器内 PyTorch 初始化 CUDA 偶发失败（宿主机内核日志 `NV_ERR_NO_MEMORY / Cannot allocate sysmem`）。账本核清后用 `manage.py` 重启我们自己的容器，CUDA 恢复；未动其他容器。
+- 本机设置了桌面代理 `HTTP_PROXY=127.0.0.1:7890`，大脑访问 `.69` 被代理拦截成 HTTP 502。`shared/networks.py` 的 `apply_proxy_bypass()` 现在把 `robot_api.yaml` 中 SIMPLE 主机也加入 `NO_PROXY`（与各端 IP 同样处理）。
+
+### 远端已有内容的核查
+
+`.69` 上没有现成可被大脑调用的“开始接待”服务。可用的物理能力有两部分：
+
+1. `SIMPLE-o7-verify/.../sonic_release_v1`（2026-09-29 冻结）：O6 灵巧手 + SONIC v1.1 全身控制的 11 个 MuJoCo 任务，其中 `cross_table` / `multileg_carry` 是“抓取—持物行走—放到另一张桌”。
+2. `~/g1-navigation-sim`（2026-10-08）：ROS g1pilot 规划器 + SONIC 的纯导航仿真，房屋场景，没有物体和操控。
+
+因此接入方式为：在我们自己的独立服务上实现与真机相同的 `fq/reception-lan/v1` NAV/VLA 接口，后面驱动同一个连续的 O6 + SONIC 物理回合。上游代码只读导入，没有修改。
+
+### 链路
+
+```mermaid
+flowchart LR
+    A[网页 / 飞书 / 实验脚本「开始接待」] --> B[Connection 大脑<br/>reception.single_can SOP · Runtime · Verifier]
+    B -->|DreamClient| N[".69:18770/reception/nav"]
+    B -->|VlaClient| V[".69:18770/reception/vla"]
+    N --> W[每任务一个 episode worker]
+    V --> W
+    W --> M["MuJoCo · G1 + O6 · SONIC v1.1<br/>sonic_release_v1（只读）"]
+    M -->|测得的位姿、接触、抬升、放置门| W
+```
+
+大脑侧新增接待后端 `reception_simple`：与 `reception_protocol` 一样复用 `BodyAdapter`、`DreamClient`、`VlaClient` 和全部核验，只是端点来自 `robot_api.yaml` 的 `simple_o7.url` 加固定前缀；没有“仿真即通过”分支。面板「运行环境」新增「仅接待 SIMPLE 仿真」按钮和接待下拉项「单罐接待 · SIMPLE 远端物理仿真」。
+
+### 语义目标到仿真位姿
+
+真机地图坐标不复用。合同里的目标按语义映射到正式房间（`formal_room`）坐标：
+
+| 合同目标 | 仿真对象 | 仿真站位 (x, y, yaw) |
+|---|---|---|
+| `table_2` | 上游源桌 `table`（中心 0.30, 0.00） | (-0.62, 0.00, 0) |
+| `door_1` relay2 → relay3 | 两个中继点，relay3 为保持朝向的横移 | (-0.70, 0.75, π/2) → (-0.90, 0.75, π/2) |
+| `table_1` | 上游目标桌 `table2`（中心 0.30, 2.00） | (-0.50, 2.00, 0) |
+| `cola_can_1` | `graspnet1b:2` 汤罐（O6 已标定的抓取物体） | 起点 (-0.30, 0.08) |
+
+机器人从 (-0.90, 0.90) 出生。物体是汤罐而不是可乐模型：O6 抓取只对该资产标定过，换物体需要新的抓取标定。
+
+### 每条命令执行什么、怎样核验
+
+一个任务对应一个回合；第一条 `table_2` 导航启动 worker，之后每条命令推进回合中的一段，命令之间仿真时钟暂停，物理状态留在内存中不重置。
+
+| 大脑步骤 | 仿真阶段 | 成功条件（全部来自测量） |
+|---|---|---|
+| NAVIGATING_TO_TABLE2 | 转身、行走、转向、接近取物桌、站稳 | 位置误差 ≤ 8 cm、朝向误差 ≤ 0.15 rad、0.5 s 平均速度 ≤ 8 cm/s、倾角 ≤ 10° |
+| VLA_PICKING | 开手、预接近、接近、闭合、抬升保持、搬运姿态 | 上游抬升门（≥ 8 cm、0.5 s 稳定）+ 手部接触 + 无支撑 |
+| NAVIGATING_TO_RELAY2 | 后退、转向、持物行走、站稳 | 同导航条件，且全程仍持物 |
+| LATERAL_TO_RELAY3 | 保持朝向横移、站稳 | 同上 |
+| NAVIGATING_TO_TABLE1 | 持物行走、转向、搬运避让、粗接近、站稳、修正一步、站稳 | 同上 |
+| VLA_PLACING | 扶正、放置、修正、开手、撤手 | 上游放置门：落点误差、桌面支撑、直立、开手、手离罐 ≥ 16 cm、静止 0.5 s |
+
+回包使用与协议模拟相同的字段；导航 `final_xyt` 为 `null`（仿真房间坐标不是地图坐标），测得位姿在 `result.simulation.measured_xyt`。操控证据 `evidence.source=simple_o6_physics`。控制器凭证是对“空闲且存活的回合”的实时观测。
+
+恢复语义：导航段未到位（超时或测得超差）或被暂停时，机器人先站稳，回合保留并回退到该段最后一次行走；大脑「继续」用新的 `command_id`（如 `-r1`）重发同一段。物理失败（摔倒、掉罐、穿透超限）、抓取或放置失败会结束回合，新的尝试需要新任务。
+
+### 调参记录（都写在代码注释里）
+
+- 取物站位用 x = -0.62：上游任务从 -0.68 出生，SONIC 起步站稳后实际在约 -0.615 开始抓取。走到 -0.69 时抓取中基座后退把罐子带落（probe reception-2）。
+- SONIC 在距目标 3 cm 内开始刹车并继续滑行 1–10 cm。取物桌的直线接近目标提前 4.5 cm；放桌的最后接近改为“粗接近 → 站稳 → 至少 12 cm 外的修正一步”，否则会落在上游 6 cm 完成半径内而不移动（brain-run-03）。
+- 中继站稳必须带该段朝向；`StandSpec` 默认朝向 0 会让机器人原地转向（probe reception-4）。
+- 横移改为向左，使最后一段与上游已验证的 `x = -0.90` 通道一致。
+
+物理执行不是逐次确定的：CuRobo 在 GPU 上规划，同一种子的抓取轨迹有细微差别，之后的行走会分叉。单次成功不代表成功率。
