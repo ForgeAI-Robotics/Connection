@@ -22,7 +22,7 @@ class SegmentFailed(RuntimeError):
 
 class Episode:
     def __init__(self, output, *, seed=601, data_root="/mnt/simple/data", room=RELEASE + "/formal_room/room.json",
-                 max_frames=12000, log=print):
+                 max_frames=12000, log=print, scene='formal_room', office_assets=None):
         self.output = Path(output)
         self.output.mkdir(parents=True, exist_ok=True)
         self.log = log
@@ -39,7 +39,20 @@ class Episode:
         from simple.dr.types import Box
         from simple.agents.mp import MotionPlannerAgent
         from simple.mp.curobo import CuRoboPlanner
-        from service.reception_task import G1O6ReceptionMP, SIM_GOALS, SPAWN, SONIC_STOP_OVERSHOOT
+        from service.reception_task import G1O6ReceptionMP, SIM_GOALS, SPAWN, SONIC_STOP_OVERSHOOT, segment_of
+        self.scene = scene
+        if scene == 'office_v2':
+            if not office_assets:
+                raise ValueError('office_v2 requires a snapshot of office scene assets')
+            from service.office_layout import prepare_room, install_visuals, SIM_GOALS, SPAWN
+            from service.office_task import G1O6OfficeReceptionMP, segment_of
+            room = prepare_room(office_assets, self.output)
+            install_visuals()
+            G1O6ReceptionMP = G1O6OfficeReceptionMP
+            max_frames = max(max_frames, 45000)
+        elif scene != 'formal_room':
+            raise ValueError('Unknown reception scene: ' + scene)
+        self.segment_of = segment_of
         self.mujoco, self.goals = mujoco, SIM_GOALS
         torch.manual_seed(seed)
         # Same switches as validate_o6_sonic_suite.py for the left-hand cross_table case.
@@ -59,7 +72,7 @@ class Episode:
         G1O6MPWholebody.hand_target_speed_rad_s = 1.
         G1O6MPWholebody.staged_hand_opening = True
         G1O6MPWholebody.world_tracking_iterations = 10
-        env_id = "simple/G1O6ReceptionMP-v0"
+        env_id = "simple/G1O6ReceptionMP-v0" if scene == 'formal_room' else "simple/G1O6OfficeReceptionMP-v0"
         if env_id not in gym.envs.registry:
             gym.register(env_id, entry_point="simple.envs.loco_manipulation:LocoManipulationEnv",
                          kwargs={"task": G1O6ReceptionMP.uid})
@@ -80,12 +93,21 @@ class Episode:
         mujoco.mj_saveModel(self.model, str(self.output / "execution_model.mjb"), None)
         sources = {Path(inspect.getfile(c)) for c in (G1O6MPWholebody, G1O6CanPickMP, G1O6CrossTableMP,
                                                       G1O6ReceptionMP, MotionPlannerAgent)}
-        self.provenance = dict(seed=seed, release=RELEASE, room=str(room), spawn=list(SPAWN),
-                               pick_approach_overshoot_compensation_m=SONIC_STOP_OVERSHOOT,
+        if scene == 'office_v2':
+            sources.update([Path(__file__), Path(__file__).with_name('office_layout.py')])
+        self.provenance = dict(seed=seed, release=RELEASE, scene=scene, room=str(room), spawn=list(SPAWN),
+                               room_sha256=hashlib.sha256(Path(room).read_bytes()).hexdigest(),
+                               pick_approach_overshoot_compensation_m=.025 if scene == 'office_v2' else SONIC_STOP_OVERSHOOT,
                                sim_goals={k: list(v) for k, v in SIM_GOALS.items()},
                                source_sha256={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources},
                                body_controller=self.task.robot.body_controller,
                                clock_between_commands="paused; state held in memory, never reset")
+        if scene == 'office_v2':
+            self.provenance.update(object_asset='graspnet1b:2',
+                navigation='authored office waypoints; O6 SONIC measured-goal controller; not ROS g1pilot',
+                scene_adaptations=['calibrated dynamic soup can replaces static coke decoration',
+                                   'source support: 0.85 x 0.79 m, calibrated 0.75 m top and near edge',
+                                   'meeting support: authored footprint and 0.75 m top, supported tabletop'])
         (self.output / "provenance.json").write_text(json.dumps(self.provenance, indent=2))
 
     # ---------------------------------------------------------------- measurement
@@ -125,6 +147,10 @@ class Episode:
         f["segment"].append(segment)
         f["phase"].append(phase)
         f["target"].append(self.can().tolist())
+        if len(f['time']) % 100 == 0:
+            (self.output / 'progress.json').write_text(json.dumps(dict(
+                segment=segment, phase=phase, frames=len(f['time']), sim_time=self.data.time,
+                base_xyt=list(self.base()), can_xyz=self.can().tolist())))
         tilt = np.degrees(np.arccos(np.clip(self.data.body("pelvis").xmat[8], -1, 1)))
         if tilt > 20 or self.info.get("o6_physics_failure"):
             self.failure = self.info.get("o6_physics_failure") or "base_tilt_exceeded_20_degrees"
@@ -151,7 +177,8 @@ class Episode:
         self._step_queue(segment, "cancel_stand", lambda: False)
 
     def run_segment(self, segment, cancelled=lambda: False, progress=None):
-        from service.reception_task import SEGMENTS, segment_of
+        from service.reception_task_info import SEGMENTS
+        segment_of = self.segment_of
         from simple.datagen.subtask_spec import PhaseBreakSpec, WalkSpec
         if segment not in SEGMENTS:
             raise ValueError(segment)
@@ -267,15 +294,18 @@ def main():
     parser.add_argument("output")
     parser.add_argument("--seed", type=int, default=601)
     parser.add_argument("--segments", type=int, default=6, help="stop after this many segments")
+    parser.add_argument('--scene', choices=['formal_room', 'office_v2'], default='formal_room')
+    parser.add_argument('--office-assets')
     args = parser.parse_args()
     from service.reception_task import SEGMENTS
-    episode = Episode(args.output, seed=args.seed)
+    episode = Episode(args.output, seed=args.seed, scene=args.scene, office_assets=args.office_assets)
     try:
         for name in SEGMENTS[:args.segments]:
-            entry = episode.run_segment(name)
+            entry = episode.run_segment(name, progress=lambda phase: print('PHASE', phase, flush=True))
             print(json.dumps({k: entry[k] for k in ("segment", "outcome", "error", "frames", "wall_seconds", "checks")},
                              default=float), flush=True)
-            if entry["outcome"] != "succeeded":
+            if entry["outcome"] != "succeeded" or any(entry['checks'].get(k) is False for k in
+                    ('reached', 'object_retained', 'object_grasped', 'object_at_target', 'released')):
                 return 1
     finally:
         episode.close()

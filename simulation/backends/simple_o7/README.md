@@ -41,6 +41,43 @@ Results are measured physics (arrival error, grasp contact and lift, placement g
 the simulation clock is paused between commands. Recoverable navigation failures or command cancellation may preserve the episode after standing still and checking object retention; a new command can retry the same leg. Manipulation cancellation or unrecoverable physical failure ends the episode and requires a new task. Brain-level task cancellation is local only and does not stop this worker.
 `python -m service.reception_episode <dir>` runs all six segments without HTTP;
 `python -m service.render_reception <episode_dir> --commands commands.json` renders a replay video.
+The optional command map uses `{segment: {command_id, verdict}}` for a single
+attempt, or `{segment: {attempt_count, attempts: [{command_id, verdict}, ...]}}`
+in recorded attempt order for retries. A failed physical check stays failed in
+the video even if a later attempt succeeds; legacy last-command-only maps are
+not used to label earlier retries.
+
+### Office scene selection
+
+`config.json` accepts `reception_scene: "formal_room"` (the default) or `"office_v2"`.
+The office option also requires `reception_office_assets`, an absolute path inside
+the container to an immutable copy of the authored office `scene.xml` and its
+`textures/` directory. Keep the copy in this service's `runtime/`; do not edit the
+upstream office or SIMPLE trees. Health responses expose the selected scene and
+the source XML SHA-256. A scene change requires a guarded service restart with no
+unresolved commands, followed by a new task.
+
+`office_layout.py` derives one table-centred collision manifest used by both
+MuJoCo and CuRobo. `office_task.py` supplies the six existing contract segments
+to the same episode, worker and journal. It follows authored office waypoints
+with the O6 SONIC measured-goal controller, not the separate ROS demo's automatic
+mission client. The static Coke decoration is replaced with the calibrated
+dynamic `graspnet1b:2` soup can. The source support preserves the calibrated near
+edge and 0.75 m tabletop; the meeting support keeps the authored footprint and
+0.75 m tabletop. These adaptations are recorded in provenance.
+
+Use a new output directory for each bounded physics probe:
+
+```bash
+python -m service.reception_episode runtime/office-probe-001 \
+  --scene office_v2 --office-assets /opt/connection-simple-o7/runtime/office-assets \
+  --segments 2
+```
+
+The probe exits nonzero on failed physical checks even when phase execution ends
+normally. It is not a brain task. Formal acceptance requires publishing
+`开始接待` through the normal brain entry; its video must use that task's trajectory
+and command identities. `progress.json` is diagnostic telemetry, not task authority.
 
 Command records survive service restart. A missing/unfinished record is never replayed automatically.
 Use `python3 manage.py start` / `python3 manage.py stop` for the existing container.
