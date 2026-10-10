@@ -5,6 +5,7 @@ brain's DreamClient and VlaClient are used unchanged with a path-prefixed base U
 Like the real LAN services these paths take no bearer token; they never reach a robot.
 """
 import os
+import hashlib
 import subprocess
 import sys
 import threading
@@ -22,6 +23,18 @@ PREFIXES = {"/reception/nav": "nav", "/reception/vla": "vla"}
 class Reception:
     def __init__(self, config, launcher=None):
         self.config = config
+        self.scene = config.get('reception_scene', 'formal_room')
+        if self.scene not in {'formal_room', 'office_v2'}:
+            raise ValueError('Unknown reception_scene: ' + str(self.scene))
+        self.semantic_scene = SCENE
+        self.scene_sha256 = None
+        if self.scene == 'office_v2':
+            from .office_layout import SCENE as OFFICE_SCENE
+            if not config.get('reception_office_assets'):
+                raise ValueError('office_v2 requires reception_office_assets')
+            asset = Path(config['reception_office_assets']) / 'scene.xml'
+            self.scene_sha256 = hashlib.sha256(asset.read_bytes()).hexdigest()
+            self.semantic_scene = OFFICE_SCENE
         self.root = Path(config["runtime"])
         self.store = ReceptionStore(self.root)
         self.launcher = launcher or self.launch
@@ -30,9 +43,12 @@ class Reception:
         Path(episode).mkdir(parents=True, exist_ok=True)
         env = dict(os.environ, PYTHONPATH=RELEASE_SRC + ":" + str(Path(__file__).resolve().parents[1]))
         with (Path(episode) / "process.log").open("ab") as output:
+            extra = ['--scene', self.scene]
+            if self.scene == 'office_v2':
+                extra += ['--office-assets', self.config['reception_office_assets']]
             process = subprocess.Popen([sys.executable, "-m", "service.reception_worker", "--runtime", str(self.root),
                                         "--task", task, "--episode", episode,
-                                        "--seed", str(self.config.get("reception_seed", 601))],
+                                        "--seed", str(self.config.get("reception_seed", 601)), *extra],
                                        stdin=subprocess.DEVNULL, stdout=output, stderr=output, env=env,
                                        cwd=str(Path(__file__).resolve().parents[1]), start_new_session=True)
         threading.Thread(target=process.wait, daemon=True).start()
@@ -49,7 +65,8 @@ class Reception:
                      "status": "ok", "interface_online": True, "time": stamp(),
                      "simulation": {"kind": "simple_physics", "role": role, "instance_id": self.store.instance_id,
                                     "engine": "MuJoCo · G1 O6 · SONIC v1.1 (sonic_release_v1)",
-                                    "scene": "formal_room", "semantic_targets": SCENE}}
+                                    "scene": self.scene, "scene_source_sha256": self.scene_sha256,
+                                    "semantic_targets": self.semantic_scene}}
 
     def status(self, role):
         active, receipt = self.store.status()
@@ -111,10 +128,10 @@ class Reception:
             if role == "nav" and method == "GET" and sub == "/v1/world":
                 return 200, {"contract_version": CONTRACT_VERSION, "frame_id": "map", "door_object_id": "door_1",
                              "relation_graph_url": "/total_scene_graph_latest.json", "updated_at": stamp(),
-                             "simulation_frame": "simple_formal_room"}
+                             "simulation_frame": 'simple_' + self.scene}
             if role == "nav" and method == "GET" and sub == "/total_scene_graph_latest.json":
                 return 200, {"frame_id": "map", "updated_at": stamp(),
-                             "objects": [{"id": k, "type": v["type"]} for k, v in SCENE.items()]}
+                             "objects": [{"id": k, "type": v["type"]} for k, v in self.semantic_scene.items()]}
             if method == "POST" and sub in {"/v1/inspection", "/v1/camera/snapshots"}:
                 return self.error("UNSUPPORTED_CAPABILITY", "SIMPLE 接待仿真不提供相机证据；请关闭可选检查", 501)
             return self.error("HTTP_ERROR", "unknown path", 404)
