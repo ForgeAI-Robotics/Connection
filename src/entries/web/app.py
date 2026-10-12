@@ -10,6 +10,7 @@ ROUTES = {
     '/api/publish_task': ['POST'], '/api/task_intent': ['POST'],
     '/api/task_preflight': ['POST'], '/api/task_status': ['GET'],
     '/api/task_skip': ['POST'], '/api/task_pause': ['POST'], '/api/task_continue': ['POST'], '/api/task_cancel': ['POST'],
+    '/api/task_advice/confirm': ['POST'],
     '/api/success_pending': ['GET'], '/api/failure_pending': ['GET'],
     '/api/save_success_experience': ['POST'], '/api/save_failure_experience': ['POST'],
     '/api/save_experience': ['POST'], '/api/experiences': ['GET'], '/api/auto_tools': ['GET'],

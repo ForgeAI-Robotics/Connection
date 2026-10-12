@@ -52,6 +52,8 @@ brain:
     semantic_selection: true
     # 异常建议写入账本和状态页，不自动重试、改路线或放宽核验。
     recovery_advice: true
+    # 仅部署并验收建议确认闭环后开启；未确认不会自动执行模型建议。
+    confirm_recovery_advice: false
   # 所有业务共用 Runtime；legacy 仅用于无在途任务时回退。
   scheduler: runtime
   # 通用任务沿用 robot_api 的 active_backend，不强制改成仿真。

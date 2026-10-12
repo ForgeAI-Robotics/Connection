@@ -91,6 +91,27 @@ def create_app(application, *, facade=None):
         """暂停当前 Runtime 任务。"""
         return _control('pause')
 
+    @app.post('/api/task_advice/confirm')
+    def confirm_advice():
+        from contracts.tasks import KernelError
+        data = request.get_json(silent=True)
+        if (not isinstance(data, dict) or set(data) != {'task_id', 'advice_id', 'expected_revision'}
+                or not isinstance(data.get('advice_id'), str)
+                or not re.fullmatch(r'[0-9a-f]{32}', data['advice_id'])
+                or type(data.get('expected_revision')) is not int or data['expected_revision'] < 0):
+            return jsonify({'accepted': False, 'error': '建议确认参数无效'}), 400
+        try:
+            task_id = _validated_task_id(data['task_id'])
+            if not task_id:
+                raise ValueError('必须指定 task_id')
+        except ValueError as exc:
+            return jsonify({'accepted': False, 'error': str(exc)}), 400
+        try:
+            result = application.confirm_advice(task_id, data['advice_id'], data['expected_revision'])
+            return jsonify(result), 200 if result.get('accepted') else 409
+        except (KernelError, ValueError) as exc:
+            return jsonify({'accepted': False, 'error': str(exc)}), 409
+
     @app.route("/api/task_continue", methods=["POST"])
     def task_continue():
         """从暂停或人工等待继续。开关关闭时不写旧账本。"""

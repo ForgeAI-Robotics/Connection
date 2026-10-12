@@ -102,8 +102,9 @@ def recovery_context(record):
     allowed = ["wait", "request_help", "cancel"]
     if record.get("open_command_id") and record.get("state") == "recovery_required":
         allowed.append("query_original")
-    if record.get("state") in {"paused", "waiting_human"} or (
-            record.get("state") == "recovery_required" and record.get("stopped_confirmed")):
+    if ((record.get("state") in {"paused", "waiting_human"} and not record.get("command_unknown")) or (
+            record.get("state") == "recovery_required" and record.get("stopped_confirmed")
+            and record.get("resources_cleared") is True and not record.get("command_unknown"))):
         allowed.append("continue")
     attempts = []
     for step_id in record.get("phase_order") or []:
@@ -118,6 +119,8 @@ def recovery_context(record):
             "phase": record.get("phase"), "blocked_reason": record.get("blocked_reason"),
             "open_command_id": record.get("open_command_id"),
             "command_unknown": record.get("command_unknown"),
+            "original_query": deepcopy(record.get("advice_query")) if (
+                (record.get("advice_query") or {}).get("command_id") == record.get("open_command_id")) else None,
             "ledger_state": {"holding": record.get("holding"), "object_location": record.get("object_location")},
             "established_facts": [deepcopy(item) for item in (record.get("observations") or [])
                                   if item.get("kind") == "established"][-12:],

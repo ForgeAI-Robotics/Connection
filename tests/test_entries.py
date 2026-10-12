@@ -15,6 +15,18 @@ from brain.learning.demo import DemoLearning
 
 
 class EntryTests(unittest.TestCase):
+    def test_advice_confirmation_is_forwarded_once_with_its_identity(self):
+        client = Mock()
+        client.request.return_value = Mock(content=b'{"accepted":false}', status_code=409,
+                                          headers={'content-type': 'application/json'})
+        app = create_web(client=client).test_client()
+        payload = {'task_id': 'original', 'advice_id': 'a' * 32, 'expected_revision': 10}
+        response = app.post('/api/task_advice/confirm', json=payload)
+        self.assertEqual(response.status_code, 409)
+        client.request.assert_called_once()
+        self.assertEqual(client.request.call_args.args, ('POST', '/api/task_advice/confirm'))
+        self.assertEqual(client.request.call_args.kwargs['json'], payload)
+
     def test_web_forwards_identity_and_failure_without_retry(self):
         client = Mock()
         client.request.return_value = Mock(content=b'{"accepted":false}', status_code=409,

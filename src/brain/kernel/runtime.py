@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import uuid
 from copy import deepcopy
 from datetime import datetime
 
@@ -205,6 +206,7 @@ def status_from_record(record) -> dict:
         "phase": (record or {}).get("phase") or "",
         "selection": deepcopy((record or {}).get("selection")),
         "recovery_advice": advice,
+        "advice_confirmations": deepcopy((record or {}).get("advice_confirmations", [])),
         "handoff_observation": deepcopy((record or {}).get("handoff_observation")),
     }
 
@@ -342,6 +344,12 @@ class TaskRuntime:
                 return False
             self.record["recovery_advice"] = {
                 **deepcopy(advice), "task_id": self.record["task_id"],
+                "advice_id": uuid.uuid4().hex,
+                "step_id": status_from_record(self.record).get("control_step_id"),
+                "control_command_id": status_from_record(self.record).get("control_command_id") or "",
+                "execution_target": deepcopy(self.record.get("execution_target")),
+                "facts": {key: deepcopy(context.get(key)) for key in
+                          ("state", "phase", "blocked_reason", "command_unknown", "original_query", "established_facts", "attempts")},
                 "command_id": self.record.get("open_command_id"),
                 "based_on_revision": self.record["revision"],
                 "record_revision": self.record["revision"] + 1,
@@ -350,6 +358,83 @@ class TaskRuntime:
             }
             self._save("recovery_advised")
             return True
+
+    def claim_advice(self, advice_id, expected_revision):
+        """Persist one human authorization before any I/O; never replay a claim."""
+        from brain.reasoning import recovery_context, RECOVERY_STATES
+        with self._exclusive():
+            self._reload_locked()
+            for receipt in self.record.get("advice_confirmations", []):
+                if receipt["advice_id"] == advice_id:
+                    return deepcopy(receipt), False
+            advice = self.record.get("recovery_advice") or {}
+            current = status_from_record(self.record)
+            if (self.state not in RECOVERY_STATES or not self.record.get("phase_specs")
+                    or self.record.get("package") != "reception"
+                    or advice.get("advice_id") != advice_id
+                    or advice.get("record_revision") != expected_revision
+                    or self.record["revision"] != expected_revision
+                    or advice.get("step_id") != current.get("control_step_id")
+                    or advice.get("control_command_id") != (current.get("control_command_id") or "")
+                    or advice.get("execution_target") != self.record.get("execution_target")
+                    or advice.get("action") not in recovery_context(self.record)["allowed_actions"]):
+                raise Rejected("建议已失效或当前任务不支持建议确认，请刷新后再操作")
+            receipt = {"advice_id": advice_id, "task_id": self.record["task_id"],
+                       "step_id": advice["step_id"], "command_id": advice["control_command_id"],
+                       "action": advice["action"], "status": "processing", "automatic": False,
+                       "confirmed_at": datetime.now().astimezone().isoformat(),
+                       "advice": deepcopy(advice)}
+            self.record.setdefault("advice_confirmations", []).append(receipt)
+            self._save("advice_confirmed")
+            return deepcopy(receipt), True
+
+    def finish_advice(self, advice_id, result):
+        with self._exclusive():
+            try:
+                self._reload_locked()
+            except Rejected:
+                return
+            for receipt in self.record.get("advice_confirmations", []):
+                if receipt["advice_id"] == advice_id:
+                    receipt.update(status="processed" if result.get("accepted") else "rejected",
+                                   result=deepcopy(result), finished_at=datetime.now().astimezone().isoformat())
+                    self._save("advice_control_result")
+                    return deepcopy(receipt)
+
+    def query_advice_original(self):
+        """Refresh original evidence without resuming, verifying or issuing any action."""
+        with self._exclusive():
+            self._reload_locked()
+            command_id = self.record.get("open_command_id")
+            if self.state != "recovery_required" or not command_id:
+                raise Rejected("当前没有可查询的原命令")
+            step = self._step_of_command(command_id)
+            attempt = self._latest(step.step_id) if step else None
+            if not attempt or attempt["command_id"] != command_id:
+                raise Rejected("原命令与步骤不匹配")
+            revision = self.record["revision"]
+            contract = self._contract(step, attempt["attempt_id"], command_id, deepcopy(attempt["request"]))
+        observed = self.port.query(command_id, contract.request)
+        if not isinstance(observed, dict) or observed.get("command_id") != command_id:
+            raise Rejected("查询回执的原命令身份不符，未改变任务")
+        progress = self.runner._progress(contract, observed)
+        with self._exclusive():
+            self._reload_locked()
+            if (self.record["revision"] != revision or self.state != "recovery_required"
+                    or self.record.get("open_command_id") != command_id):
+                raise Rejected("查询期间任务已变化，未应用迟到结果")
+            evidence = progress.evidence or {}
+            known = (progress.command_id == command_id and not progress.timed_out
+                     and evidence.get("identity_ok") is True and evidence.get("time_ok") is True
+                     and progress.publisher_stopped is True and evidence.get("resources_released") is True
+                     and (progress.terminal in {"succeeded", "failed", "cancelled"} or progress.started is False))
+            self.record.update(last_query_command_id=command_id, stopped_confirmed=known,
+                               resources_cleared=known, command_unknown=not known,
+                               advice_query=progress.as_dict())
+            self._save("advice_original_queried")
+            return {"accepted": True, "query_only": True, "command_id": command_id,
+                    "state": self.state, "result_known": known,
+                    "message": "原命令结果已记录；未重试或推进任务"}
 
     def dispatch_count(self, step_id: str) -> int:
         return int((self.record.get("dispatch_counts") or {}).get(step_id) or 0)

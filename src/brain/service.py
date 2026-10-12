@@ -179,6 +179,46 @@ class BrainService:
         # Standalone library calls are synchronous; the application installs its owner queue.
         self._drive(runtime)
 
+    def confirm_advice(self, task_id, advice_id, expected_revision):
+        from contracts.tasks import Rejected, KernelError
+        from shared.execution_profile import admission
+        enabled = ((self.config.get("brain") or {}).get("reasoning") or {}).get("confirm_recovery_advice") is True
+        if not enabled:
+            raise Rejected("建议确认尚未启用")
+        with admission(), _ADMISSION:
+            existing = load_existing(runtime_dir(self.config)) or {}
+            if existing.get("task_id") != task_id:
+                raise Rejected("任务已变化，未执行旧建议")
+            from shared.execution_profile import applied_profile
+            environment = existing.get("environment_revision")
+            if self._target_changed(existing) or environment != (applied_profile() or {}).get("revision"):
+                raise Rejected("执行环境已变化，未执行原环境建议")
+            runtime = self.attach()
+            receipt, fresh = runtime.claim_advice(advice_id, expected_revision)
+            if not fresh:
+                return {"accepted": True, "no_op": True, "task_id": task_id, "confirmation": receipt}
+            action = receipt["action"]
+            try:
+                if action == "query_original":
+                    result = runtime.query_advice_original()
+                elif action in {"continue", "cancel"}:
+                    result, _ = control_task(self.config, action, runtime=runtime)
+                else:
+                    result = {"accepted": True, "state": runtime.state, "informational": True,
+                              "message": "已记录本次处理意见，未派发动作"}
+            except (KernelError, ValueError, RuntimeError) as exc:
+                result = {"accepted": False, "error": str(exc), "state": runtime.state}
+            confirmation = runtime.finish_advice(advice_id, result) or receipt
+            # The persisted claim is never replayed, including after a process restart.
+            if result.get("accepted") and action == "continue":
+                self._launch(runtime)
+            elif action == "query_original":
+                self.refresh_advice(runtime)
+            return {**result, "task_id": task_id, "confirmation": confirmation}
+
+    def refresh_advice(self, runtime):
+        self._advise(runtime)
+
     def _drive(self, runtime):
         while not runtime.planning_done.wait(.1):
             try:
@@ -233,4 +273,7 @@ class BrainService:
 
     def status(self):
         from brain.service_support import status_view
-        return status_view(self.config, None)
+        result = status_view(self.config, None)
+        result["recovery_confirmation_enabled"] = (
+            ((self.config.get("brain") or {}).get("reasoning") or {}).get("confirm_recovery_advice") is True)
+        return result

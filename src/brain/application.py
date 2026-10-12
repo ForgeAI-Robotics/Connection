@@ -56,6 +56,7 @@ class BrainApplication:
         service.select_call = lambda task, options: self.owner.wait(self.planner.submit(service.reasoner.select, task, options))
         service.advice_call = lambda context: self.owner.wait(self.planner.submit(service.reasoner.advise, context))
         service._launch = lambda rt: self.owner.submit(service._drive, rt)
+        service.refresh_advice = lambda rt: self.owner.submit(service._advise, rt)
         service.reflection = self.learning.enqueue
 
     def _event(self, event, record):
@@ -129,6 +130,11 @@ class BrainApplication:
                 result['reflection'] = {key: value for key, value in reflection.items()
                                         if key not in {'episode', 'path'}}
         return result
+
+    def confirm_advice(self, task_id, advice_id, expected_revision):
+        self.start()
+        # Ordinary owner work keeps I/O cooperative: pause/cancel can preempt a query.
+        return self.owner.call(self.service.confirm_advice, task_id, advice_id, expected_revision)
 
     def health(self):
         return {'ready': self._started and not self._closing,
