@@ -18,6 +18,19 @@
 
 2026-10-09 回执中观察到 `retry_requires_new_command_id`、`failure_scope`、`next_command_allowed` 及重试命令的 `recovery_of_command_id`。大脑保留原始回执；这些远端字段的完整约束及安全域恢复许可仍需两端核实，不能宣称大脑已逐字段实现所有恢复语义。当天证据见[多端联调记录](多端联调_20261009_大脑与导航流程及任务控制.md)。
 
+### 新办公室 ROS 仿真接入（2026-10-10）
+
+`simulation/backends/ros_navigation/` 将现有大脑的“开始接待（仅导航）”接到独立仿真中的
+原 8001 → 原 9882 → ROS g1pilot → SONIC → MuJoCo。只在执行入口映射新办公室四段目标坐标，
+保留任务、命令、段序、运动模式、最终朝向要求及原始回执，不改本文件的真机固定坐标合同。
+
+该实验复用 `reception_simple` 仿真路由，健康标识为 `scene=office_ros_8001`，
+独立 Brain 使用隔离账本和显式仿真配置；通过 SSH 转发 UNIX socket 访问无网络的容器。
+VLA 健康只标识同一仿真实例并声明 `manipulation_supported=false`，动作接口返回 501。
+此执行器支持仅导航联调，不等于 O6 完整抓放执行器，也不能用它验证完整接待。
+用法见[执行器说明](../simulation/backends/ros_navigation/README.md)，实际成功与失败见
+[当日联调](多端联调_20261010_新房子ROS仅导航.md)。
+
 ## 1. DREAM侧职责
 
 DREAM侧负责：
