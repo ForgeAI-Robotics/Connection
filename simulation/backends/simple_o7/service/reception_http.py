@@ -12,7 +12,7 @@ import threading
 from pathlib import Path
 from urllib.parse import unquote
 
-from .reception_contract import CONTRACT_VERSION, InvalidRequest, validate_request
+from .reception_contract import CONTRACT_VERSION, NAVIGATION_LEGS, InvalidRequest, validate_request
 from .reception_store import Conflict, ReceptionStore, stamp
 from .reception_task_info import SCENE
 
@@ -28,6 +28,27 @@ class Reception:
             raise ValueError('Unknown reception_scene: ' + str(self.scene))
         self.semantic_scene = SCENE
         self.scene_sha256 = None
+        self.navigation_legs = config.get('reception_navigation_legs', NAVIGATION_LEGS)
+        self.include_relay1 = self.navigation_legs != NAVIGATION_LEGS
+        self.navigation_only = config.get('reception_navigation_only', False)
+        if type(self.navigation_only) is not bool or (self.navigation_only and self.scene != 'office_v2'):
+            raise ValueError('navigation_only must be boolean and requires office_v2')
+        if self.include_relay1:
+            if self.scene != 'office_v2' or set(self.navigation_legs) != {'table2', 'relay1', 'relay2', 'relay3', 'table1'}:
+                raise ValueError('Custom reception route requires the five office_v2 waypoints')
+            # Request coordinates come from the deployed Skill snapshot. Physics
+            # still uses the calibrated office semantic goals, never raw map XY.
+            expected = [('table_2', '', 'forward_path'), ('relay_1', 'relay1_approach', 'forward_path'),
+                        ('door_1', 'door_approach', 'forward_path'), ('door_1', 'door_lateral_exit', 'lateral_path_aligned'),
+                        ('table_1', 'table1_approach', 'forward_path')]
+            ordered = [self.navigation_legs[k] for k in ('table2', 'relay1', 'relay2', 'relay3', 'table1')]
+            for i, (point, semantics) in enumerate(zip(ordered, expected), 1):
+                if (point.get('leg_index') != i or
+                        tuple(point.get(k) for k in ('target_id', 'route_phase', 'motion_mode')) != semantics):
+                    raise ValueError('Office waypoint semantics or order do not match the physical episode')
+                validate_request('nav', dict(contract_version=CONTRACT_VERSION, task_id='validate',
+                    command_id='validate', frame_id='map', require_final_orientation=True, **point),
+                    navigation_legs=self.navigation_legs)
         if self.scene == 'office_v2':
             from .office_layout import SCENE as OFFICE_SCENE
             if not config.get('reception_office_assets'):
@@ -36,7 +57,8 @@ class Reception:
             self.scene_sha256 = hashlib.sha256(asset.read_bytes()).hexdigest()
             self.semantic_scene = OFFICE_SCENE
         self.root = Path(config["runtime"])
-        self.store = ReceptionStore(self.root)
+        self.store = ReceptionStore(self.root, include_relay1=self.include_relay1,
+                                    navigation_only=self.navigation_only)
         self.launcher = launcher or self.launch
 
     def launch(self, task, episode):
@@ -66,6 +88,8 @@ class Reception:
                      "simulation": {"kind": "simple_physics", "role": role, "instance_id": self.store.instance_id,
                                     "engine": "MuJoCo · G1 O6 · SONIC v1.1 (sonic_release_v1)",
                                     "scene": self.scene, "scene_source_sha256": self.scene_sha256,
+                                    "navigation_legs": self.navigation_legs,
+                                    "navigation_only": self.navigation_only,
                                     "semantic_targets": self.semantic_scene}}
 
     def status(self, role):
@@ -108,7 +132,9 @@ class Reception:
             if method == "GET" and sub == ("/v1/status" if role == "nav" else "/v1/vla/control/status"):
                 return self.status(role)
             if method == "POST" and sub == ("/v1/navigation/goals" if role == "nav" else "/v1/vla/tasks"):
-                validate_request(role, body)
+                if role == 'vla' and self.navigation_only:
+                    return self.error('UNSUPPORTED_CAPABILITY', '当前 O6 回合配置为仅导航，禁止抓放', 501)
+                validate_request(role, body, navigation_legs=self.navigation_legs)
                 value, code = self.store.submit(role, body, self.launcher)
                 if code == 202:
                     value = {k: value[k] for k in ("contract_version", "task_id", "command_id", "state", "accepted_at")}

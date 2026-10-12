@@ -11,7 +11,7 @@ from pathlib import Path
 import time
 import uuid
 
-STEP_SEGMENTS = {"NAVIGATING_TO_TABLE2": "nav_table2", "VLA_PICKING": "pick", "NAVIGATING_TO_RELAY2": "nav_relay2",
+STEP_SEGMENTS = {"NAVIGATING_TO_TABLE2": "nav_table2", "VLA_PICKING": "pick", "NAVIGATING_TO_RELAY1": "nav_relay1", "NAVIGATING_TO_RELAY2": "nav_relay2",
                  "LATERAL_TO_RELAY3": "nav_relay3", "NAVIGATING_TO_TABLE1": "nav_table1", "VLA_PLACING": "place"}
 
 

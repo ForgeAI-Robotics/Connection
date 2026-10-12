@@ -1,97 +1,23 @@
-"""Reception business package. Phase order stays here, not in the runner."""
+"""Reception wire builders; flow and parameters live in the skill definition."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace as _replace
+from copy import deepcopy
+from dataclasses import replace as _replace
 
 from contracts.tasks import CONTRACT_VERSION, OBJECT_ID
 
 
 NAME = "reception"
-SOP = {
-    "id": "reception.single_can", "version": "1",
-    "description": "单罐接待：table_2 抓取 cola_can_1，经 relay2、relay3 到 table_1 放置。",
-    "constraints": "固定一罐、固定物体与桌子；不包含开灯、人数补货、改路线或额外动作。",
-    "triggers": ["开始接待", "启动接待", "执行接待", "开始单罐接待"],
-}
-
-
+# The archived definition is packaged with the code; no operator config is read
+# at import time. New tasks may bind an explicitly configured definition.
+from brain.packages.reception_skill import load_skill
 from contracts.steps import StepSpec
-
-
 from contracts.reception_lan import NAVIGATION_LEGS
 
-PHASES = (
-    StepSpec("INITIALIZING", "local"),
-    StepSpec("FETCHING_WORLD", "local"),
-    StepSpec(
-        "NAVIGATING_TO_TABLE2",
-        "navigate",
-        prefix="nav-table2",
-        key="table2",
-        evidence="reached",
-        requires_gate=True,
-        deadline_sec=900,
-    ),
-    StepSpec(
-        "DREAM_INSPECTING_TABLE2",
-        "inspect",
-        prefix="inspect-table2",
-        evidence="inspected",
-        optional=True,
-        deadline_sec=300,
-    ),
-    StepSpec(
-        "VLA_PICKING",
-        "pick",
-        prefix="vla-pick",
-        evidence="object_held",
-        handoff_before="to_vla",
-        requires_object_evidence=True,
-        writes="in_gripper",
-        target_area="table_2",
-        deadline_sec=600,
-    ),
-    StepSpec("VERIFYING_GRASP", "verify", evidence="object_held"),
-    StepSpec(
-        "NAVIGATING_TO_RELAY2",
-        "navigate",
-        prefix="nav-relay2",
-        key="relay2",
-        evidence="reached",
-        handoff_before="to_nav",
-        deadline_sec=900,
-    ),
-    StepSpec(
-        "LATERAL_TO_RELAY3",
-        "navigate",
-        prefix="nav-relay3",
-        key="relay3",
-        evidence="reached",
-        deadline_sec=300,
-    ),
-    StepSpec(
-        "NAVIGATING_TO_TABLE1",
-        "navigate",
-        prefix="nav-table1",
-        key="table1",
-        evidence="reached",
-        deadline_sec=900,
-    ),
-    StepSpec(
-        "VLA_PLACING",
-        "place",
-        prefix="vla-place",
-        evidence="object_at_target",
-        handoff_before="to_vla",
-        requires_object_evidence=True,
-        requires_safe_idle=True,
-        writes="table_1",
-        target_area="table_1",
-        deadline_sec=1800,
-    ),
-    StepSpec("VERIFYING_PLACE", "verify", evidence="object_at_target"),
-)
+_BASELINE = load_skill()
+SOP = _BASELINE.sop
+PHASES = _BASELINE.phases()
 
 
 # Joint debugging while manipulation is unavailable: the same four navigation legs and
@@ -123,7 +49,8 @@ def inspection_enabled(config) -> bool:
 
 
 def navigation_body(step: StepSpec, task_id: str, command_id: str) -> dict:
-    leg = NAVIGATION_LEGS[step.key]
+    # Older task snapshots have no resolved navigation field.
+    leg = deepcopy(getattr(step, "navigation", None) or NAVIGATION_LEGS[step.key])
     return {
         "contract_version": CONTRACT_VERSION,
         "command_id": command_id,
@@ -144,7 +71,7 @@ def manipulation_body(step: StepSpec, task_id: str, command_id: str, navigation_
         "command_id": command_id,
         "task_id": task_id,
         "operation": step.kind,
-        "object_id": OBJECT_ID,
+        "object_id": getattr(step, "object_id", "") or OBJECT_ID,
         "target_area": step.target_area,
         "navigation_proof": {
             "dream_command_id": navigation_command_id,
@@ -154,11 +81,11 @@ def manipulation_body(step: StepSpec, task_id: str, command_id: str, navigation_
     }
 
 
-def inspection_body(task_id: str, command_id: str, navigation_command_id: str) -> dict:
+def inspection_body(task_id: str, command_id: str, navigation_command_id: str, *, object_id=OBJECT_ID) -> dict:
     return {
         "contract_version": CONTRACT_VERSION,
         "command_id": command_id,
         "task_id": task_id,
         "navigation_command_id": navigation_command_id,
-        "target_object_id": OBJECT_ID,
+        "target_object_id": object_id,
     }

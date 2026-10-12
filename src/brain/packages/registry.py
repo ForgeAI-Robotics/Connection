@@ -15,6 +15,16 @@ SOPS = {
 VARIANTS = {"reception": (reception.NAV_ONLY_SOP,)}
 
 
+def reception_catalog(config):
+    """One validated definition supplies both selection metadata and planning."""
+    from brain.packages.reception_skill import load_skill
+    skill = load_skill(config)
+    variant = dict(reception.NAV_ONLY_SOP, id=skill.sop["id"] + ".nav_only",
+                   version=skill.sop["version"],
+                   description="仅导航联调：执行当前接待 Skill 的全部导航步骤，不派发抓取与放置。")
+    return dict(SOPS, reception=skill.sop), {"reception": (variant,)}, skill
+
+
 def match_name(task) -> str:
     if reception.matches(task):
         return reception.NAME
@@ -52,9 +62,11 @@ class PackagePolicy:
         if step.kind == "navigate":
             body = reception.navigation_body(step, task_id, command_id)
         elif step.kind == "inspect":
-            body = reception.inspection_body(task_id, command_id, last_command("NAVIGATING_TO_TABLE2"))
+            proof = step.navigation_step_id or "NAVIGATING_TO_TABLE2"
+            body = reception.inspection_body(task_id, command_id, last_command(proof),
+                                            object_id=self.object_id(step))
         elif step.kind in {"pick", "place"}:
-            proof = "NAVIGATING_TO_TABLE2" if step.kind == "pick" else "NAVIGATING_TO_TABLE1"
+            proof = step.navigation_step_id or ("NAVIGATING_TO_TABLE2" if step.kind == "pick" else "NAVIGATING_TO_TABLE1")
             body = reception.manipulation_body(step, task_id, command_id, last_command(proof))
         elif step.body:
             body = {"command_id": command_id, "task_id": task_id,
@@ -67,6 +79,6 @@ class PackagePolicy:
     def effects(self, step, *, final):
         if not final and step.writes == "in_gripper":
             return {"holding": self.object_id(step), "object_location": "in_gripper"}
-        if final and step.writes == "table_1":
-            return {"object_location": "table_1", "holding": None}
+        if final and step.kind == "place" and step.writes:
+            return {"object_location": step.writes, "holding": None}
         return {}

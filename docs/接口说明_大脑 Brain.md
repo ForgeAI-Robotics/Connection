@@ -1,7 +1,7 @@
 # 接口说明：大脑 Brain
 
 初版日期：2026-08-27  
-大脑实现核对日期：2026-10-09
+大脑实现核对日期：2026-10-12
 契约版本：`fq/reception-lan/v1`  
 适用范围：共用大脑任务 API、任务控制与状态、单罐接待及仅导航流程、DREAM/VLA 调用与核验。
 
@@ -45,6 +45,71 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | `subtask_list[].effect_verified` | 当前尝试是否已通过 Verifier；不能由 LLM 建议改变 |
 
 建议限于等待、人工协助、取消，以及当前状态允许的查询原命令或继续。LLM 不直接调用控制接口；模型异常或格式非法时保存规则回退建议。建议基于的账本版本变化后 `applicable=false`，迟到结果不能覆盖新状态。当前任务网页只展示失败原因和历史尝试，不把该模型建议显示为确定的失败根因；API 仍保留 `recovery_advice`。
+
+### 1.1.1 接待 Skill 定义与任务快照
+
+2026-10-12 起，现有单罐接待从 Python 固定步骤表抽取为
+[`reception_single_can_v1.yaml`](../src/brain/packages/definitions/reception_single_can_v1.yaml)。
+原流程作为 v1 基线保留。新版 [reception_single_can_v2.yaml](../src/brain/packages/definitions/reception_single_can_v2.yaml)
+登记 2026-10-12 提供的五个点，在抓取后增加 relay1，relay3 保留横移，抓放参数与核验条件保持原行为。
+SOP 版本为字符串 `2`；Skill 格式版本与 LAN 请求协议版本是不同概念。明确触发词仍直接选流程，
+其他表述仍由 LLM 判断是否符合登记范围；本次没有开放模型生成动作或在线更改参数。
+
+定义使用结构化 YAML，程序严格校验，不通过模型解释任意 Markdown 来执行：
+
+| 字段 | 含义 |
+| --- | --- |
+| `schema_version` | 定义格式：`1` 冻结原四段合同；`2` 支持配置导航点和连续段序 |
+| `contract_version` | 执行协议，目前只接入 `fq/reception-lan/v1` |
+| `sop` | 业务 ID、字符串版本、说明、范围与明确触发词 |
+| `parameters` | `object_id` 和整数 `quantity`；现合同限一罐指定物体 |
+| `points` | 命名导航点：目标 ID、路段、段序、`goal_xyt` 和运动模式 |
+| `steps` | 有序动作列表：`id`、`action`、`command_prefix`、正数 `timeout_sec` |
+| `steps[].point` | 导航动作引用 `points` 中的点名 |
+| `steps[].after_navigation` | 观察或抓放引用最近的导航步骤 ID，作为原命令凭证来源 |
+| `steps[].optional` | 仅观察支持；可选检查仍受 `dream_inspection_enabled` 控制 |
+| `steps[].verification_id` | 抓放之后的核验节点 ID；不提供时自动生成 |
+
+编译器生成初始化、核验节点和跨导航／操控交接，抓放要求物体证据，放置要求安全收尾。
+定义不能关闭这些条件。未知动作、重复 ID／前缀／YAML 键、错误引用、无效超时、缺失抓放或
+非有限坐标、不支持的运动模式、物体或路段顺序，均在创建动作端口前拒绝。
+schema 1 额外检查原四段精确坐标；schema 2 允许修改坐标和增减导航点，段序必须从 1 连续编号，
+每个登记点恰好引用一次。横移仍要求先到 `door_approach`，再执行 `door_lateral_exit`。仅导航变体从同一份已校验定义派生，
+不包含操控和跨端交接；它的完成仍不代表送达物体。
+
+离线校验和预览不会创建任务、连接机器人或启动服务：
+
+```bash
+venv/core/bin/python scripts/reception_skill.py
+venv/core/bin/python scripts/reception_skill.py --config config/brain.yaml
+venv/core/bin/python scripts/reception_skill.py --file src/brain/packages/definitions/reception_single_can_v2.yaml --nav-only
+venv/core/bin/python scripts/reception_skill.py --file /path/to/reception_skill.yaml
+```
+
+后续流程从基线复制成新版本，保留基线文件，通过 `config/brain.yaml` 的
+`reception_real.skill_file` 指定。空值使用内置基线；相对路径以 `CONNECTION_WORKSPACE` 为根，
+绝对路径也可用；显式文件不存在或非法时拒绝，不静默回退。路径配置随大脑进程加载，
+定义文件在新任务选择时读取。修改代码或配置不等于已重启、部署或切换现场实例。
+
+`GET /api/sops` 展示该定义的 SOP 和仅导航变体，并返回 `reception_workflow_sha256`；
+非法定义返回 HTTP 422。旧 `/api/reception/sop` 仍是历史演示的学习规则视图，
+`config/business/reception_sop*.yaml` 不作为本单罐 Skill 的执行步骤源。
+
+新正式接待任务在 `selection.workflow` 保存完整 `definition` 和规范化内容的 `sha256`；
+模型等待期间文件变化不会换掉本次定义。规划只编译该快照，展开后的 `phase_specs` 保存每步的
+导航参数和导航凭证引用。重启、暂停后继续和原命令查询沿用原计划，即使定义文件已修改或删除，
+也不重新选业务或改已发出的请求。既有无新增字段的历史步骤仍按原 v1 固定合同读取，不迁移或清空账本。
+
+本机配置选择 `src/brain/packages/definitions/reception_single_can_v2.yaml` 后，新任务使用新版；
+需回归旧仿真时显式选择 v1。`reception_protocol` 仍只接受旧四段合同，新版在创建端口前拒绝。
+`reception_simple` 在每个新任务创建端口前比对 NAV/VLA 健康响应声明的 `navigation_legs` 与任务快照；
+当前新房子 O6 适配器支持五段路线，旧服务未升级或点位不匹配时拒绝，不静默改回四段。
+另外比较 `simulation.navigation_only` 与所选 SOP：仅导航执行器不接受完整接待，完整执行器也不接受仅导航任务，
+避免省略抓放后在仿真阶段顺序上卡住。仅导航使用明确触发词“开始接待（仅导航）”。
+物理场景映射与准入字段见 [SIMPLE O6 接口](接口说明_simple%20o6%20仿真.md#新办公室场景office_v2)。
+真机仍使用 `fq/reception-lan/v1` 请求结构，但必须由导航端登记相同坐标、目标、段序与运动模式；
+编译成功不等于远端接受。新版对接字段见[导航接口新版路线](接口说明_导航NAV.md#61-五点接待定义2026-10-12)。
+冰箱操控、开关门或其他新动作仍需接入执行与核验，本轮没有新增。
 
 ### 1.2 任务控制接口
 
@@ -242,17 +307,17 @@ AND result.navigation_stopped == true
 
 ### 8.1 流程与请求身份
 
-完整接待使用 `reception.single_can` v1：
+完整接待使用所选 Skill 的 `reception.single_can`；新版 v2：
 
 ```text
 初始化 → 读取现场 → table2 导航 → 可选 inspection
-→ 抓取 → 抓取核验 → relay2 导航 → relay3 横移
+→ 抓取 → 抓取核验 → relay1 导航 → relay2 导航 → relay3 横移
 → table1 导航 → 放置 → 放置核验与最终交接
 ```
 
-明确触发词“开始接待（仅导航）”选择 `reception.single_can.nav_only` v1，仅包含两个准备节点和四段导航，不派发抓取、放置、inspection，也不执行导航与操控之间的交接。6/6 只证明该仅导航流程完成。
+明确触发词“开始接待（仅导航）”选择同版本的 `reception.single_can.nav_only`，包含两个准备节点及定义中的全部导航，不派发抓取、放置、inspection，也不执行跨导航／操控交接。v1 为四段、v2 为五段；完成只证明仅导航流程完成。
 
-大脑从 `src/contracts/reception_lan.py` 的固定合同构造四段请求，字段见第 7 节及导航接口说明。模型不重新生成这些坐标、路段或动作模式。每段独立提交、查询和核验，正常流程核验通过才推进；人工跳过另作记录。
+大脑从原任务 Skill 快照中的导航点构造请求；没有快照字段的旧任务才兼容读取原固定合同。第 7 节请求示例为 v1 基线，新版字段见导航接口第 6.1 节。模型不重新生成这些坐标、路段或动作模式。每段独立提交、查询和核验，正常流程核验通过才推进；人工跳过另作记录。
 
 所有动作沿用原 `task_id`；新尝试使用新 `command_id`，原请求、回执和失败不覆盖。操控请求包含 `operation`、`object_id`、`target_area` 和引用原导航命令的 `navigation_proof`。完整请求示例见导航、操控接口文档，不使用旧版 `runtime_phase`／`verified_state` 作为当前任务状态字段。
 

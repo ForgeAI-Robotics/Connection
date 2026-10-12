@@ -16,11 +16,18 @@ class PlanningService:
             if runtime.record["execution_backend"] == "reception_mock":
                 from brain.packages.reception_mock import plan
                 return Plan(tuple(plan(runtime.port, options)), "接待业务流程交给统一 Runtime 管理。")
-            from brain.packages.reception import NAV_ONLY_PHASES, NAV_ONLY_SOP, PHASES
-            sop = (runtime.record.get("selection") or {}).get("sop") or {}
-            if sop.get("id") == NAV_ONLY_SOP["id"]:
-                return Plan(NAV_ONLY_PHASES, "仅导航联调：依次执行接待四段导航，不派发抓取与放置。")
-            return Plan(tuple(PHASES), "接待业务流程交给统一 Runtime 管理。")
+            from brain.packages.reception_skill import from_snapshot, load_skill
+            selected = runtime.record.get("selection") or {}
+            snapshot = selected.get("workflow")
+            skill = from_snapshot(snapshot) if snapshot else load_skill(self.config)
+            sop = selected.get("sop") or {}
+            if sop.get("id") == skill.sop["id"] + ".nav_only":
+                if sop.get("version") != skill.sop["version"]:
+                    raise Rejected("仅导航 SOP 与流程快照版本不一致")
+                return Plan(skill.phases(nav_only=True), "仅导航联调：执行 Skill 中的导航步骤，不派发抓取与放置。")
+            if sop and (sop.get("id"), sop.get("version")) != (skill.sop["id"], skill.sop["version"]):
+                raise Rejected("所选接待 SOP 与流程快照版本不一致")
+            return Plan(skill.phases(), "从已校验的接待 Skill 定义展开步骤，交给统一 Runtime 管理。")
         if package == "look":
             from brain.packages.look import PHASES
             return Plan(tuple(PHASES), "现场观察交给 Runtime，只读取现场，不下发身体动作。")

@@ -48,7 +48,7 @@ class InvalidRequest(ValueError):
     pass
 
 
-def validate_request(role, body):
+def validate_request(role, body, *, navigation_legs=None):
     if not isinstance(body, dict):
         raise InvalidRequest("请求必须是 JSON 对象")
     common = {"contract_version", "task_id", "command_id"}
@@ -71,7 +71,8 @@ def validate_request(role, body):
             raise InvalidRequest("需要 map 坐标系与最终朝向")
         if type(body["leg_index"]) is not int:
             raise InvalidRequest("leg_index 必须为整数")
-        expected = next((leg for leg in NAVIGATION_LEGS.values() if leg["leg_index"] == body["leg_index"]), None)
+        legs = NAVIGATION_LEGS if navigation_legs is None else navigation_legs
+        expected = next((leg for leg in legs.values() if leg["leg_index"] == body["leg_index"]), None)
         if expected is None or any(body[k] != v for k, v in expected.items()):
             raise InvalidRequest("导航段的目标、坐标、运动模式不符合单罐接待合同")
     else:

@@ -50,7 +50,15 @@ def _alive(pid):
 
 
 class ReceptionStore:
-    def __init__(self, root, clock=time.time, alive=_alive):
+    def __init__(self, root, clock=time.time, alive=_alive, *, include_relay1=False, navigation_only=False):
+        self.include_relay1 = include_relay1
+        self.navigation_only = navigation_only
+        self.nav_segments = ({1: "nav_table2", 2: "nav_relay1", 3: "nav_relay2", 4: "nav_relay3", 5: "nav_table1"}
+                             if include_relay1 else NAV_SEGMENT)
+        self.segments = (("nav_table2", "pick", "nav_relay1", "nav_relay2", "nav_relay3", "nav_table1", "place")
+                         if include_relay1 else SEGMENTS)
+        if navigation_only:
+            self.segments = tuple(s for s in self.segments if s.startswith('nav_'))
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = str(self.root / "reception.sqlite3")
@@ -155,7 +163,8 @@ class ReceptionStore:
                 raise Conflict("SERVICE_STOPPING", "仿真服务正在停止，不接受新命令", 503)
             if any(r["state"] not in TERMINAL for r in records):
                 raise Conflict("NAVIGATION_BUSY" if role == "nav" else "VLA_BUSY", "动作通路已有活动命令")
-            task, segment = body["task_id"], segment_for(role, body)
+            task = body["task_id"]
+            segment = self.nav_segments[body["leg_index"]] if role == "nav" else body["operation"]
             session = self._session(db, task)
             now = self.clock()
             rejection = None
@@ -168,6 +177,8 @@ class ReceptionStore:
                         self._save_session(db, other)
                 episode = self.root / "reception_episodes" / f"{task}-{uuid.uuid4().hex[:8]}"
                 session = {"task_id": task, "episode": str(episode), "worker_pid": None, "state": "starting",
+                           "segments": list(self.segments), "include_relay1": self.include_relay1,
+                           "navigation_only": self.navigation_only,
                            "next": 0, "holding": None, "object_location": "table_2", "last_navigation": None,
                            "receipt": None, "failure": None, "created": now, "heartbeat": now}
                 self._save_session(db, session)
@@ -179,10 +190,10 @@ class ReceptionStore:
                 if role == "nav":
                     raise Conflict("EPISODE_ENDED", f"本任务的仿真回合已结束（{session['state']}）；新尝试需要新的任务")
                 rejection = ("EPISODE_ENDED", f"本任务的仿真回合已结束（{session['state']}）")
-            elif SEGMENTS[session["next"]] != segment:
+            elif session.get("segments", SEGMENTS)[session["next"]] != segment:
                 if role == "nav":
-                    raise Conflict("ROUTE_ORDER_INVALID", "必须按单罐接待顺序执行；当前应为 " + SEGMENTS[session["next"]])
-                rejection = ("OBJECT_STATE_INVALID", "当前仿真回合不处于该操控步骤：应为 " + SEGMENTS[session["next"]])
+                    raise Conflict("ROUTE_ORDER_INVALID", "必须按单罐接待顺序执行；当前应为 " + session.get("segments", SEGMENTS)[session["next"]])
+                rejection = ("OBJECT_STATE_INVALID", "当前仿真回合不处于该操控步骤：应为 " + session.get("segments", SEGMENTS)[session["next"]])
             if role == "vla" and rejection is None:
                 proof = next((r for r in records if r["role"] == "nav"
                               and r["body"]["command_id"] == body["navigation_proof"]["dream_command_id"]), None)
@@ -267,6 +278,19 @@ class ReceptionStore:
             session.update(changes)
             self._save_session(db, session)
             return session
+
+    def fail_initialization(self, task):
+        """No segment was claimed: fail its accepted command instead of leaving it hung."""
+        with self.transaction() as db:
+            session = self._session(db, task)
+            session.update(state="failed", failure="simulation_init_failed")
+            self._save_session(db, session)
+            for record in self._commands(db, task):
+                if record["state"] not in TERMINAL and record["started"] is None:
+                    self._terminal(record, "failed", self.clock(),
+                                   error=("SIMULATION_INIT_FAILED", "仿真初始化失败，动作尚未开始；查看原回合 worker.log"),
+                                   result=self._stopped_result(record, session, False))
+                    self._save(db, record)
 
     def claim(self, task):
         """Move the next accepted command of this task to running, or report a cancel before start."""

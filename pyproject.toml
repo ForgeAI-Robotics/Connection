@@ -93,6 +93,7 @@ namespaces = false
 "" = "src"
 
 [tool.setuptools.package-data]
+"brain.packages" = ["definitions/*.yaml"]
 "entries.web" = ["templates/*.html"]
 "ops" = ["templates/*.html", "static/*", "ssh_askpass.sh"]
 "execution.dream" = ["sample/*", "templates/*"]

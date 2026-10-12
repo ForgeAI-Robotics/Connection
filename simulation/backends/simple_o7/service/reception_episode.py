@@ -22,7 +22,8 @@ class SegmentFailed(RuntimeError):
 
 class Episode:
     def __init__(self, output, *, seed=601, data_root="/mnt/simple/data", room=RELEASE + "/formal_room/room.json",
-                 max_frames=12000, log=print, scene='formal_room', office_assets=None):
+                 max_frames=12000, log=print, scene='formal_room', office_assets=None, include_relay1=False,
+                 navigation_only=False):
         self.output = Path(output)
         self.output.mkdir(parents=True, exist_ok=True)
         self.log = log
@@ -41,6 +42,10 @@ class Episode:
         from simple.mp.curobo import CuRoboPlanner
         from service.reception_task import G1O6ReceptionMP, SIM_GOALS, SPAWN, SONIC_STOP_OVERSHOOT, segment_of
         self.scene = scene
+        self.include_relay1 = include_relay1
+        self.navigation_only = navigation_only
+        if (include_relay1 or navigation_only) and scene != "office_v2":
+            raise ValueError("relay1/navigation_only requires office_v2")
         if scene == 'office_v2':
             if not office_assets:
                 raise ValueError('office_v2 requires a snapshot of office scene assets')
@@ -49,6 +54,8 @@ class Episode:
             room = prepare_room(office_assets, self.output)
             install_visuals()
             G1O6ReceptionMP = G1O6OfficeReceptionMP
+            G1O6ReceptionMP.include_relay1 = include_relay1
+            G1O6ReceptionMP.navigation_only = navigation_only
             max_frames = max(max_frames, 45000)
         elif scene != 'formal_room':
             raise ValueError('Unknown reception scene: ' + scene)
@@ -95,7 +102,8 @@ class Episode:
                                                       G1O6ReceptionMP, MotionPlannerAgent)}
         if scene == 'office_v2':
             sources.update([Path(__file__), Path(__file__).with_name('office_layout.py')])
-        self.provenance = dict(seed=seed, release=RELEASE, scene=scene, room=str(room), spawn=list(SPAWN),
+        self.provenance = dict(include_relay1=include_relay1, navigation_only=navigation_only,
+                               seed=seed, release=RELEASE, scene=scene, room=str(room), spawn=list(SPAWN),
                                room_sha256=hashlib.sha256(Path(room).read_bytes()).hexdigest(),
                                pick_approach_overshoot_compensation_m=.025 if scene == 'office_v2' else SONIC_STOP_OVERSHOOT,
                                sim_goals={k: list(v) for k, v in SIM_GOALS.items()},
@@ -180,7 +188,7 @@ class Episode:
         from service.reception_task_info import SEGMENTS
         segment_of = self.segment_of
         from simple.datagen.subtask_spec import PhaseBreakSpec, WalkSpec
-        if segment not in SEGMENTS:
+        if segment not in SEGMENTS and not (self.include_relay1 and segment == "nav_relay1"):
             raise ValueError(segment)
         if self.failure:
             raise SegmentFailed("episode_already_failed: " + self.failure)
@@ -243,7 +251,7 @@ class Episode:
             # repeats only its last walk (and what follows) from the current state.
             self.agent._subtask_index = walk_index
             recoverable = True
-        if recoverable and not entry["checks"]["object_retained"]:
+        if recoverable and entry["checks"].get("object_retention_required", True) and not entry["checks"]["object_retained"]:
             recoverable = False
         if outcome == "failed" and not recoverable:
             self.failure = self.failure or error
@@ -255,16 +263,18 @@ class Episode:
     def checks(self, segment, s):
         """Physical acceptance for the contract fields, computed from the measured state."""
         if segment.startswith("nav_"):
-            target = {"nav_table2": "table_2", "nav_relay2": "relay2", "nav_relay3": "relay3", "nav_table1": "table_1"}[segment]
+            target = {"nav_table2": "table_2", "nav_relay1": "relay1", "nav_relay2": "relay2", "nav_relay3": "relay3", "nav_table1": "table_1"}[segment]
             gx, gy, gyaw = self.goals[target]
             x, y, yaw = s["base_xyt"]
             error = float(np.hypot(x - gx, y - gy))
             yaw_error = float(abs(np.arctan2(np.sin(yaw - gyaw), np.cos(yaw - gyaw))))
             reached = error <= .08 and yaw_error <= .15 and s["base_speed"] <= .08 and s["tilt_deg"] <= 10
-            carrying = segment != "nav_table2"
+            carrying = segment != "nav_table2" and not self.navigation_only
             held = s["grasp_contact"] and not s["supported"] if carrying else True
             return dict(sim_target=target, sim_goal_xyt=[gx, gy, gyaw], position_error_m=error,
-                        yaw_error_rad=yaw_error, reached=bool(reached), object_retained=bool(held),
+                        yaw_error_rad=yaw_error, reached=bool(reached),
+                        object_retained=None if self.navigation_only else bool(held),
+                        object_retention_required=carrying,
                         stopped=s["base_speed"] <= .08)
         if segment == "pick":
             grasped = s["lifted_gate"] and s["grasp_contact"] and not s["supported"] and s["lift_m"] >= .05

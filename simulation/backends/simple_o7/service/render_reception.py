@@ -12,12 +12,13 @@ import subprocess
 from pathlib import Path
 
 STEPS = {
-    "nav_table2": "① 导航到 table_2（取物桌）",
-    "pick": "② 抓取 cola_can_1",
-    "nav_relay2": "③ 搬运导航到 relay2（门前）",
-    "nav_relay3": "④ 横移到 relay3（过门）",
-    "nav_table1": "⑤ 搬运导航到 table_1（目标桌）",
-    "place": "⑥ 放置 cola_can_1",
+    "nav_table2": "导航到 table_2（取物桌）",
+    "pick": "抓取 cola_can_1",
+    "nav_relay1": "搬运导航到 relay1（走廊中转）",
+    "nav_relay2": "搬运导航到 relay2（门前）",
+    "nav_relay3": "横移到 relay3（过门）",
+    "nav_table1": "搬运导航到 table_1（目标桌）",
+    "place": "放置 cola_can_1",
 }
 
 

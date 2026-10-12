@@ -25,6 +25,8 @@ def segment_of(phase):
 @TaskRegistry.register('g1_o6_office_reception_mp')
 class G1O6OfficeReceptionMP(G1O6CanPickMP):
     uid = 'g1_o6_office_reception_mp'
+    include_relay1 = False
+    navigation_only = False
     metadata = deepcopy(G1O6CanPickMP.metadata)
     metadata['max_episode_steps'] = 45000
     dr_cfgs = deepcopy(G1O6CanPickMP.dr_cfgs)
@@ -102,6 +104,12 @@ class G1O6OfficeReceptionMP(G1O6CanPickMP):
             walk('nav_table1', 'meeting_lane', [.27727, 7.20], np.pi/2, .18),
             turn('nav_table1', 'face_table', np.pi),
         ]
+        if self.include_relay1:
+            # Split the existing collision-aware corridor approach at its actual
+            # waypoint, adding a measured stop before the next brain command.
+            for spec in middle[:5]:
+                spec.phase = spec.phase.replace('office_nav_relay2__', 'office_nav_relay1__')
+            middle.insert(5, stand('nav_relay1', 'settle'))
         data = self.robot.mjdata
         hand = data.body(self.hand_body)
         hand_pose = np.eye(4)
@@ -130,8 +138,17 @@ class G1O6OfficeReceptionMP(G1O6CanPickMP):
         for spec in suffix:
             if isinstance(spec, MoveEEFToPoseSpec) and spec.phase.startswith('place'):
                 spec.meta['hold_frames'] = 100
+        selected = prefix + pick + middle + suffix
+        if self.navigation_only:
+            # Explicit navigation-only SOP: no finger/EEF motion and no claim of
+            # holding the can. Full reception keeps its original prerequisites.
+            selected = [s for s in prefix + middle if isinstance(s, (WalkSpec, TurnSpec, StandSpec))]
+            for spec in selected:
+                spec.meta.pop('execution_precondition', None)
+                spec.meta.pop('precondition_reason', None)
+                spec.meta.pop('allow_target_contact', None)
         result = []
-        for spec in prefix + pick + middle + suffix:
+        for spec in selected:
             result.append(spec)
             if not isinstance(spec, PhaseBreakSpec):
                 result.append(PhaseBreakSpec('feedback_' + spec.phase))

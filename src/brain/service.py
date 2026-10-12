@@ -80,9 +80,20 @@ class BrainService:
             return Plan(())
         package = chosen["package"]
         backend = select_backend(self.config, package, mock=options.get("mock") is True)
+        if chosen.get("workflow"):
+            from brain.packages.reception_skill import from_snapshot, validate_backend
+            skill = from_snapshot(chosen["workflow"])
+            validate_backend(skill, backend)
+            if backend == "reception_simple":
+                from brain.adapters.ports import protocol_endpoints
+                from shared.protocol_simulation import require_simulator_pair
+                require_simulator_pair(protocol_endpoints(backend), kind="simple_physics",
+                                       navigation_legs=skill.definition["points"],
+                                       navigation_only=(chosen.get("sop") or {}).get("id", "").endswith(".nav_only"))
         if backend == "reception_mock":
             chosen = dict(chosen, sop={"id": "reception.demo", "version": "legacy",
                                       "description": "既有会议补货演示，不经过导航／操控 HTTP。"})
+            chosen.pop("workflow", None)
         port = self._port(backend)
         if not runtime.bind_execution(chosen, backend, target_identity(self.config, backend), port):
             return Plan(())

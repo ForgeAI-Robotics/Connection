@@ -143,8 +143,14 @@ def register_views(app, application):
 
     @app.get('/api/sops')
     def registered_sops():
-        from brain.packages.registry import SOPS, VARIANTS
-        return jsonify({'success': True, 'packages': SOPS, 'variants': VARIANTS})
+        from brain.packages.registry import reception_catalog
+        from contracts.tasks import Rejected
+        try:
+            packages, variants, skill = reception_catalog(application.config)
+        except Rejected as exc:
+            return jsonify({'success': False, 'error': str(exc)}), 422
+        return jsonify({'success': True, 'packages': packages, 'variants': variants,
+                        'reception_workflow_sha256': skill.snapshot()['sha256']})
 
     @app.get('/api/sop')
     @app.get('/api/reception/sop')

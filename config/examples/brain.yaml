@@ -58,6 +58,11 @@ brain:
   reception_backend: mock
 reception_real:
   enabled: false
+  # 空值使用随代码封存的 reception_single_can_v1.yaml；显式路径相对 CONNECTION_WORKSPACE。
+  # 文件需先通过 scripts/reception_skill.py 离线校验；新点位仍须符合下游合同。
+  skill_file: ""
+  # 五点新版：src/brain/packages/definitions/reception_single_can_v2.yaml
+  # SIMPLE O6 新房子需部署同一份 navigation_legs；启动任务前会比对。
   contract_version: fq/reception-lan/v1
   dream_base_url: ${DREAM_BASE_URL}
   vla_base_url: ${VLA_BASE_URL}

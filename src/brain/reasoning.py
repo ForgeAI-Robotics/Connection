@@ -3,7 +3,7 @@ from copy import deepcopy
 import json
 
 from brain.kernel.planner import extract_json
-from brain.packages.registry import SOPS, VARIANTS, match_name
+from brain.packages.registry import SOPS, match_name, reception_catalog
 from contracts.tasks import Rejected
 
 
@@ -18,16 +18,26 @@ def selection(package, source, reason, sop=None):
 class TaskReasoner:
     def __init__(self, model, config):
         self.model = model
+        self.config = config
         self.settings = (config.get("brain") or {}).get("reasoning") or {}
 
     def select(self, task, options):
+        sops, variants, skill = reception_catalog(self.config)
+        # Bind the same validated bytes used in the prompt. A file edit during a
+        # slow model call must not change what the eventual plan will execute.
+        chosen = self._select(task, options, sops, variants)
+        if chosen["package"] == "reception":
+            chosen["workflow"] = skill.snapshot()
+        return chosen
+
+    def _select(self, task, options, sops, variants):
         text = str(task).strip().rstrip("。！!，, ")
         # Exact SOP commands are deterministic and remain available without a model.
-        for package, sop in SOPS.items():
+        for package, sop in sops.items():
             if text in sop.get("triggers", ()):
-                return selection(package, "registered_trigger", "执行已登记 SOP。")
-        for package, variants in VARIANTS.items():
-            for sop in variants:
+                return selection(package, "registered_trigger", "执行已登记 SOP。", sop=sop)
+        for package, package_variants in variants.items():
+            for sop in package_variants:
                 if text in sop.get("triggers", ()):
                     return selection(package, "registered_trigger", "执行已登记 SOP 变体。", sop=sop)
         matched = match_name(text)
@@ -45,7 +55,7 @@ class TaskReasoner:
             "仅输出 JSON：{\"package\":\"reception|look|desk|generic|clarify\","
             "\"scope_match\":true,\"reason\":\"选择原因或需要澄清的问题\"}。"
             "选择已有包时 scope_match 必须明确为 true。\n"
-            + json.dumps({"packages": SOPS, "task": text}, ensure_ascii=False)
+            + json.dumps({"packages": sops, "task": text}, ensure_ascii=False)
         )
         result = extract_json(self.model([{"role": "user", "content": prompt}]))
         if not isinstance(result, dict) or set(result) != {"package", "scope_match", "reason"}:
@@ -58,7 +68,7 @@ class TaskReasoner:
             raise Rejected("任务选择响应无效")
         if package == "clarify" or result["scope_match"] is not True:
             raise Rejected(result["reason"][:1000] or "任务范围需要澄清")
-        return selection(package, "llm", result["reason"][:1000])
+        return selection(package, "llm", result["reason"][:1000], sop=sops.get(package))
 
     def advise(self, context):
         fallback = fallback_advice(context)

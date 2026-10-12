@@ -14,11 +14,14 @@ ORIGIN = (10.8, 11.55, .75)
 SPAWN = (-6.05, -.5)
 SIM_GOALS = {
     'table_2': (-.62, 0., 0.),
+    'relay1': (.27727, 1.4, 0.),
     'relay2': (.27727, 4.55, 0.),
     'relay3': (.27727, 6.15, 0.),
     'table_1': (-.40, 7.20, math.pi),
 }
 SCENE = {
+    'relay_1': {'type': 'waypoint', 'sim': 'office corridor before doorway approach',
+                'stance_xyt': list(SIM_GOALS['relay1'])},
     'table_2': {'type': 'table', 'sim': 'office source table; calibrated soup can',
                 'stance_xyt': list(SIM_GOALS['table_2'])},
     'door_1': {'type': 'door', 'sim': 'office meeting-room doorway; lateral passage',

@@ -63,6 +63,7 @@ PHASES = {
     'INITIALIZING': '初始化接待任务', 'FETCHING_WORLD': '读取现场信息',
     'NAVIGATING_TO_TABLE2': '导航到 2 号桌', 'DREAM_INSPECTING_TABLE2': '检查 2 号桌上的物品',
     'VLA_PICKING': '抓取饮料', 'VERIFYING_GRASP': '确认饮料已抓稳',
+    'NAVIGATING_TO_RELAY1': '导航到中转点 1',
     'NAVIGATING_TO_RELAY2': '导航到中转点 2', 'LATERAL_TO_RELAY3': '横移到中转点 3',
     'NAVIGATING_TO_TABLE1': '导航到 1 号桌', 'VLA_PLACING': '放置饮料',
     'VERIFYING_PLACE': '确认饮料已放好',

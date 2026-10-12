@@ -19,7 +19,8 @@ NAV_TARGET = {"nav_table2": "table_2", "nav_relay2": "relay2", "nav_relay3": "re
 
 def nav_result(entry):
     checks, after = entry["checks"], entry["after"]
-    ok = entry["outcome"] == "succeeded" and checks["reached"] and checks["object_retained"]
+    retained = not checks.get("object_retention_required", True) or checks["object_retained"]
+    ok = entry["outcome"] == "succeeded" and checks["reached"] and retained
     result = {"success": ok, "action_started": True, "reached": bool(checks["reached"] and entry["outcome"] == "succeeded"),
               # The episode clock is paused once the segment ends: no motion command is being issued.
               "navigation_stopped": True,
@@ -30,12 +31,13 @@ def nav_result(entry):
                              "goal_xyt": checks["sim_goal_xyt"], "measured_xyt": after["base_xyt"],
                              "position_error_m": checks["position_error_m"], "yaw_error_rad": checks["yaw_error_rad"],
                              "object_retained": checks["object_retained"], "sim_time_s": after["sim_time"],
+                             "object_retention_required": checks.get("object_retention_required", True),
                              "frames": entry["frames"], "phases": [e["phase"] for e in entry["phase_events"]],
                              "motion_mode_executed": "lateral_facing_kept" if entry["segment"] == "nav_relay3" else "forward_path"}}
     error = None
     if not ok:
         error = ("NAVIGATION_EXECUTION_FAILED", entry["error"] or
-                 ("搬运中物体脱手" if not checks["object_retained"] else "未到达仿真目标位姿"))
+                 ("搬运中物体脱手" if not retained else "未到达仿真目标位姿"))
     return ok, result, error
 
 
@@ -69,11 +71,16 @@ def run(store, task, episode_dir, seed, *, scene='formal_room', office_assets=No
     log = Path(episode_dir) / "worker.log"
     Path(episode_dir).mkdir(parents=True, exist_ok=True)
     try:
+        include_relay1 = bool((store.worker_session(task) or {}).get("include_relay1"))
         options = {} if scene == 'formal_room' else dict(scene=scene, office_assets=office_assets)
+        if include_relay1:
+            options["include_relay1"] = True
+        if (store.worker_session(task) or {}).get("navigation_only"):
+            options["navigation_only"] = True
         episode = Episode(episode_dir, seed=seed, **options)
     except Exception:
         log.write_text(traceback.format_exc())
-        store.update_session(task, state="failed", failure="simulation_init_failed")
+        store.fail_initialization(task)
         raise
     store.update_session(task, state="ready")
     idle_since = time.time()
@@ -136,12 +143,13 @@ def run(store, task, episode_dir, seed, *, scene='formal_room', office_assets=No
                            "object_location": ("in_gripper" if segment == "pick" else NAV_TARGET["nav_table1"])
                            if ok else "unknown"}
             if ok:
-                changes.update(next=session["next"] + 1, state="completed" if segment == "place" else "ready")
+                final_segment = (session.get("segments") or ["place"])[-1]
+                changes.update(next=session["next"] + 1, state="completed" if segment == final_segment else "ready")
             else:
                 changes.update(state="failed", failure=error[1])
             store.finish(command_id, "succeeded" if ok else "failed", result, error=error, session_changes=changes)
             idle_since = time.time()
-            if not ok or segment == "place":
+            if not ok or changes.get("state") == "completed":
                 return
     finally:
         episode.close()

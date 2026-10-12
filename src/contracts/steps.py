@@ -1,5 +1,5 @@
 """Immutable business-independent step specifications and persisted serialization."""
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 
 @dataclass(frozen=True)
 class StepSpec:
@@ -18,6 +18,9 @@ class StepSpec:
     deadline_sec: float = 30.0
     robot_name: str = ""
     object_id: str = ""
+    # Resolved workflow inputs travel with the task, including across restarts.
+    navigation: dict = field(default_factory=dict)
+    navigation_step_id: str = ""
 
     @property
     def body(self) -> bool:

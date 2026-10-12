@@ -47,7 +47,7 @@ class FakeEpisode:
     miss_once = None
     segments = []
 
-    def __init__(self, output, seed=601):
+    def __init__(self, output, seed=601, **options):
         self.output = output
 
     def run_segment(self, segment, cancelled=lambda: False, progress=None):
@@ -188,11 +188,14 @@ class BrainEndToEndTests(unittest.TestCase):
         FakeEpisode.fail_at, FakeEpisode.miss_once, FakeEpisode.segments = None, None, []
         config = {'runtime': str(self.root / 'runtime'), 'source': str(self.root), 'config_path': ''}
         bridge = Bridge(config)
+        self.bridge = bridge
         threads = []
 
         def launch(task, episode):
             store = bridge.reception.store
-            thread = threading.Thread(target=reception_worker.run, args=(store, task, episode, 601), daemon=True)
+            thread = threading.Thread(target=reception_worker.run, args=(store, task, episode, 601),
+                                      kwargs={'scene': bridge.reception.scene,
+                                              'office_assets': bridge.reception.config.get('reception_office_assets')}, daemon=True)
             thread.start()
             threads.append(thread)
             return 4242
@@ -217,7 +220,7 @@ class BrainEndToEndTests(unittest.TestCase):
                        'reception_real': {'kernel_runtime_dir': str(self.root / 'tasks'), 'kernel_enabled': False,
                                           'dream_poll_interval_sec': .05, 'vla_poll_interval_sec': .05}}
 
-    def run_task(self, task_id):
+    def run_task(self, task_id, task='开始接待'):
         from brain.app import create_service
         from brain.application import BrainApplication
         from brain.api.app import create_app as brain_app
@@ -225,7 +228,7 @@ class BrainEndToEndTests(unittest.TestCase):
         application = BrainApplication(service).start()
         self.addCleanup(application.close)
         self.client = brain_app(application).test_client()
-        response = self.client.post('/publish_task', json={'task': '开始接待', 'task_id': task_id, 'refresh': False})
+        response = self.client.post('/publish_task', json={'task': task, 'task_id': task_id, 'refresh': False})
         self.assertEqual(response.status_code, 200, response.json)
         return service, self.wait()
 
@@ -288,6 +291,86 @@ class BrainEndToEndTests(unittest.TestCase):
         self.assertFalse(downstream['result']['object_grasped'])
         self.assertIsNone(record['holding'])
         self.assertEqual(self.store.sessions()[-1]['state'], 'failed')
+
+    def use_office_route(self, *, navigation_only=False):
+        from brain.packages.reception_skill import BASELINE_PATH, load_skill
+        from simulation.backends.simple_o7.service.reception_http import Reception
+        path = BASELINE_PATH.with_name('reception_single_can_v2.yaml')
+        skill = load_skill(path=path)
+        self.config['reception_real']['skill_file'] = str(path)
+        old = self.bridge.reception
+        (self.root / 'scene.xml').write_text('<mujoco/>')
+        self.bridge.reception = Reception({**old.config, 'reception_scene': 'office_v2',
+            'reception_navigation_only': navigation_only,
+            'reception_office_assets': str(self.root), 'reception_navigation_legs': skill.definition['points']},
+            launcher=old.launcher)
+        self.store = self.bridge.reception.store
+        self.store.alive = old.store.alive
+        return skill
+
+    def test_new_office_route_executes_seven_segments_with_original_proofs(self):
+        skill = self.use_office_route()
+        service, status = self.run_task('office-five')
+        self.assertEqual(status['state'], 'succeeded', status)
+        self.assertEqual((status['completed'], status['total']), (12, 12))
+        self.assertEqual(FakeEpisode.segments,
+                         ['nav_table2', 'pick', 'nav_relay1', 'nav_relay2', 'nav_relay3', 'nav_table1', 'place'])
+        session = self.store.sessions()[-1]
+        self.assertEqual((session['state'], session['next']), ('completed', 7))
+        self.assertEqual(session['segments'], FakeEpisode.segments)
+        record = service.runtime.snapshot()
+        self.assertEqual(record['object_location'], 'table_1')
+        for step in skill.steps:
+            if step.kind in {'pick', 'place'}:
+                attempt = record['steps'][step.step_id]['attempts'][0]
+                proof = record['steps'][step.navigation_step_id]['attempts'][0]['command_id']
+                self.assertEqual(attempt['request']['body']['navigation_proof']['dream_command_id'], proof)
+
+    def test_office_navigation_only_has_five_segments_and_no_manipulation(self):
+        self.use_office_route(navigation_only=True)
+        service, status = self.run_task('office-nav-five', '开始接待（仅导航）')
+        self.assertEqual(status['state'], 'succeeded', status)
+        self.assertEqual((status['completed'], status['total']), (7, 7))
+        self.assertEqual(FakeEpisode.segments, ['nav_table2', 'nav_relay1', 'nav_relay2', 'nav_relay3', 'nav_table1'])
+        session = self.store.sessions()[-1]
+        self.assertEqual((session['state'], session['next'], session['holding']), ('completed', 5, None))
+        self.assertEqual(session['object_location'], 'table_2')
+        self.assertEqual(service.runtime.snapshot()['selection']['sop']['id'], 'reception.single_can.nav_only')
+        status, body = self.bridge.reception.handle('POST', '/reception/vla/v1/vla/tasks', {}, {})
+        self.assertEqual(status, 501)
+        self.assertEqual(body['error']['code'], 'UNSUPPORTED_CAPABILITY')
+
+    def test_navigation_variant_is_rejected_on_full_reception_simulator(self):
+        self.use_office_route()
+        _, status = self.run_task('wrong-mode', '开始接待（仅导航）')
+        self.assertEqual(status['state'], 'recovery_required')
+        self.assertEqual(self.store.sessions(), [])
+
+    def test_full_reception_is_rejected_on_navigation_only_simulator(self):
+        self.use_office_route(navigation_only=True)
+        _, status = self.run_task('wrong-full')
+        self.assertEqual(status['state'], 'recovery_required')
+        self.assertEqual(self.store.sessions(), [])
+
+    def test_route_mismatch_fails_before_starting_any_episode(self):
+        from brain.packages.reception_skill import BASELINE_PATH
+        self.config['reception_real']['skill_file'] = str(BASELINE_PATH.with_name('reception_single_can_v2.yaml'))
+        _, status = self.run_task('office-not-deployed')
+        self.assertEqual(status['state'], 'recovery_required')
+        self.assertEqual(self.store.sessions(), [])
+        self.assertEqual(FakeEpisode.segments, [])
+
+    def test_initialization_failure_returns_terminal_without_starting_action(self):
+        with patch.object(reception_episode, 'Episode', side_effect=RuntimeError('CUDA initialization failed')):
+            service, status = self.run_task('init-failure')
+        self.assertEqual(status['state'], 'recovery_required')
+        record = service.runtime.snapshot()
+        command = record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]['command_id']
+        result = self.store.command('nav', command)
+        self.assertEqual(result['state'], 'failed')
+        self.assertEqual(result['error']['code'], 'SIMULATION_INIT_FAILED')
+        self.assertIs(result['result']['action_started'], False)
+        self.assertIsNone(self.store.status()[0])
 
 
 if __name__ == '__main__':
