@@ -61,7 +61,10 @@ class Bridge:
         simulation = dict(kind='simple_physics', role=role,
                           instance_id=self.config['instance_id'], scene='office_ros_8001',
                           navigation='original 8001 -> original 9882 -> ROS -> SONIC -> MuJoCo',
+                          navigation_only=True,
                           manipulation_supported=False, network='Docker network none; UNIX socket through SSH')
+        if 'brain_contract' in self.config:
+            simulation['navigation_legs'] = deepcopy(self.config['brain_contract'])
         if method == 'GET' and path in ('/reception/nav/health', '/reception/vla/health'):
             code, health = self.upstream('/health')
             return code, {**health, 'simulation': simulation}

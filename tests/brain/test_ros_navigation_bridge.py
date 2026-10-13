@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 from contracts.reception_lan import NAVIGATION_LEGS
 from simulation.backends.ros_navigation.bridge import Bridge, translate
+from brain.packages.reception_skill import load_skill
+from shared.protocol_simulation import require_simulator_pair
 
 
 class NavigationBridgeTests(unittest.TestCase):
@@ -33,6 +35,31 @@ class NavigationBridgeTests(unittest.TestCase):
         code, result = bridge.handle('POST', '/reception/vla/v1/tasks', {})
         self.assertEqual(code, 501)
         self.assertEqual(result['error']['code'], 'UNSUPPORTED_CAPABILITY')
+
+    def test_five_leg_health_matches_skill_and_only_coordinates_are_mapped(self):
+        skill = load_skill(path='src/brain/packages/definitions/reception_single_can_v2.yaml')
+        contract = skill.definition['points']
+        goals = {str(i): [float(i), 11.8, 1.57] for i in range(1, 6)}
+        bridge = Bridge({'instance_id': 'five-leg-test', 'brain_contract': contract,
+                         'office_goals': goals})
+        bridge.upstream = lambda *_: (200, {'status': 'ok', 'contract_version': 'fq/reception-lan/v1'})
+        endpoints = {'dream': '/reception/nav', 'vla': '/reception/vla'}
+        get = lambda path: bridge.handle('GET', path)[1]
+        self.assertEqual(require_simulator_pair(endpoints, get=get, kind='simple_physics',
+                         navigation_legs=contract, navigation_only=True), 'five-leg-test')
+        with self.assertRaises(ValueError):
+            require_simulator_pair(endpoints, get=get, kind='simple_physics',
+                                   navigation_legs=NAVIGATION_LEGS, navigation_only=True)
+        with self.assertRaises(ValueError):
+            require_simulator_pair(endpoints, get=get, kind='simple_physics',
+                                   navigation_legs=contract, navigation_only=False)
+        for point in contract.values():
+            body = dict(contract_version='fq/reception-lan/v1', task_id='task', command_id='command',
+                        frame_id='map', require_final_orientation=True, **deepcopy(point))
+            mapped = translate(body, contract, goals)
+            self.assertEqual(mapped['goal_xyt'], goals[str(point['leg_index'])])
+            self.assertEqual({k: v for k, v in mapped.items() if k != 'goal_xyt'},
+                             {k: v for k, v in body.items() if k != 'goal_xyt'})
 
     def test_failed_command_and_unknown_result_are_not_upgraded(self):
         with tempfile.TemporaryDirectory() as tmp:

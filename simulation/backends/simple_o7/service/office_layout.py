@@ -8,6 +8,7 @@ import json
 import math
 from pathlib import Path
 import xml.etree.ElementTree as ET
+from copy import deepcopy
 
 SCENE_ID = 'office_v2'
 ORIGIN = (10.8, 11.55, .75)
@@ -19,6 +20,13 @@ SIM_GOALS = {
     'relay3': (.27727, 6.15, 0.),
     'table_1': (-.40, 7.20, math.pi),
 }
+# fq-sim-assets office_baseline v0.1.1, navigation baseline v0.3.1.
+# Closed refrigerator AABB in the authored office frame. The solid envelope is
+# deliberately conservative; this variant does not simulate opening its doors.
+FRIDGE_BASE = (16.5, 11.9, 0.)
+FRIDGE_MIN = (16.146, 11.5395, 0.)
+FRIDGE_MAX = (16.854, 12.254, 1.804)
+FRIDGE_GOAL = (-.65, -5.7, 0.)
 SCENE = {
     'relay_1': {'type': 'waypoint', 'sim': 'office corridor before doorway approach',
                 'stance_xyt': list(SIM_GOALS['relay1'])},
@@ -37,9 +45,33 @@ def office_to_local(position):
     return [y - ORIGIN[1], ORIGIN[0] - x, z - ORIGIN[2]]
 
 
-def prepare_room(assets, output):
+def validate_source(assets, navigation_source):
+    if navigation_source not in {'table', 'fridge'}:
+        raise ValueError('Unknown office navigation source')
+    if navigation_source == 'fridge':
+        body = ET.parse(Path(assets) / 'scene.xml').find("./worldbody/body[@name='refrigerator_base']")
+        if body is None or tuple(map(float, body.get('pos', '').split())) != FRIDGE_BASE:
+            raise ValueError('Fridge navigation requires the authored office refrigerator at 16.5, 11.9')
+        if body.get('quat', '1 0 0 0') != '1 0 0 0' or body.get('euler'):
+            raise ValueError('Unsupported refrigerator orientation')
+
+
+def goals_for(navigation_source):
+    return {**SIM_GOALS, **({'table_2': FRIDGE_GOAL} if navigation_source == 'fridge' else {})}
+
+
+def scene_for(navigation_source):
+    scene = deepcopy(SCENE)
+    if navigation_source == 'fridge':
+        scene['table_2'] = dict(type='fridge', sim='closed authored refrigerator; navigation only',
+                                stance_xyt=list(FRIDGE_GOAL))
+    return scene
+
+
+def prepare_room(assets, output, navigation_source='table'):
     """Preserve upstream assets; write only this episode's derived manifest."""
     source = Path(assets) / 'scene.xml'
+    validate_source(assets, navigation_source)
     tree = ET.parse(source)
     boxes = []
     for geom in tree.findall('./worldbody/geom'):
@@ -55,7 +87,13 @@ def prepare_room(assets, output):
             raise ValueError('Office collision boxes must be axis aligned: ' + geom.get('name', ''))
         boxes.append(dict(name='office_' + geom.get('name'), position=office_to_local(pos),
                           size=[2 * size[1], 2 * size[0], 2 * size[2]], category='office_collision'))
+    if navigation_source == 'fridge':
+        centre = [(a + b) / 2 for a, b in zip(FRIDGE_MIN, FRIDGE_MAX)]
+        size = [b - a for a, b in zip(FRIDGE_MIN, FRIDGE_MAX)]
+        boxes.append(dict(name='office_fridge_envelope', position=office_to_local(centre),
+                          size=[size[1], size[0], size[2]], category='closed_fridge_collision'))
     result = dict(source=str(source), source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                  navigation_source=navigation_source,
                   floor_z=-.75, translation=[0., 0., 0.], boxes=boxes, office_assets=str(Path(assets).resolve()),
                   coordinate_transform={'office_origin': ORIGIN, 'local_x': 'office +Y', 'local_y': 'office -X'})
     destination = Path(output) / 'office_room.json'
@@ -98,7 +136,32 @@ def install_visuals():
             material = 'office_' + node.get('material') if node is not None and node.get('material') else ''
             spec.worldbody.add_geom(name=box['name'], type=mujoco.mjtGeom.mjGEOM_BOX,
                 pos=box['position'], size=np.asarray(box['size']) / 2,
-                material=material, rgba=[.7, .7, .7, 1], friction=[1., .005, .0001])
+                material=material, rgba=[.7, .7, .7, 0 if box['category'] == 'closed_fridge_collision' else 1],
+                friction=[1., .005, .0001])
+        if room.get('navigation_source') == 'fridge':
+            # Keep the authored mesh hierarchy at its actual office position.
+            # Freeze closed hinges and use the same conservative solid envelope
+            # in physics and planning; no upstream asset is modified.
+            child = ET.Element('mujoco')
+            asset = ET.SubElement(child, 'asset')
+            body = deepcopy(root.find("./worldbody/body[@name='refrigerator_base']"))
+            meshes = {g.get('mesh') for g in body.iter('geom') if g.get('mesh')}
+            for node in root.findall('./asset/mesh'):
+                if node.get('name') in meshes:
+                    node = deepcopy(node)
+                    node.set('file', str((Path(room['office_assets']) / node.get('file')).resolve()))
+                    asset.append(node)
+            for parent in body.iter('body'):
+                for joint in list(parent.findall('joint')):
+                    parent.remove(joint)
+            for geom in body.iter('geom'):
+                geom.set('contype', '0')
+                geom.set('conaffinity', '0')
+            ET.SubElement(child, 'worldbody').append(body)
+            fridge = mujoco.MjSpec.from_string(ET.tostring(child, encoding='unicode'))
+            frame = spec.worldbody.add_frame(pos=[-ORIGIN[1], ORIGIN[0], -ORIGIN[2]],
+                                            quat=[2**-.5, 0, 0, -2**-.5])
+            spec.attach(fridge, frame=frame, prefix='office_fridge_')
         # Authored visual-only finishes never add invisible collision obstacles.
         for node in nodes.values():
             if node.get('name') == 'meeting_table' or node.get('type') != 'box':

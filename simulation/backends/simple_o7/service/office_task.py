@@ -27,6 +27,7 @@ class G1O6OfficeReceptionMP(G1O6CanPickMP):
     uid = 'g1_o6_office_reception_mp'
     include_relay1 = False
     navigation_only = False
+    navigation_source = 'table'
     metadata = deepcopy(G1O6CanPickMP.metadata)
     metadata['max_episode_steps'] = 45000
     dr_cfgs = deepcopy(G1O6CanPickMP.dr_cfgs)
@@ -104,12 +105,43 @@ class G1O6OfficeReceptionMP(G1O6CanPickMP):
             walk('nav_table1', 'meeting_lane', [.27727, 7.20], np.pi/2, .18),
             turn('nav_table1', 'face_table', np.pi),
         ]
+        if self.navigation_source == 'fridge':
+            if not self.navigation_only:
+                raise ValueError('Fridge manipulation is not supported')
+            # Authored refrigerator is east of the old source table. Stay in
+            # the open lobby lane, face north, then stop in front of its doors.
+            prefix = [stand('nav_table2', 'initial'),
+                walk('nav_table2', 'corridor', [-1.15, -.5], 0.),
+                turn('nav_table2', 'face_fridge_lane', -np.pi/2),
+                walk('nav_table2', 'fridge_lane', [-1.15, -5.7], -np.pi/2),
+                turn('nav_table2', 'face_fridge', 0.),
+                walk('nav_table2', 'fridge_approach', [-.675, -5.7], 0., .12),
+                stand('nav_table2', 'settle')]
         if self.include_relay1:
             # Split the existing collision-aware corridor approach at its actual
             # waypoint, adding a measured stop before the next brain command.
             for spec in middle[:5]:
                 spec.phase = spec.phase.replace('office_nav_relay2__', 'office_nav_relay1__')
             middle.insert(5, stand('nav_relay1', 'settle'))
+        if self.navigation_source == 'fridge':
+            segment = 'nav_relay1' if self.include_relay1 else 'nav_relay2'
+            # Turn before the logo wall's end, rather than demand a stance
+            # alongside it: the Oct 12 trace showed actual left-hand contact.
+            # The diagonal stays clear of both source table and wall. These
+            # are internal path points; the five measured goals stay unchanged.
+            diagonal_yaw = np.arctan2(1.4 - .6, .27727 + 1.)
+            middle[:6 if self.include_relay1 else 5] = [
+                walk(segment, 'back_from_fridge', [-1., -5.7], 0., -.12),
+                turn(segment, 'face_west', np.pi/2),
+                walk(segment, 'return_lane_east', [-1., -3.3], np.pi/2),
+                stand(segment, 'return_lane_east_settle', np.pi/2),
+                walk(segment, 'return_lane_middle', [-1., -.9], np.pi/2),
+                stand(segment, 'return_lane_middle_settle', np.pi/2),
+                walk(segment, 'before_logo_wall', [-1., .6], np.pi/2),
+                turn(segment, 'face_diagonal', diagonal_yaw),
+                walk(segment, 'diagonal_to_relay1', [.27727, 1.4], diagonal_yaw, .18),
+                turn(segment, 'relay1_heading', 0.),
+                stand(segment, 'settle')]
         data = self.robot.mjdata
         hand = data.body(self.hand_body)
         hand_pose = np.eye(4)

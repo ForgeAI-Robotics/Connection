@@ -66,13 +66,14 @@ def vla_result(entry, operation):
     return ok, result, None if ok else ("PLACE_FAILED", entry["error"] or "放置未通过核验")
 
 
-def run(store, task, episode_dir, seed, *, scene='formal_room', office_assets=None):
+def run(store, task, episode_dir, seed, *, scene='formal_room', office_assets=None, navigation_source='table'):
     from .reception_episode import Episode
     log = Path(episode_dir) / "worker.log"
     Path(episode_dir).mkdir(parents=True, exist_ok=True)
     try:
         include_relay1 = bool((store.worker_session(task) or {}).get("include_relay1"))
-        options = {} if scene == 'formal_room' else dict(scene=scene, office_assets=office_assets)
+        options = {} if scene == 'formal_room' else dict(scene=scene, office_assets=office_assets,
+                                                        navigation_source=navigation_source)
         if include_relay1:
             options["include_relay1"] = True
         if (store.worker_session(task) or {}).get("navigation_only"):
@@ -163,9 +164,10 @@ def main():
     parser.add_argument("--seed", type=int, default=601)
     parser.add_argument('--scene', choices=['formal_room', 'office_v2'], default='formal_room')
     parser.add_argument('--office-assets')
+    parser.add_argument('--navigation-source', choices=['table', 'fridge'], default='table')
     args = parser.parse_args()
     run(ReceptionStore(args.runtime), args.task, args.episode, args.seed,
-        scene=args.scene, office_assets=args.office_assets)
+        scene=args.scene, office_assets=args.office_assets, navigation_source=args.navigation_source)
 
 
 if __name__ == "__main__":

@@ -69,6 +69,7 @@ def main():
     trace = np.load(args.episode / "trajectory.npz")
     qpos, times, segments, phases = trace["full_qpos"], trace["time"], trace["segment"], trace["phase"]
     report = json.loads((args.episode / "segments.json").read_text())
+    provenance = report.get('provenance') or {}
     if (report.get('provenance') or {}).get('scene') == 'office_v2':
         # The authored office floor supplies the visual surface; physics still
         # used the original ground collider at exactly the same elevation.
@@ -104,6 +105,10 @@ def main():
         draw.rectangle([0, 0, args.width, 96], fill=(10, 14, 24, 200))
         draw.text((20, 10), args.title, font=small, fill=(220, 228, 240))
         line = STEPS.get(segment, segment)
+        if provenance.get('navigation_only'):
+            line = line.replace('搬运导航', '导航')
+        if segment == 'nav_table2' and provenance.get('navigation_source') == 'fridge':
+            line = '导航到冰箱前（table_2 · 冰箱保持关闭）'
         _, _, entry, info, attempt_number = attempt
         if attempt_number > 1:
             line += f'（第 {attempt_number} 次尝试）'
@@ -131,9 +136,18 @@ def main():
         target[2] += .1
         lookat = target if lookat is None else .92 * lookat + .08 * target
         camera.lookat[:] = lookat
+        near_fridge = provenance.get('navigation_source') == 'fridge' and target[1] < -2.
+        camera.azimuth = 0. if near_fridge else 285.
         renderer.update_scene(data, camera=camera, scene_option=render_options)
         image = Image.fromarray(renderer.render())
         hand_camera.lookat[:] = data.body(hand_body).xpos
+        if provenance.get('navigation_only'):
+            # For navigation show the physical destination, not an idle hand.
+            goal_key = str(segments[index]).removeprefix('nav_')
+            goal_key = {'table2': 'table_2', 'table1': 'table_1'}.get(goal_key, goal_key)
+            goal = provenance['sim_goals'][goal_key]
+            hand_camera.lookat[:] = [goal[0], goal[1], .1]
+            hand_camera.distance, hand_camera.azimuth, hand_camera.elevation = 2.4, 0., -30.
         inset.update_scene(data, camera=hand_camera, scene_option=render_options)
         close = Image.fromarray(inset.render())
         corner = (args.width - inset_size[0] - 16, args.height - inset_size[1] - 56)

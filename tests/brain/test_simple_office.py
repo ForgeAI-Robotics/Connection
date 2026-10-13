@@ -4,13 +4,37 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from simulation.backends.simple_o7.service.office_layout import office_to_local, prepare_room, SIM_GOALS
+from simulation.backends.simple_o7.service.office_layout import office_to_local, prepare_room, SIM_GOALS, FRIDGE_GOAL
 from simulation.backends.simple_o7.service.reception_http import Reception
 from simulation.backends.simple_o7.service.reception_worker import nav_result
 from simulation.backends.simple_o7.service.render_reception import attempt_ranges
 
 
 class OfficeSceneTests(unittest.TestCase):
+    def test_fridge_requires_matching_scene_and_navigation_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / 'scene.xml'
+            config = dict(runtime=tmp, reception_scene='office_v2', reception_office_assets=tmp,
+                          reception_navigation_source='fridge', reception_navigation_only=True)
+            p.write_text('<mujoco><worldbody/></mujoco>')
+            with self.assertRaises(ValueError):
+                Reception(config)
+            p.write_text('<mujoco><worldbody><body name="refrigerator_base" pos="16.5 11.9 0"/></worldbody></mujoco>')
+            with self.assertRaises(ValueError):
+                Reception({**config, 'reception_navigation_only': False})
+            _, health = Reception(config).health('nav')
+            goal = health['simulation']['semantic_targets']['table_2']
+            self.assertEqual(goal['type'], 'fridge')
+            self.assertEqual(goal['stance_xyt'], list(FRIDGE_GOAL))
+            room = json.loads(prepare_room(tmp, tmp, 'fridge').read_text())
+            box = room['boxes'][0]
+            # Same conservative collision envelope is consumed by planner and
+            # physics; stance is outside the front face with >60 cm clearance.
+            front = box['position'][0] - box['size'][0] / 2
+            self.assertGreater(front - FRIDGE_GOAL[0], .6)
+            self.assertAlmostEqual(box['position'][1], FRIDGE_GOAL[1])
+            self.assertEqual(room['navigation_source'], 'fridge')
+
     def test_video_keeps_failed_attempt_separate_from_successful_retry(self):
         failed = dict(segment='nav_relay2', frames=10, outcome='succeeded', checks={'reached': False})
         passed = dict(segment='nav_relay2', frames=4, outcome='succeeded', checks={'reached': True})

@@ -12,6 +12,8 @@ def main():
     parser.add_argument('output', type=Path)
     parser.add_argument('--navigation-url', default='http://127.0.0.1:18072')
     parser.add_argument('--port', type=int, default=15000)
+    parser.add_argument('--config', type=Path, help='Reuse project Brain settings, including configured LLM advice')
+    parser.add_argument('--skill-file', type=Path, help='Select a registered reception Skill for this experiment')
     args = parser.parse_args()
     root = args.output.resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -36,6 +38,22 @@ def main():
                 'reception_real': {'kernel_enabled': False, 'kernel_runtime_dir': str(root / 'tasks'),
                                    'dream_inspection_enabled': False},
                 'reflection': {'enabled': False}}
+    if args.config:
+        from dotenv import load_dotenv
+        from shared.paths import workspace_root
+        from shared.config import load_config
+        load_dotenv(workspace_root() / '.env')
+        settings = load_config(args.config)
+        if not isinstance(settings, dict):
+            raise ValueError('Brain configuration must be a mapping')
+        settings.setdefault('brain', {}).update(scheduler='runtime', capture_timeline=False)
+        settings.setdefault('reception_real', {}).update(
+            kernel_enabled=False, kernel_runtime_dir=str(root / 'tasks'), dream_inspection_enabled=False)
+        settings.setdefault('reflection', {})['enabled'] = False
+    if args.skill_file:
+        settings['reception_real']['skill_file'] = str(args.skill_file.resolve())
+    from brain.packages.reception_skill import load_skill
+    load_skill(settings)  # Validate before starting a task or opening the HTTP listener.
     application = BrainApplication(create_service(settings)).start()
     server = make_server('127.0.0.1', args.port, create_app(application), threaded=True)
     def stop(*_):

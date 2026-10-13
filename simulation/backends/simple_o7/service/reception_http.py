@@ -31,6 +31,10 @@ class Reception:
         self.navigation_legs = config.get('reception_navigation_legs', NAVIGATION_LEGS)
         self.include_relay1 = self.navigation_legs != NAVIGATION_LEGS
         self.navigation_only = config.get('reception_navigation_only', False)
+        self.navigation_source = config.get('reception_navigation_source', 'table')
+        if self.navigation_source not in {'table', 'fridge'} or (
+                self.navigation_source == 'fridge' and (self.scene != 'office_v2' or not self.navigation_only)):
+            raise ValueError('Fridge source requires office_v2 navigation_only')
         if type(self.navigation_only) is not bool or (self.navigation_only and self.scene != 'office_v2'):
             raise ValueError('navigation_only must be boolean and requires office_v2')
         if self.include_relay1:
@@ -50,12 +54,13 @@ class Reception:
                     command_id='validate', frame_id='map', require_final_orientation=True, **point),
                     navigation_legs=self.navigation_legs)
         if self.scene == 'office_v2':
-            from .office_layout import SCENE as OFFICE_SCENE
+            from .office_layout import scene_for, validate_source
             if not config.get('reception_office_assets'):
                 raise ValueError('office_v2 requires reception_office_assets')
             asset = Path(config['reception_office_assets']) / 'scene.xml'
             self.scene_sha256 = hashlib.sha256(asset.read_bytes()).hexdigest()
-            self.semantic_scene = OFFICE_SCENE
+            validate_source(config['reception_office_assets'], self.navigation_source)
+            self.semantic_scene = scene_for(self.navigation_source)
         self.root = Path(config["runtime"])
         self.store = ReceptionStore(self.root, include_relay1=self.include_relay1,
                                     navigation_only=self.navigation_only)
@@ -68,6 +73,7 @@ class Reception:
             extra = ['--scene', self.scene]
             if self.scene == 'office_v2':
                 extra += ['--office-assets', self.config['reception_office_assets']]
+                extra += ['--navigation-source', self.navigation_source]
             process = subprocess.Popen([sys.executable, "-m", "service.reception_worker", "--runtime", str(self.root),
                                         "--task", task, "--episode", episode,
                                         "--seed", str(self.config.get("reception_seed", 601)), *extra],
@@ -90,6 +96,7 @@ class Reception:
                                     "scene": self.scene, "scene_source_sha256": self.scene_sha256,
                                     "navigation_legs": self.navigation_legs,
                                     "navigation_only": self.navigation_only,
+                                    "navigation_source": self.navigation_source,
                                     "semantic_targets": self.semantic_scene}}
 
     def status(self, role):

@@ -23,7 +23,10 @@ class SegmentFailed(RuntimeError):
 class Episode:
     def __init__(self, output, *, seed=601, data_root="/mnt/simple/data", room=RELEASE + "/formal_room/room.json",
                  max_frames=12000, log=print, scene='formal_room', office_assets=None, include_relay1=False,
-                 navigation_only=False):
+                 navigation_only=False, navigation_source='table'):
+        if navigation_source not in {'table', 'fridge'} or (navigation_source == 'fridge' and
+                (scene != 'office_v2' or not navigation_only)):
+            raise ValueError('Fridge source requires office_v2 navigation_only')
         self.output = Path(output)
         self.output.mkdir(parents=True, exist_ok=True)
         self.log = log
@@ -49,13 +52,15 @@ class Episode:
         if scene == 'office_v2':
             if not office_assets:
                 raise ValueError('office_v2 requires a snapshot of office scene assets')
-            from service.office_layout import prepare_room, install_visuals, SIM_GOALS, SPAWN
+            from service.office_layout import prepare_room, install_visuals, goals_for, SPAWN
             from service.office_task import G1O6OfficeReceptionMP, segment_of
-            room = prepare_room(office_assets, self.output)
+            SIM_GOALS = goals_for(navigation_source)
+            room = prepare_room(office_assets, self.output, navigation_source)
             install_visuals()
             G1O6ReceptionMP = G1O6OfficeReceptionMP
             G1O6ReceptionMP.include_relay1 = include_relay1
             G1O6ReceptionMP.navigation_only = navigation_only
+            G1O6ReceptionMP.navigation_source = navigation_source
             max_frames = max(max_frames, 45000)
         elif scene != 'formal_room':
             raise ValueError('Unknown reception scene: ' + scene)
@@ -103,6 +108,7 @@ class Episode:
         if scene == 'office_v2':
             sources.update([Path(__file__), Path(__file__).with_name('office_layout.py')])
         self.provenance = dict(include_relay1=include_relay1, navigation_only=navigation_only,
+                               navigation_source=navigation_source,
                                seed=seed, release=RELEASE, scene=scene, room=str(room), spawn=list(SPAWN),
                                room_sha256=hashlib.sha256(Path(room).read_bytes()).hexdigest(),
                                pick_approach_overshoot_compensation_m=.025 if scene == 'office_v2' else SONIC_STOP_OVERSHOOT,
@@ -116,6 +122,9 @@ class Episode:
                 scene_adaptations=['calibrated dynamic soup can replaces static coke decoration',
                                    'source support: 0.85 x 0.79 m, calibrated 0.75 m top and near edge',
                                    'meeting support: authored footprint and 0.75 m top, supported tabletop'])
+        if navigation_source == 'fridge':
+            self.provenance['scene_adaptations'].append(
+                'authored fridge at office [16.5,11.9,0]; hinges frozen closed; solid conservative AABB collision envelope; navigation only')
         (self.output / "provenance.json").write_text(json.dumps(self.provenance, indent=2))
 
     # ---------------------------------------------------------------- measurement

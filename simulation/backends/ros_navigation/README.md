@@ -16,12 +16,13 @@ local TCP port to that socket, so neither ROS nor the simulation needs external
 network access. Its configuration contains:
 
 - `instance_id`: a unique simulation-run identity;
-- `brain_contract`: the existing `contracts.reception_lan.NAVIGATION_LEGS`;
-- `office_goals`: four map-bound poses loaded from the fixture's reviewed
+- `brain_contract`: the selected reception Skill's `points` snapshot (the
+  original four-leg `contracts.reception_lan.NAVIGATION_LEGS` remains supported);
+- `office_goals`: map-bound poses loaded from the fixture's reviewed
   viewpoints and relays, keyed by string leg index;
 - `events`: an append-only request/response evidence path.
 
-Only the four scene goal coordinates are translated. Task, command and leg
+Only the registered scene goal coordinates are translated. Task, command and leg
 identities, motion modes, orientation requirements and upstream results remain
 unchanged. The bridge neither schedules the next leg nor owns command state.
 The original 8001 service handles command identity, sequence, dispatch, query
@@ -33,13 +34,25 @@ The existing `reception_simple` physical-simulation routing is reused, with
 identifies the same isolated fixture and declares `manipulation_supported=false`;
 all manipulation operations return 501. Run only the explicit
 `开始接待（仅导航）` SOP. A health response does not establish manipulation capability.
+Both health responses declare `navigation_only=true` and the configured
+`navigation_legs`, allowing the current Brain to reject a mismatched Skill
+before submitting actions. A five-leg declaration requires an upstream 8001
+fixture that actually accepts that same route; the bridge does not add or
+bypass upstream route admission.
 
 `run_brain.py <fresh-output-dir> --navigation-url http://127.0.0.1:<tunnel-port>`
 starts the standard `BrainApplication`, Runtime, clients and Verifier on
 loopback port 15000. The explicit simulation profile and task ledger are isolated
 from the main running Brain. Real-robot dispatch permission stays disabled.
 The registered SOP does not require an LLM; semantic selection, recovery-model
-advice and learning are disabled for this bounded integration run.
+advice and learning are disabled by default for the historical bounded run.
+Use `--config config/brain.yaml --skill-file
+src/brain/packages/definitions/reception_single_can_v2.yaml` to reuse current
+project/model settings and select the five-leg Skill. Task storage and execution
+profile remain isolated, real-robot permission remains disabled, and reflection
+and timeline capture remain off. Configured LLM recovery advice is retained;
+the model still cannot execute suggestions automatically. These adapter options
+alone do not establish a successful five-leg ROS simulation run.
 
 Submit through its normal `POST /publish_task`, then query `/api/task_status`.
 Use the normal task controls for any explicit retry and preserve the original

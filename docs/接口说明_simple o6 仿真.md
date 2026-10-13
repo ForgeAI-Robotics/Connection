@@ -106,6 +106,19 @@ NAV/VLA 健康返回 `simulation.navigation_only=true`；VLA 动作入口返回 
 导航结果用 `object_retention_required=false`、`object_retained=null` 表示本轮不核验搬运。
 要恢复完整接待，把该配置改回 `false` 并重启后使用“开始接待”，不能在一个运行中回合切换。
 
+2026-10-12 增加 `reception_navigation_source`：缺省 `table` 保留校准取物台；显式 `fridge`
+要求 `office_v2`、`reception_navigation_only=true`，以及包含冰箱的当天
+`fq-sim-assets/scenes/fq/office_baseline` 场景副本（场景 0.1.1／导航基线 0.3.1）。
+该副本须保留 XML 引用的相对资产目录；此前 10 月 9 日的办公室快照没有冰箱。
+健康回包返回 `simulation.navigation_source`，`semantic_targets.table_2.type=fridge`。
+这里仍用 `table_2` 作为接待合同首点 ID，现场 Skill 坐标不改写为仿真坐标。
+
+冰箱保留场景原位置 `[16.5,11.9,0]`，到达目标为 O6 局部 `[-0.65,-5.7,0]`。
+导航先沿大厅走到冰箱前，随后返回 relay1，继续 relay2、横移 relay3、table1；到达核验门限不变。
+冰箱网格保留原层级，门铰链在派生模型中固定关闭；规划与物理均使用闭门外形的保守实体包围盒，
+不是开门或门碰撞动力学测试。来源记录保存所选目标、源 XML 哈希和这些适配。
+此分支拒绝完整抓放模式；恢复完整接待前还须将来源改回 `table`，不能据此声称冰箱取物已训练。
+
 
 远端 `config.json` 的 `reception_scene` 选择 `formal_room`（默认）或 `office_v2`；后者还需
 `reception_office_assets`，指向容器内包含 `scene.xml`、`textures/` 的独立资产副本。
