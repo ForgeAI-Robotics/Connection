@@ -367,6 +367,9 @@ def protocol_endpoints(backend='reception_protocol'):
 def target_identity(config, backend):
     from shared.execution_profile import applied_profile
     profile = applied_profile()
+    if backend == "reception_ros_sim_manipulation":
+        return {"backend": backend, "dream": protocol_endpoints("reception_simple")["dream"],
+                "vla": "local:simulated-manipulation/v1"}
     if backend in SIMULATED_RECEPTION:
         return {'backend': backend, **protocol_endpoints(backend)}
     if backend == 'simple_o7':
@@ -374,6 +377,9 @@ def target_identity(config, backend):
         return {'backend': backend, 'url': settings().url, 'contract_version': WIRE_VERSION}
     if backend == 'camera' and profile:
         return {'backend': 'camera', 'observation': profile['routes']['observation']}
+    if backend == "reception_real_sim_manipulation":
+        real = config.get("reception_real") or {}
+        return {"dream": real.get("dream_base_url"), "vla": "local:simulated-manipulation/v1"}
     if backend == "reception_real":
         real = config.get("reception_real") or {}
         return {"dream": real.get("dream_base_url"), "vla": real.get("vla_base_url")}
@@ -387,6 +393,18 @@ def target_identity(config, backend):
 
 def build_port(config, backend, *, agent=None):
     from brain.config_flags import kernel_enabled
+    if backend == "reception_ros_sim_manipulation":
+        from brain.adapters.simulated_manipulation import HybridReceptionAdapter
+        from shared.protocol_simulation import require_simulator_pair
+        from copy import deepcopy
+        endpoints = protocol_endpoints("reception_simple")
+        require_simulator_pair(endpoints, kind="simple_physics", navigation_only=True, scene="office_ros_8001")
+        selected = deepcopy(config)
+        selected.setdefault("reception_real", {})["dream_base_url"] = endpoints["dream"]
+        return HybridReceptionAdapter.from_config(selected)
+    if backend == "reception_real_sim_manipulation":
+        from brain.adapters.simulated_manipulation import HybridReceptionAdapter
+        return MotionGate(HybridReceptionAdapter.from_config(config), kernel_enabled(config))
     if backend == 'simple_o7':
         from brain.adapters.simple_o7 import SimpleO7Adapter
         return SimpleO7Adapter.from_config()

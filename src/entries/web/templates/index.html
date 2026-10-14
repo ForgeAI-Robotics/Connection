@@ -2,6 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FQPlanner 任务控制台</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,7 +13,7 @@
         .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 20px; margin-bottom: 16px; }
         .card h2 { font-size: 15px; color: #94a3b8; margin-bottom: 14px; }
         .input-group { display: flex; gap: 8px; }
-        input[type="text"] { flex: 1; padding: 10px 14px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 14px; outline: none; }
+        input[type="text"] { min-width: 0; flex: 1; padding: 10px 14px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 14px; outline: none; }
         input[type="text"]:focus { border-color: #38bdf8; }
         .btn { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; white-space: nowrap; }
         .btn-primary { background: #0ea5e9; color: #fff; }
@@ -23,29 +24,10 @@
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
         .result { margin-top: 14px; padding: 14px; background: #0f172a; border-radius: 8px; white-space: pre-wrap; font-size: 13px; font-family: inherit; line-height: 1.6; display: none; max-height: 180px; overflow-y: auto; }
-        .status-bar { display: flex; gap: 16px; justify-content: center; font-size: 13px; color: #64748b; margin-bottom: 20px; }
+        .status-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: center; font-size: 13px; color: #64748b; margin-bottom: 20px; }
         .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
         .dot.ok { background: #22c55e; }
         .dot.err { background: #ef4444; }
-        .msg { padding: 10px 14px; border-radius: 8px; margin-top: 10px; font-size: 13px; display: none; }
-        .msg-ok { background: #052e16; color: #4ade80; border: 1px solid #166534; }
-        .msg-err { background: #2a1215; color: #f87171; border: 1px solid #7f1d1d; }
-        .tools-list { margin-top: 10px; }
-        .tool-item { background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 8px; }
-        .tool-name { color: #38bdf8; font-weight: bold; font-size: 14px; }
-        .tool-desc { color: #94a3b8; font-size: 13px; margin-top: 4px; }
-        .tool-params { color: #64748b; font-size: 12px; margin-top: 6px; font-family: monospace; }
-        .param-tag { background: #334155; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
-        .scene-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-top: 10px; }
-        .scene-card { background: #0f172a; border-radius: 8px; padding: 12px; }
-        .scene-name { color: #38bdf8; font-weight: bold; font-size: 14px; }
-        .scene-type { color: #64748b; font-size: 12px; margin-left: 6px; }
-        .scene-desc { color: #94a3b8; font-size: 13px; margin-top: 4px; }
-        .scene-contains { color: #a78bfa; font-size: 12px; margin-top: 6px; font-family: monospace; }
-        .scene-coords { color: #64748b; font-size: 11px; margin-top: 4px; font-family: monospace; }
-        .update-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-        .update-row select { padding: 8px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; color: #e2e8f0; font-size: 13px; outline: none; }
-        .update-row select:focus { border-color: #38bdf8; }
         .task-progress { margin-top: 14px; }
         .task-progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .task-progress-header span { font-size: 13px; color: #94a3b8; }
@@ -65,136 +47,44 @@
         .subtask-item.done.fail .subtask-text { color: #f87171; font-weight: 500; }
         .subtask-item .subtask-robot { color: #64748b; font-size: 12px; }
         .no-task { color: #64748b; font-size: 13px; margin-top: 10px; }
-        .robot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-        .robot-info-box { background: #0f172a; border-radius: 8px; padding: 12px; }
-        .robot-info-box h3 { font-size: 13px; color: #94a3b8; margin-bottom: 8px; }
-        .robot-coord { font-family: monospace; font-size: 14px; color: #22c55e; }
-        .robot-yaw { font-family: monospace; font-size: 14px; color: #38bdf8; }
-        .robot-objects { margin-top: 10px; background: #0f172a; border-radius: 8px; padding: 12px; }
-        .robot-objects h3 { font-size: 13px; color: #94a3b8; margin-bottom: 8px; }
-        .obj-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; font-family: monospace; border-bottom: 1px solid #1e293b; }
-        .obj-row:last-child { border-bottom: none; }
-        .obj-name { color: #38bdf8; }
-        .obj-pos { color: #94a3b8; }
-        .obj-grasped { color: #f59e0b; font-size: 11px; }
         .report-card { margin-top: 14px; }
-        .rc-head { font-size: 14px; font-weight: 600; margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; }
-        .rc-head.ok { background: #052e16; color: #4ade80; } .rc-head.no { background: #2a1215; color: #f87171; }
-        .rc-check { font-size: 13px; color: #cbd5e1; padding: 3px 0 3px 6px; }
-        .rc-check .ok { color: #22c55e; } .rc-check .no { color: #ef4444; }
-        .rc-anom { font-size: 13px; color: #fbbf24; padding: 5px 0 3px 6px; }
-        .rc-advice { font-size: 13px; color: #94a3b8; padding: 6px 0 0 6px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>FQPlanner 任务控制台</h1>
-        <div class="subtitle">统一 Runtime 任务系统</div>
-        <div class="card"><h2>当前执行环境</h2><div id="execution-environment" style="white-space:pre-wrap;line-height:1.7">正在读取…</div></div>
-
-        <div class="status-bar" id="status"></div>
-
-        <!-- 机器人实时坐标 -->
-        <div class="card">
-            <h2>机器人坐标 <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;float:right" onclick="loadRobotStatus()">刷新</button></h2>
-            <div id="robot-status-content">
-                <div style="color:#64748b;font-size:13px">加载中...</div>
-            </div>
-        </div>
-
-        <!-- 视频录制 -->
-        <div class="card">
-            <h2>视频录制</h2>
-            <div class="btn-row" style="justify-content:center">
-                <button class="btn btn-sm" id="btn-record" style="background:#dc2626;color:#fff" onclick="toggleRecord()">开始录制</button>
-            </div>
-            <div id="record-info" style="text-align:center;font-size:12px;color:#64748b;margin-top:6px"></div>
-        </div>
-
-        <!-- 四宫格：直播仿真 + 发任务后逐步截图回放 -->
-        <div class="card">
-            <h2 style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span>四宫格相机
-                    <span style="font-size:12px;color:#64748b;font-weight:normal">（同一仿真的四路相机；3DGS 为俯视 / 头 / 右腕 / 左腕）</span>
-                </span>
-                <span style="margin-left:auto;display:flex;gap:6px">
-                    <button class="btn btn-outline btn-sm" id="btn-quad-live" style="font-size:11px;padding:3px 8px" onclick="startLiveQuad()">直播</button>
-                    <button class="btn btn-outline btn-sm" id="btn-quad-replay" style="font-size:11px;padding:3px 8px" onclick="startReplayQuad()">回放</button>
-                    <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px" onclick="loadTimeline()">刷新</button>
-                </span>
-            </h2>
-            <div id="quad-meta" style="text-align:center;font-size:12px;color:#64748b;margin-bottom:6px"></div>
-            <div style="text-align:center">
-                <img id="quad-img" style="max-width:100%;border-radius:8px;background:#0f172a;min-height:120px" alt="四宫格">
-            </div>
-            <div id="timeline-controls" style="margin-top:10px;display:none">
-                <input type="range" id="timeline-slider" min="0" max="0" value="0" style="width:100%" oninput="showFrame(this.value)">
-                <div class="btn-row" style="justify-content:center;margin-top:6px">
-                    <button class="btn btn-sm btn-outline" onclick="stepFrame(-1)">◀ 上一帧</button>
-                    <button class="btn btn-sm" id="btn-play" onclick="playTimeline()">⏵ 播放</button>
-                    <button class="btn btn-sm btn-outline" onclick="stepFrame(1)">下一帧 ▶</button>
-                </div>
-                <div id="frame-label" style="text-align:center;font-size:13px;color:#e2e8f0;margin-top:6px"></div>
-            </div>
-            <div id="timeline-empty" style="text-align:center;font-size:12px;color:#64748b;margin-top:6px"></div>
+        <div class="subtitle">任务发布 · 进度跟踪 · 异常处理</div>
+        <div class="status-bar">
+            <span id="status">正在连接大脑…</span>
+            <span id="execution-environment">正在读取接待环境…</span>
         </div>
 
         <!-- 任务发布 -->
         <div class="card">
             <h2>发布任务</h2>
             <div class="input-group">
-                <input type="text" id="task" placeholder="输入任务，如：前往卧室" autofocus>
+                <input type="text" id="task" placeholder="输入任务，如：开始接待" autofocus>
                 <button class="btn btn-primary" id="btn-send" onclick="sendTask()">发送</button>
             </div>
             <div class="result" id="task-result" role="status"></div>
             <button id="copy-task-response" class="btn btn-outline btn-sm" style="display:none;margin-top:8px" onclick="copyTaskResponse()">复制原始响应</button>
             <span id="copy-task-status" style="font-size:12px;color:#94a3b8" role="status"></span>
             <div class="task-progress" id="task-progress"></div>
+            <div id="task-freshness" style="font-size:12px;color:#94a3b8" aria-live="polite"></div>
+            <div id="task-command-feedback" style="white-space:pre-wrap;font-size:13px" aria-live="polite"></div>
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
                 <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
-                <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="大脑+导航联调：只跑四段导航，不派发抓取与放置" onclick="startReception('开始接待（仅导航）')">🧭 开始接待（仅导航）</button>
+                <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="完整接待流程：真实导航，抓取和放置由本地模拟端返回，不执行真实抓放" onclick="startReception('开始接待（导航真机＋操控模拟）')">🧭 开始接待（导航真机＋操控模拟）</button>
                 <button id="task-skip" disabled class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
                 <button id="task-pause" disabled class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
                 <button id="task-continue" disabled class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
                 <button id="task-cancel" disabled class="btn btn-sm" style="background:#ef4444;color:#fff" onclick="controlReception('cancel')">取消任务</button>
                 <button class="btn btn-outline btn-sm" onclick="refreshTaskStatus()">刷新任务进度</button>
+                <button class="btn btn-outline btn-sm" onclick="loadReceptionReport()">本轮总结</button>
             </div>
         </div>
 
-        <!-- 配置校验 -->
-        <div class="card">
-            <h2>配置校验</h2>
-            <button class="btn btn-outline btn-sm" onclick="validateConfig()">校验配置</button>
-            <div class="msg" id="validate-msg"></div>
-        </div>
-
-        <!-- 工具列表 -->
-        <div class="card">
-            <h2>已注册工具</h2>
-            <button class="btn btn-outline btn-sm" onclick="loadTools()">刷新</button>
-            <div class="tools-list" id="tools-list"></div>
-        </div>
-
-        <!-- 物体状态 (belief) -->
-        <div class="card">
-            <h2>物体状态 (belief)
-                <span style="font-size:12px;color:#64748b;font-weight:normal">机器人记忆里每个物体在哪(非真值,随探索更新)</span>
-                <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;float:right" onclick="loadBelief()">刷新</button>
-            </h2>
-            <div id="belief-updated" style="font-size:11px;color:#64748b;margin-bottom:8px"></div>
-            <div id="belief-table"></div>
-            <pre id="belief-json" style="margin-top:10px;padding:12px;background:#0f172a;border-radius:8px;font-size:12px;color:#a78bfa;overflow-x:auto;white-space:pre-wrap"></pre>
-        </div>
-
-        <!-- current SOP(最底部,生成新 SOP 时在此基础上 update) -->
-        <div class="card">
-            <h2>当前 SOP
-                <span style="font-size:12px;color:#64748b;font-weight:normal">桌面整理规则(事后反思生成新版时在此基础上 update)</span>
-                <button class="btn btn-outline btn-sm" style="font-size:11px;padding:3px 8px;float:right" onclick="loadSop()">刷新</button>
-            </h2>
-            <div id="sop-content" style="font-size:13px;color:#cbd5e1;line-height:1.7"></div>
-        </div>
     </div>
 
     <script>
@@ -237,56 +127,80 @@
         // 状态检测
         async function checkStatus() {
             try {
-                const resp = await fetch('/api/task_status');
-                if (!resp.ok) throw new Error('offline');
-                document.getElementById('status').innerHTML = '<span><span class="dot ok"></span>Master 在线</span>';
+                await readTaskStatus();
+                document.getElementById('status').innerHTML = '<span><span class="dot ok"></span>大脑在线</span>';
             } catch {
-                document.getElementById('status').innerHTML = '<span><span class="dot err"></span>Master 离线</span>';
+                document.getElementById('status').innerHTML = '<span><span class="dot err"></span>大脑连接异常</span>';
             }
         }
-        checkStatus();
+        setTimeout(checkStatus, 0);
         setInterval(checkStatus, 5000);
-
-        // 当前 SOP(最底部卡片) —— 事后反思生成新版时在此基础上 update
-        async function loadSop() {
-            const el = document.getElementById('sop-content');
-            try {
-                const d = await (await fetch('/api/sop')).json();
-                if (!d.success) { el.textContent = 'SOP 加载失败: ' + (d.error || ''); return; }
-                const s = d.sop || {};
-                const sec = (title, items) => items && items.length
-                    ? `<div style="margin-bottom:10px"><b style="color:#a78bfa">${title}</b>`
-                      + `<ul style="margin:4px 0 0 18px;padding:0">`
-                      + items.map(i => `<li>${i}</li>`).join('') + '</ul></div>'
-                    : '';
-                el.innerHTML =
-                    sec('桌面最终状态', (s.standard_layout || []).map(x => `${x.category}: ${x.count ?? x.state ?? ''} — ${x.rule || ''}`))
-                  + sec('必须清理的垃圾', (s.trash || []).map(x => `${x.type} → ${x.action}`))
-                  + sec('必须保持原位', (s.keep_in_place || []).map(x => `${x.type}: ${x.rule}`))
-                  + sec('饮料补货', (s.restock || []).map(x => `${x.item}: 标准 ${x.min} 个,不足去${x.source}补`))
-                  + sec('经验规则(大脑优化生成)', s.learned_rules || []);
-            } catch (e) { el.textContent = 'SOP 加载失败: ' + e; }
-        }
-        loadSop();
-
-        function showMsg(id, ok, text) {
-            const el = document.getElementById(id);
-            el.className = 'msg ' + (ok ? 'msg-ok' : 'msg-err');
-            el.textContent = text;
-            el.style.display = 'block';
-        }
 
         let taskSubmitting = false, taskControlPending = false, displayedTask = null;
         let taskReceiptId = null;
+        let taskNoticeContext = null;
         let taskStatusKnown = false;
-        async function readTaskStatus() {
-            const response = await fetch('/api/task_status');
-            const data = await response.json();
-            if (!response.ok || !data || !Object.prototype.hasOwnProperty.call(data, 'state')) {
-                throw new Error('无法确认当前任务状态，请检查大脑连接后刷新');
-            }
-            return data;
+        let taskStatusLastReceived = 0, taskStatusError = '', statusReadPending = null;
+        let pendingTaskControl = null, taskFeedbackTaskId = null;
+        async function taskJSON(url, options = {}, timeoutMs = 8000) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const response = await fetch(url, {...options, signal: controller.signal, cache: 'no-store'});
+                const data = await response.json();
+                if (!response.ok) {
+                    const error = new Error(data.error || '请求未完成');
+                    error.definiteRejection = response.status >= 400 && response.status < 500;
+                    throw error;
+                }
+                return data;
+            } catch (error) {
+                if (error.name === 'AbortError') throw new Error('请求超时，结果尚未确认');
+                throw error;
+            } finally { clearTimeout(timer); }
         }
+        function readTaskStatus() {
+            // Polling and button prechecks share one bounded read, never build a backlog.
+            if (!statusReadPending) {
+                statusReadPending = taskJSON('/api/task_status').then(data => {
+                    if (!data || !Object.prototype.hasOwnProperty.call(data, 'state'))
+                        throw new Error('大脑未返回有效任务状态');
+                    return data;
+                }).finally(() => { statusReadPending = null; });
+            }
+            return statusReadPending;
+        }
+        function updateTaskFreshness() {
+            const age = taskStatusLastReceived ? Math.max(0, Math.floor((Date.now()-taskStatusLastReceived)/1000)) : null;
+            const node = document.getElementById('task-freshness');
+            node.textContent = taskStatusError
+                ? (age === null ? '状态查询失败：' + taskStatusError : `连接异常，保留上次进度 · 距上次更新 ${age} 秒`)
+                : age !== null && age >= 10 ? `状态待更新 · 距上次更新 ${age} 秒` : '';
+            if (age >= 10 && taskStatusKnown) { taskStatusKnown = false; updateTaskButtons(); }
+        }
+        function markTaskStatus(data) {
+            taskStatusLastReceived = Date.now(); taskStatusError = ''; taskStatusKnown = true;
+            updateTaskFreshness();
+            if ((taskFeedbackTaskId && taskFeedbackTaskId !== data.task_id) || data.terminal) {
+                document.getElementById('task-command-feedback').textContent = '';
+                taskFeedbackTaskId = null;
+            }
+            if (pendingTaskControl) {
+                const p = pendingTaskControl;
+                if (data.task_id !== p.task_id) pendingTaskControl = null;
+                else if (data.control_command_id && data.control_command_id !== p.command_id) {
+                    p.observed = true;
+                    document.getElementById('task-command-feedback').textContent = '已观察到新命令：' + data.control_command_id;
+                }
+                // A fresh task status alone does not prove that a lost control request was rejected.
+                if (p.observed || data.terminal) pendingTaskControl = null;
+            }
+        }
+        function markTaskStatusError(error) {
+            taskStatusKnown = false; taskStatusError = error.message;
+            updateTaskButtons(); updateTaskFreshness();
+        }
+        setInterval(updateTaskFreshness, 1000);
         function updateTaskButtons() {
             const state = displayedTask?.state;
             const active = !!displayedTask?.task_id && !displayedTask.terminal;
@@ -296,13 +210,13 @@
                 'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion,
                 skip: ready && active && !!displayedTask?.can_skip,
                 pause: ready && active && ['running', 'verifying'].includes(state),
-                continue: ready && active && !!displayedTask?.can_resume,
+                continue: ready && active && !!displayedTask?.can_resume && !pendingTaskControl,
                 cancel: ready && active
             };
             for (const [name, allowed] of Object.entries(enabled)) {
                 const button = document.getElementById('task-' + name);
                 button.disabled = !allowed;
-                const descriptions = {start: '开始完整接待流程', 'start-nav': '只执行导航流程',
+                const descriptions = {start: '开始完整接待流程', 'start-nav': '导航真机执行，抓放使用本地模拟',
                     pause: '暂停整轮流程，并请求停止当前动作', continue: '继续当前环节；未完成则重新下发一次指令',
                     skip: '放弃当前环节并进入下一步，不记为成功', cancel: '废弃整轮大脑任务；不向导航发送停止指令'};
                 button.title = allowed ? descriptions[name] : (!taskStatusKnown ? '正在确认任务状态' : taskControlPending ? '控制请求处理中' : '当前任务状态不支持此操作');
@@ -349,16 +263,16 @@
                     showTaskResponse(st, '当前任务尚未结束，请先处理原任务。');
                     return;
                 }
-                const preflightResp = await fetch('/api/task_preflight', {
+                const preflight = await taskJSON('/api/task_preflight', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({task: task})
-                });
-                const preflight = await preflightResp.json();
+                }, 12000);
                 if (preflight.required && preflight.ready === false) {
                     showTaskResponse(preflight, '预检未通过，任务尚未提交。');
                     return;
                 }
+                document.getElementById('task-command-feedback').textContent = (preflight.warnings || []).join('\n');
                 const payload = {task: task};
                 if (options.forceNewTask) payload.force_new_task = true;
                 const resp = await fetch('/publish_task', {
@@ -374,7 +288,6 @@
                 }
                 if (data.status === 'success' || data.accepted === true) {
                     taskReceiptId = data.task_id;
-                    _prevAllDone = false;
                     startTaskPolling();
                 }
             } catch (e) {
@@ -394,13 +307,14 @@
             sendTask({skipConfirm: true});
         }
         async function controlReception(action) {
-            if (taskControlPending) return;
+            if (taskControlPending || (action === 'continue' && pendingTaskControl)) return;
             taskReceiptId = null;
             const result = document.getElementById('task-result');
             const target = displayedTask?.task_id;
             const skipStep = displayedTask?.skip_step_id;
             const continueStep = displayedTask?.control_step_id;
             const continueCommand = displayedTask?.control_command_id || '';
+            taskNoticeContext = taskDisplayContext(displayedTask);
             taskControlPending = true;
             updateTaskButtons();
             result.style.display = 'block';
@@ -422,13 +336,19 @@
                     if (!window.confirm(`跳过 ${taskPhase(skipStep)} 并进入下一步？该步骤不会记为成功；下一步仍需满足真实接口的前置条件。`)) return;
                 }
                 result.textContent = '正在发送控制请求...';
-                const resp = await fetch('/api/task_' + action, {
+                taskFeedbackTaskId = current.task_id;
+                pendingTaskControl = {task_id: current.task_id, command_id: continueCommand, action};
+                const data = await taskJSON('/api/task_' + action, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({task_id: current.task_id, ...(action === 'skip' ? {step_id: skipStep} : {}),
                         ...(action === 'continue' ? {step_id: continueStep || '', expected_command_id: continueCommand} : {})})
                 });
-                const data = await resp.json();
-                if (!resp.ok || data.accepted === false) throw new Error(data.error || '控制未被受理');
+                if (data.accepted === false) {
+                    pendingTaskControl = null;
+                    throw new Error(data.error || '控制未被受理');
+                }
+                if (data.accepted !== true) throw new Error('未取得明确的控制受理回执');
+                pendingTaskControl = null;
                 lastTaskResponse = data;
                 taskReceiptId = current.task_id;
                 const labels = {paused: '已暂停；继续将核对原动作，未完成则重新下发当前环节。',
@@ -438,8 +358,13 @@
                 result.textContent = data.error || data.message || (data.retry_prepared ? '当前环节的新尝试已准备，前置检查通过后下发；执行结果见任务进度。' : null) || (action === 'skip'
                     ? `已人工跳过 ${data.skipped_step_id}；${data.next_step_id ? '下一步：' + data.next_step_id + '，执行结果见任务进度。' : '流程结束，含跳过，未全部成功。'}`
                     : labels[data.state] || '控制请求已受理。');
+                document.getElementById('task-command-feedback').textContent = result.textContent;
             } catch (e) {
-                result.textContent = '控制请求未完成：' + e.message;
+                if (e.definiteRejection) pendingTaskControl = null;
+                result.textContent = pendingTaskControl
+                    ? '控制请求结果待确认，请查询当前任务；不要重复点击继续。'
+                    : '控制请求未完成：' + e.message;
+                document.getElementById('task-command-feedback').textContent = result.textContent;
             } finally {
                 taskControlPending = false;
                 await refreshTaskStatus();
@@ -450,6 +375,7 @@
 
         // 任务进度
         let taskPollingTimer = null;
+        let taskStatusRequest = 0, taskStatusApplied = 0;
 
         function taskText(value) {
             const node = document.createElement('span');
@@ -459,17 +385,31 @@
 
         function renderAttemptHistory(data) {
             const summary = data.attempt_summary || {};
-            if (!summary.failure_count && !summary.retry_count) return '';
+            const oldAdvice = data.recovery_confirmation_enabled && data.recovery_advice && !currentRecoveryAdvice(data) ? data.recovery_advice : null;
+            if (!summary.failure_count && !summary.retry_count && !oldAdvice) return '';
             const title = `历史失败 ${Number(summary.failure_count) || 0} 次 · 重试 ${Number(summary.retry_count) || 0} 次（人工继续触发 ${Number(summary.manual_retry_count) || 0} 次）`;
             const rows = (data.failure_history || []).map(item =>
-                `<div>${taskText(taskPhase(item.step_id))} · ${taskText(item.command_id)}：${taskText(item.display_message || item.message || item.code)}</div>`).join('');
-            return `<details><summary>${taskText(title)}</summary>${rows}</details>`;
+                `<div style="margin:8px 0"><strong>失败环节：${taskText(taskPhase(item.step_id))}</strong>
+                <div>失败原文：${taskText(item.message || item.code || '未提供')}</div>
+                <div>原因解读：${taskText(failureExplanation(item))}</div>
+                <small>命令：${taskText(item.command_id)}</small></div>`).join('');
+            return `<details data-task-detail="history:${encodeURIComponent(data.task_id || '')}"><summary>${taskText(title)}</summary>${rows}
+                ${oldAdvice ? '<div>历史建议（已失效或已处理）</div>' + recoveryAdviceDetails(oldAdvice, data) : ''}</details>`;
+        }
+
+        function taskDisplayContext(data) {
+            return JSON.stringify([data?.task_id, data?.state, data?.control_step_id, data?.control_command_id]);
         }
 
         function renderTaskProgress(data) {
             displayedTask = data;
             taskStatusKnown = true;
             const result = document.getElementById('task-result');
+            if (taskNoticeContext && taskNoticeContext !== taskDisplayContext(data) && !taskControlPending) {
+                taskNoticeContext = null;
+                result.style.display = 'none';
+                result.textContent = '';
+            }
             if (taskReceiptId && taskReceiptId !== data.task_id) {
                 taskReceiptId = null;
                 result.style.display = 'none';
@@ -491,7 +431,6 @@
             const taskName = Array.isArray(data.task) ? data.task[0] : (data.task || '');
             const recovery = data.state === 'RECOVERY_REQUIRED' || data.state === 'recovery_required';
             const failure = data.failure_detail;
-            const failureReason = failure && (failure.display_message || failure.message || failure.code);
             const anyFailed = !recovery && (data.failed || (data.subtask_list || []).some(
                 t => t.status === 'failure' || (t.done && t.status && !['success', 'blocked', 'skipped'].includes(t.status))
             ));
@@ -503,10 +442,8 @@
                 statusLabel = '流程已暂停，当前动作停止尚未确认';
                 statusCls = 'status-recovery';
             } else if (recovery) {
-                const reason = (data.reception_state && data.reception_state.failure_reason) || data.blocked_reason || '';
                 statusLabel = failure && failure.kind === 'rejected' ? '指令被拒绝，未开始执行'
-                    : failureReason ? ('待恢复：' + taskReason(failureReason))
-                    : reason ? ('待恢复：' + taskReason(reason)) : '待恢复（未确认远端已停）';
+                    : '等待处理';
                 statusCls = 'status-recovery';
             } else if (data.state === 'paused') {
                 statusLabel = '已暂停';
@@ -532,6 +469,7 @@
                     statusCls = 'status-fail';
                 } else {
                     statusLabel = data.execution_backend === 'reception_protocol' ? '✓ 协议模拟完成'
+                        : ['reception_real_sim_manipulation', 'reception_ros_sim_manipulation'].includes(data.execution_backend) ? '✓ 混合流程完成（操控为模拟）'
                         : data.execution_backend === 'reception_simple' ? '✓ SIMPLE 物理仿真完成'
                         : wonSignal === true ? '✓ 任务成功(落点已验证)' : '✓ 任务成功';
                     statusCls = 'status-ok';
@@ -546,23 +484,27 @@
                 <span class="${statusCls}">${taskText(statusLabel)}</span>
             </div>
             <div class="task-bar"><div class="${barCls}" style="width:${pct}%"></div></div>`;
+            html += `<div style="font-size:12px;color:#94a3b8;overflow-wrap:anywhere">
+                任务 ID：${taskText(data.task_id)} · 任务环境：${taskText((TASK_LABELS.backends || {})[data.execution_backend] || data.execution_backend || '尚未选择')}</div>`;
 
+            const command = data.current_command;
+            if (command?.command_id) {
+                const stages = {prepared:'新命令已准备，尚未下发', submitted:'下发已登记，等待执行回执',
+                    unknown:'执行结果待确认，不会自动补发', rejected:'指令被拒绝，未开始执行',
+                    succeeded:'已核验成功', failed:'执行失败', cancelled:'命令已取消', terminal:'已收到终态，等待核验'};
+                html += '<div style="font-size:12px;overflow-wrap:anywhere">' + taskText(stages[command.stage] || '等待核对')
+                    + ' · ' + taskText(command.command_id) + '</div>';
+            }
             const phase = data.phase || data.control_step_id;
             const reason = data.blocked_reason || '';
             if (taskReceiptId && !taskControlPending && !taskSubmitting) {
                 result.style.display = 'block';
-                result.textContent = ['当前任务：' + data.task_id.slice(0, 8), statusLabel,
-                    phase ? '当前步骤：' + taskPhase(phase) : '',
-                    failureReason ? '原因：' + failureReason : ''].filter(Boolean).join('\n');
+                result.textContent = statusLabel;
             }
-            if (phase || reason || failureReason) {
+            if (!data.terminal && !['failed', 'succeeded', 'cancelled'].includes(data.state) && !recovery && (phase || reason)) {
                 const lines = [];
                 if (phase) lines.push('当前步骤：' + taskPhase(phase));
-                if (failureReason) {
-                    const readable = failureReason;
-                    lines.push('原因：' + readable + (failure.code && !readable.includes(failure.code) ? '（' + failure.code + '）' : ''));
-
-                } else if (reason) lines.push('原因：' + taskReason(reason));
+                if (reason && ['paused', 'waiting_human'].includes(data.state)) lines.push('原因：' + taskReason(reason));
                 html += '<div style="margin:10px 0;padding:10px 12px;background:#0f172a;border-radius:8px;font-size:13px;line-height:1.6">'
                     + lines.map(taskText).join('<br>') + '</div>';
             }
@@ -596,60 +538,93 @@
                 }
                 html += `<div class="subtask-item ${cls}">
                     <div class="check" style="${checkStyle}">${checkIcon}</div>
-                    <span class="subtask-text">${taskText(TASK_LABELS.phases[t.step_id] || TASK_LABELS.phases[t.subtask] || t.subtask)}${insertedTag}${blockedTag}</span>
+                    <span class="subtask-text">${taskText(TASK_LABELS.phases[t.step_id] || TASK_LABELS.phases[t.subtask] || t.subtask)}${t.simulated ? '（模拟）' : ''}${insertedTag}${blockedTag}</span>
                     <span class="subtask-robot">${taskText(t.robot_name)}</span>
                 </div>`;
             }
+            if (data.state === 'cancelled') {
+                result.style.display = 'none';
+                result.textContent = '';
+                const unresolved = data.command_unknown || data.blocks_new_motion;
+                html = '<div class="no-task">暂无执行中的任务</div>'
+                    + (unresolved ? '<div class="status-recovery">任务已取消；原命令仍需核清，暂不能开始新任务。</div>' : '')
+                    + '<details data-task-detail="cancelled:' + encodeURIComponent(data.task_id || '')
+                    + '"><summary>上一轮已取消 · 查看记录</summary>' + html + '</details>';
+            }
+            const expanded = new Set(Array.from(el.querySelectorAll?.('details[open][data-task-detail]') || [])
+                .map(node => node.dataset.taskDetail));
             el.innerHTML = html;
+            for (const node of el.querySelectorAll?.('details[data-task-detail]') || []) {
+                node.open = expanded.has(node.dataset.taskDetail);
+            }
         }
 
         const adviceActionLabels = {query_original: '确认查询原命令（不重试）', continue: '确认继续当前环节（可能重试）',
             cancel: '确认结束本轮任务（不代表机器人停止）', wait: '确认等待', request_help: '确认由人工处理'};
-        function renderRecoveryAdvice(data) {
-            if (!data.recovery_confirmation_enabled) return '';
+        function currentRecoveryAdvice(data) {
             const advice = data.recovery_advice;
-            const receipts = data.advice_confirmations || [];
+            if (!data.recovery_confirmation_enabled || !advice?.applicable || data.terminal
+                    || !['recovery_required', 'waiting_human', 'paused'].includes(data.state)) return null;
+            if (advice.task_id !== data.task_id || advice.step_id !== data.control_step_id
+                    || (advice.control_command_id || '') !== (data.control_command_id || '')) return null;
+            if ((data.advice_confirmations || []).some(r => r.advice_id === advice.advice_id)) return null;
+            return advice;
+        }
+        function failureExplanation(failure) {
+            const raw = String(failure.message || '');
+            const phrase = Object.entries(TASK_LABELS.failure_phrases || {}).find(([key]) => raw.includes(key));
+            if (phrase) return phrase[1];
+            const translated = String(failure.display_message || '').split('；原始错误：')[0];
+            return translated || TASK_LABELS.reasons[failure.code] || TASK_LABELS.reasons[raw]
+                || '原因尚未明确，请结合原始错误核查。';
+        }
+        function recoveryAdviceDetails(advice, data) {
+            return '<details data-task-detail="advice:' + encodeURIComponent(advice.advice_id || '') + '"><summary>详细信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
+                + taskText(JSON.stringify({source: advice.source, command_id: advice.command_id,
+                    summary: advice.summary, reason: advice.reason, facts: advice.facts,
+                    error: advice.error, confirmations: (data.advice_confirmations || []).filter(r => r.advice_id === advice.advice_id)}, null, 2))
+                + '</pre></details>';
+        }
+        function renderRecoveryAdvice(data) {
+            if (data.terminal || ['running', 'verifying', 'succeeded', 'failed', 'cancelled'].includes(data.state)) return '';
+            const advice = currentRecoveryAdvice(data);
+            const failure = data.failure_detail || (data.state === 'recovery_required' && data.blocked_reason
+                ? {message: data.blocked_reason, display_message: TASK_LABELS.reasons[data.blocked_reason]} : null);
+            if (!failure && !advice) return '';
+            const phase = data.control_step_id || data.phase;
+            const line = (label, value) => '<div style="margin:6px 0;white-space:pre-wrap;overflow-wrap:anywhere"><strong>'
+                + taskText(label) + '：</strong>' + taskText(value) + '</div>';
             let html = '<div class="recovery-advice" style="margin:12px 0;padding:12px;border:1px solid #475569;border-radius:8px">';
-            html += '<strong>异常处理建议</strong>';
+            html += line(failure ? '失败环节' : '当前环节', taskPhase(phase));
+            if (failure) {
+                const raw = failure.message || failure.code || '未提供原始错误';
+                html += line('失败原文', raw + (failure.code && !raw.includes(failure.code) ? '（' + failure.code + '）' : ''));
+                html += line('原因解读', failureExplanation(failure));
+            }
             if (advice) {
-                const receipt = receipts.find(r => r.advice_id === advice.advice_id);
-                const state = receipt ? (receipt.status === 'processing' ? '确认已记录，处理结果待核对' : '已处理，本次授权已使用')
-                    : advice.applicable ? '待人工确认' : '建议已失效，请以当前任务为准';
-                const facts = advice.facts || {};
-                const lines = [state, '来源：' + (advice.source === 'llm' ? 'LLM' : '规则回退'),
-                    '环节：' + taskPhase(advice.step_id || facts.phase || ''),
-                    '原命令：' + (advice.command_id || '尚无在途命令'),
-                    '任务记录：' + (facts.blocked_reason || '等待人工处理'),
-                    '原命令结果是否未知：' + (facts.command_unknown === true ? '是' : '以原回包与核验为准'),
-                    '建议：' + (advice.summary || ''), '理由：' + (advice.reason || '')];
-                if (advice.error) lines.push('模型未给出有效建议：' + advice.error);
-                html += '<div style="white-space:pre-wrap;margin:8px 0">' + lines.map(taskText).join('\n') + '</div>';
-                html += '<details><summary>查看建议依据（原始回包不等于核验成功）</summary><pre style="white-space:pre-wrap">'
-                    + taskText(JSON.stringify(facts, null, 2)) + '</pre></details>';
+                const suggestions = {query_original: '先查询原命令，确认执行结果。',
+                    continue: '确认执行条件后继续当前环节。', cancel: '取消本轮任务；此操作不代表机器人停止。',
+                    wait: '等待执行条件恢复。', request_help: '请现场人员检查并处理。'};
+                html += line('建议', suggestions[advice.action] || '请核对现场情况。');
+                html += recoveryAdviceDetails(advice, data);
                 if (adviceActionLabels[advice.action]) {
-                    const enabled = advice.applicable && !receipt && !data.terminal && !taskControlPending;
-                    html += '<button class="btn btn-outline btn-sm" onclick="confirmRecoveryAdvice()" ' + (enabled ? '' : 'disabled') + '>'
+                    html += '<button class="btn btn-outline btn-sm" onclick="confirmRecoveryAdvice()" ' + (taskControlPending || (pendingTaskControl && advice.action === 'continue') ? 'disabled' : '') + '>'
                         + taskText(adviceActionLabels[advice.action]) + '</button>';
                 }
             } else {
-                html += '<p>' + (['recovery_required', 'waiting_human', 'paused'].includes(data.state)
-                    ? '尚无可确认的建议；原有任务控制仍可使用。' : '当前没有待处理建议。') + '</p>';
-            }
-            for (const receipt of receipts.slice(-5)) {
-                const result = receipt.result || {};
-                html += '<p>' + taskText('本次确认：' + (adviceActionLabels[receipt.action] || receipt.action) + '；'
-                    + (receipt.status === 'processing' ? '处理结果尚未确认，请核对原任务，勿重复发起动作'
-                       : receipt.status === 'rejected' ? '未执行／被拒绝：' + (result.error || '')
-                       : result.message || '控制已处理；动作是否完成以下方任务核验为准')) + '</p>';
+                html += '<details data-task-detail="failure:' + encodeURIComponent(data.task_id + ':' + data.control_command_id) + '"><summary>详细信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
+                    + taskText(JSON.stringify({command_id: data.control_command_id, failure}, null, 2)) + '</pre></details>';
             }
             return html + '</div>';
         }
         async function confirmRecoveryAdvice() {
             if (taskControlPending) return;
             const shown = displayedTask;
-            const advice = shown?.recovery_advice;
+            const advice = shown && currentRecoveryAdvice(shown);
             if (!advice?.applicable || !advice.advice_id) return;
+            if (pendingTaskControl && advice.action === 'continue') return;
             if (!window.confirm((adviceActionLabels[advice.action] || '') + '？仅授权本次操作，不修改长期规则。')) return;
+            taskNoticeContext = taskDisplayContext(shown);
             taskControlPending = true;
             updateTaskButtons();
             const el = document.getElementById('task-result');
@@ -670,20 +645,22 @@
             }
         }
 
-        let _prevAllDone = false;   // 上一次轮询时任务是否已完成(用于只在"刚完成"那一刻快照 belief)
+        let reportContext = '', reportRequest = 0, receptionSummary = '';
         async function refreshTaskStatus() {
+            const requestId = ++taskStatusRequest;
             try {
                 const data = await readTaskStatus();
+                if (requestId < taskStatusApplied) return;
+                taskStatusApplied = requestId;
+                markTaskStatus(data);
                 renderTaskProgress(data);
-                // 任务从「进行中」→「完成」的那一刻:belief 快照 + 拉接待完成确认报告
-                const finished = !!data.task_id && data.all_done && data.terminal !== false
-                    && data.state !== 'RECOVERY_REQUIRED'
-                    && data.state !== 'recovery_required';
-                if (finished && !_prevAllDone) {
-                    loadBelief('任务结束');
-                    loadReceptionReport();
+                const context = JSON.stringify([data.task_id, data.state, data.control_command_id]);
+                if (context !== reportContext) {
+                    reportContext = context;
+                    ++reportRequest;
+                    document.getElementById('report-card').innerHTML = '';
+                    if (data.task_type === 'reception' && !['running','verifying','cancelled'].includes(data.state)) loadReceptionReport();
                 }
-                _prevAllDone = !!finished;
                 if (data.active && !data.all_done) {
                     // 只在没启动轮询时才启动（手动刷新按钮触发时需要）
                     if (!taskPollingTimer) startTaskPolling();
@@ -691,9 +668,9 @@
                     stopTaskPolling();
                 }
             } catch (e) {
-                taskStatusKnown = false;
-                updateTaskButtons();
-                document.getElementById('task-progress').innerHTML = '<div class="no-task">查询失败</div>';
+                if (requestId < taskStatusApplied) return;
+                taskStatusApplied = requestId;
+                markTaskStatusError(e);
                 if (taskReceiptId && !taskControlPending && !taskSubmitting) {
                     document.getElementById('task-result').textContent = '状态查询失败，暂时无法确认最新执行结果。';
                 }
@@ -703,25 +680,45 @@
         // 接待完成确认报告：从 Master 的当前 Runtime 读取。
         async function loadReceptionReport() {
             const el = document.getElementById('report-card');
-            const _e = s => (s==null?'':String(s)).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+            const taskId = displayedTask?.task_id, state = displayedTask?.state;
+            const commandId = displayedTask?.control_command_id;
+            const stillCurrent = () => requestId === reportRequest && displayedTask?.task_id === taskId
+                && displayedTask?.state === state && displayedTask?.control_command_id === commandId;
+            const requestId = ++reportRequest;
             try {
-                const d = await (await fetch('/api/reception/report')).json();
-                if (!d.success || !d.report) { el.innerHTML = ''; return; }
-                const r = d.report;
-                const checks = (r.checks||[]).map(c =>
-                    `<div class="rc-check"><span class="${c.pass?'ok':'no'}">${c.pass?'✓':'✗'}</span> ${_e(c.name)}：${_e(c.detail)}</div>`).join('');
-                const anom = (r.anomalies&&r.anomalies.length)
-                    ? `<div class="rc-anom">⚠ 异常：${_e(r.anomalies.join('；'))}</div>` : '';
-                el.innerHTML = `<div class="rc-head ${r.verdict?'ok':'no'}">📋 完成确认报告 · ${r.verdict?'✅ 完成':'❌ 未完成'}</div>`
-                    + checks + anom + renderAttemptHistory(r);
-            } catch (e) { el.innerHTML = ''; }
+                const d = await taskJSON('/api/reception/report');
+                if (!stillCurrent()) return;
+                if (!d.success || !d.report || d.report.task_id !== taskId) { el.innerHTML = ''; return; }
+                if (d.report.state !== state) return;
+                receptionSummary = d.report.summary_text || '';
+                el.innerHTML = '<details><summary>' + (state === 'cancelled' ? '上一轮总结' : '本轮总结')
+                    + ' · ' + taskText(TASK_LABELS.states[d.report.state] || d.report.state) + '</summary>'
+                    + '<pre style="white-space:pre-wrap;overflow-wrap:anywhere">' + taskText(receptionSummary) + '</pre>'
+                    + '<button class="btn btn-outline btn-sm" onclick="copyReceptionSummary()">复制总结</button>'
+                    + '<span id="copy-summary-status" role="status"></span></details>';
+            } catch (e) {
+                if (stillCurrent())
+                    el.textContent = '本轮总结暂未取得，请重试查询。';
+            }
+        }
+        async function copyReceptionSummary() {
+            const el = document.getElementById('copy-summary-status');
+            try {
+                if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(receptionSummary);
+                else {
+                    const area = document.createElement('textarea'); area.value = receptionSummary;
+                    document.body.appendChild(area); area.select();
+                    try { if (!document.execCommand('copy')) throw new Error('copy failed'); }
+                    finally { area.remove(); }
+                }
+                el.textContent = '已复制';
+            } catch (e) { el.textContent = '复制失败，请选中上方文字复制'; }
         }
 
         function startTaskPolling() {
             stopTaskPolling();
-            refreshTaskStatus();
             taskPollingTimer = setInterval(refreshTaskStatus, 1000);
-            startTimelineRefresh();  // 任务执行时四宫格时间线随之采集/更新为该任务
+            refreshTaskStatus();
         }
 
         function stopTaskPolling() {
@@ -729,17 +726,18 @@
                 clearInterval(taskPollingTimer);
                 taskPollingTimer = null;
             }
-            stopTimelineRefresh();
         }
 
-        // —— 外部触发(NX 语音等)的任务自动显示,但【只认新任务】,不误显示上一次的残留 ——
-        // 页面加载先把当前 task_id 记为"已知(残留)"、不显示;之后出现【新 task_id】才是刚被语音触发的,自动弹出
+        // 首次加载恢复当前任务；随后发现外部触发的新任务时开始轮询。
         let _autoSeenTaskId = null;
         async function autoDetectNewTask() {
             if (taskPollingTimer) return;                 // 已在快速轮询,不干预
+            const requestId = ++taskStatusRequest;
             try {
                 const d = await readTaskStatus();
-                taskStatusKnown = true;
+                if (requestId < taskStatusApplied || taskPollingTimer) return;
+                taskStatusApplied = requestId;
+                markTaskStatus(d);
                 displayedTask = d;
                 updateTaskButtons();
                 const tid = d.task_id || '';
@@ -747,379 +745,40 @@
                     _autoSeenTaskId = tid;
                     displayedTask = d;
                     updateTaskButtons();
-                    if (d.state === 'RECOVERY_REQUIRED' || d.state === 'recovery_required' || (d.blocks_new_motion && d.active && !d.all_done)) {
+                    if (d.task_id) {
+                        renderTaskProgress(d);
+                        if (d.state !== 'cancelled') loadReceptionReport();
+                    }
+                    if (d.active && !d.all_done) {
                         startTaskPolling();
                     }
                     return;
                 }
                 if (tid && tid !== _autoSeenTaskId && d.active) {                 // 新 task_id = 刚被外部触发
                     _autoSeenTaskId = tid;
-                    _prevAllDone = false;
                     startTaskPolling();
                 }
             } catch (e) {
-                taskStatusKnown = false;
-                updateTaskButtons();
+                if (requestId < taskStatusApplied) return;
+                taskStatusApplied = requestId;
+                markTaskStatusError(e);
             }
         }
         setInterval(autoDetectNewTask, 3000);
         // Fetch immediately after the script has initialized all polling variables.
         setTimeout(autoDetectNewTask, 0);
 
-        // 任务执行期间跟时间线：每步做完截一帧，四宫格切到回放看最新截图
-        let timelineRefreshTimer = null, timelineEndTimer = null;
-        function startTimelineRefresh() {
-            if (timelineRefreshTimer) { clearInterval(timelineRefreshTimer); timelineRefreshTimer = null; }
-            if (timelineEndTimer) { clearTimeout(timelineEndTimer); timelineEndTimer = null; }
-            followTimeline = true;
-            loadTimeline(true);
-            timelineRefreshTimer = setInterval(() => loadTimeline(true), 5000);
-        }
-        function stopTimelineRefresh() {
-            if (timelineRefreshTimer) { clearInterval(timelineRefreshTimer); timelineRefreshTimer = null; }
-            if (timelineEndTimer) clearTimeout(timelineEndTimer);
-            timelineEndTimer = setTimeout(() => loadTimeline(true), 4000);  // 任务结束后补拉一次,带上"完成"帧
-        }
-
-        // 经验教训改由机器人任务后自行总结,前端不再手动录入(已移除失败/成功经验弹窗)。
-
-        // 配置校验 - 自动检测
-        async function validateConfig() {
-            try {
-                const resp = await fetch('/api/validate-config', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({})
-                });
-                const data = await resp.json();
-                showMsg('validate-msg', data.success, data.success ? '配置校验通过' : data.message);
-            } catch (e) {
-                showMsg('validate-msg', false, '请求失败: ' + e.message);
-            }
-        }
-
-        // 工具列表 - 自动从 Redis 读取
-        async function loadTools() {
-            try {
-                const resp = await fetch('/api/auto_tools');
-                const data = await resp.json();
-                if (!data.success) {
-                    document.getElementById('tools-list').innerHTML = `<div style="color:#ef4444;font-size:13px">${data.message}</div>`;
-                    return;
-                }
-                if (data.data.length === 0) {
-                    document.getElementById('tools-list').innerHTML = '<div style="color:#64748b;font-size:13px;margin-top:10px">暂无工具，请先启动 Slaver</div>';
-                    return;
-                }
-                document.getElementById('tools-list').innerHTML = data.data.map(t => {
-                    const params = (t.parameters || []).map(p =>
-                        `<span class="param-tag">${p.name}: ${t.type || p.type}</span>`
-                    ).join('');
-                    return `<div class="tool-item">
-                        <div style="display:flex;align-items:center;gap:8px">
-                            <span class="tool-name">${t.name}</span>
-                            <span style="color:#64748b;font-size:12px">${t.robot}</span>
-                        </div>
-                        <div class="tool-desc">${t.description || '无描述'}</div>
-                        ${params ? '<div class="tool-params">' + params + '</div>' : ''}
-                    </div>`;
-                }).join('');
-            } catch (e) {
-                document.getElementById('tools-list').innerHTML = '<div style="color:#ef4444;font-size:13px">加载失败: ' + e.message + '</div>';
-            }
-        }
-        loadTools();
-        setInterval(loadTools, 10000);
-
-        // 物体状态 (belief): 机器人记忆里每个物体在哪 {obj:{location}}。任务结束会打快照。
-        async function loadBelief(snapshotLabel) {
-            const tableEl = document.getElementById('belief-table');
-            const jsonEl = document.getElementById('belief-json');
-            try {
-                const resp = await fetch('/api/belief');
-                const data = await resp.json();
-                const objs = data.objects || {};
-                const names = Object.keys(objs).sort();
-                if (!names.length) {
-                    tableEl.innerHTML = '<div style="color:#64748b;font-size:13px">暂无物体记忆（belief 为空）</div>';
-                    jsonEl.textContent = '{}';
-                } else {
-                    tableEl.innerHTML = names.map(n => {
-                        const loc = (objs[n] && objs[n].location) || 'unknown';
-                        const color = loc === 'robot_hand' ? '#f59e0b'
-                                    : (loc === 'unknown' ? '#64748b' : '#22c55e');
-                        return `<div class="obj-row"><span class="obj-name">${n}</span>` +
-                               `<span style="color:${color};font-family:monospace">${loc}</span></div>`;
-                    }).join('');
-                    const pretty = {};
-                    for (const n of names) pretty[n] = { location: (objs[n] || {}).location || 'unknown' };
-                    jsonEl.textContent = JSON.stringify(pretty, null, 2);
-                }
-                const stamp = snapshotLabel ? '📌 ' + snapshotLabel + ' · ' : '';
-                document.getElementById('belief-updated').textContent =
-                    stamp + '更新于 ' + new Date().toLocaleTimeString();
-            } catch (e) {
-                tableEl.innerHTML = `<div style="color:#ef4444;font-size:13px">加载失败: ${e.message}</div>`;
-            }
-        }
-        loadBelief();
-        setInterval(loadBelief, 5000);
-
-        // 机器人实时坐标
-        async function loadRobotStatus() {
-            const el = document.getElementById('robot-status-content');
-            try {
-                const resp = await fetch('/api/robot_status');
-                const data = await resp.json();
-                if (data.error) {
-                    el.innerHTML = `<div style="color:#ef4444;font-size:13px">${data.error}</div>`;
-                    return;
-                }
-
-                const robot = data.robot || {};
-                const bp = robot.base_pos || [0, 0, 0];
-                const ep = robot.ee_pos || [0, 0, 0];
-                const yaw = (robot.yaw || 0).toFixed(1);
-
-                let html = `<div class="robot-grid">
-                    <div class="robot-info-box">
-                        <h3>底盘位置</h3>
-                        <div class="robot-coord">[${bp.map(v => v.toFixed(3)).join(', ')}]</div>
-                    </div>
-                    <div class="robot-info-box">
-                        <h3>末端位置</h3>
-                        <div class="robot-coord">[${ep.map(v => v.toFixed(3)).join(', ')}]</div>
-                    </div>
-                </div>
-                <div style="margin-top:8px;font-size:13px;color:#94a3b8">朝向: <span class="robot-yaw">${yaw}°</span></div>`;
-
-                // 物体列表
-                const objects = data.objects || {};
-                const objNames = Object.keys(objects);
-                if (objNames.length > 0) {
-                    html += `<div class="robot-objects"><h3>物体</h3>`;
-                    for (const [name, info] of Object.entries(objects)) {
-                        const pos = (info.pos || []).map(v => v.toFixed(3)).join(', ');
-                        const grasped = info.grasped ? '<span class="obj-grasped"> grasped</span>' : '';
-                        html += `<div class="obj-row">
-                            <span class="obj-name">${name}${grasped}</span>
-                            <span class="obj-pos">[${pos}]</span>
-                        </div>`;
-                    }
-                    html += `</div>`;
-                }
-
-                el.innerHTML = html;
-            } catch (e) {
-                el.innerHTML = `<div style="color:#ef4444;font-size:13px">加载失败: ${e.message}</div>`;
-            }
-        }
-        loadRobotStatus();
-        setInterval(loadRobotStatus, 2000);
-
-        // 视频录制
-        let isRecording = false;
-        let recordPollTimer = null;
-
-        async function toggleRecord() {
-            const btn = document.getElementById('btn-record');
-            if (!isRecording) {
-                // 开始录制
-                try {
-                    const resp = await fetch('/api/record/start', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({fps: 1})});
-                    const data = await resp.json();
-                    if (data.success) {
-                        isRecording = true;
-                        btn.textContent = '停止录制';
-                        btn.style.background = '#16a34a';
-                        pollRecordStatus();
-                    } else {
-                        alert(data.message || '启动录制失败');
-                    }
-                } catch (e) {
-                    alert('请求失败: ' + e.message);
-                }
-            } else {
-                // 停止录制
-                btn.disabled = true;
-                btn.textContent = '保存中...';
-                try {
-                    const resp = await fetch('/api/record/stop', {method: 'POST'});
-                    const data = await resp.json();
-                    if (data.success) {
-                        const info = document.getElementById('record-info');
-                        info.innerHTML = `<span style="color:#22c55e">已保存 ${data.frames} 帧 (${data.duration}s)</span> ` +
-                            `<a href="/api/record/download/${data.filename}" style="color:#38bdf8" download>下载视频</a>`;
-                    } else {
-                        alert(data.message || '录制失败');
-                    }
-                } catch (e) {
-                    alert('请求失败: ' + e.message);
-                }
-                isRecording = false;
-                if (recordPollTimer) { clearInterval(recordPollTimer); recordPollTimer = null; }
-                btn.textContent = '开始录制';
-                btn.style.background = '#dc2626';
-                btn.disabled = false;
-            }
-        }
-
-        async function pollRecordStatus() {
-            if (recordPollTimer) clearInterval(recordPollTimer);
-            recordPollTimer = setInterval(async () => {
-                if (!isRecording) return;
-                try {
-                    const resp = await fetch('/api/record/status');
-                    const data = await resp.json();
-                    if (data.active) {
-                        document.getElementById('record-info').innerHTML =
-                            `<span style="color:#f59e0b">● 录制中... ${data.frames} 帧</span>`;
-                    }
-                } catch (e) {}
-            }, 1000);
-        }
-
-        // ── 四宫格：直播仿真；本页/飞书发任务后逐步截图，可回放 ──
-        let tlFrames = [], tlPlayTimer = null, liveTimer = null, liveMode = true, followTimeline = false;
-
-        function markQuadMode(mode) {
-            const liveBtn = document.getElementById('btn-quad-live');
-            const replayBtn = document.getElementById('btn-quad-replay');
-            if (liveBtn) {
-                liveBtn.style.borderColor = mode === 'live' ? '#38bdf8' : '#334155';
-                liveBtn.style.color = mode === 'live' ? '#38bdf8' : '#94a3b8';
-            }
-            if (replayBtn) {
-                replayBtn.style.borderColor = mode === 'replay' ? '#38bdf8' : '#334155';
-                replayBtn.style.color = mode === 'replay' ? '#38bdf8' : '#94a3b8';
-                replayBtn.disabled = !tlFrames.length;
-            }
-        }
-
-        function stopLiveQuad() {
-            liveMode = false;
-            if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
-        }
-
-        function startLiveQuad() {
-            stopPlay();
-            followTimeline = false;
-            liveMode = true;
-            markQuadMode('live');
-            const img = document.getElementById('quad-img');
-            const empty = document.getElementById('timeline-empty');
-            if (empty) {
-                empty.textContent = tlFrames.length
-                    ? '正在直播。点「回放」可拖进度条看每步做完的截图。'
-                    : '正在直播。在本页或飞书发任务后，每步做完会截一帧，这里就能回放。';
-            }
-            function tick() {
-                if (!liveMode) return;
-                img.src = '/api/quad_latest?t=' + Date.now();
-            }
-            if (liveTimer) clearInterval(liveTimer);
-            liveTimer = setInterval(tick, 800);
-            tick();
-        }
-
-        function startReplayQuad() {
-            followTimeline = true;
-            if (!tlFrames.length) {
-                loadTimeline(true);
-                return;
-            }
-            showFrame(tlFrames.length - 1);
-        }
-
-        function stopPlay() {
-            if (tlPlayTimer) { clearInterval(tlPlayTimer); tlPlayTimer = null; }
-            const b = document.getElementById('btn-play'); if (b) b.textContent = '⏵ 播放';
-        }
-
-        async function loadTimeline(showLast = false) {
-            const empty = document.getElementById('timeline-empty');
-            try {
-                const resp = await fetch('/api/timeline');
-                const data = await resp.json();
-                if (!data.exists || !(data.frames || []).length) {
-                    document.getElementById('timeline-controls').style.display = 'none';
-                    document.getElementById('quad-meta').innerHTML = '';
-                    tlFrames = [];
-                    if (!liveMode) startLiveQuad();
-                    else markQuadMode('live');
-                    return;
-                }
-                tlFrames = data.frames;
-                document.getElementById('timeline-controls').style.display = 'block';
-                const slider = document.getElementById('timeline-slider');
-                slider.max = tlFrames.length - 1;
-                const wonTag = data.won === true ? ' · <span style="color:#4ade80">✓落点已验证</span>' : '';
-                document.getElementById('quad-meta').innerHTML =
-                    `任务: <b>${data.task || '?'}</b>${wonTag}` +
-                    `<br><span style="font-size:11px">采集于 ${data.created || ''} · ${tlFrames.length} 帧 · ${(data.cameras || []).join(' / ')}</span>`;
-                if (showLast && followTimeline) {
-                    showFrame(tlFrames.length - 1);
-                } else if (liveMode) {
-                    markQuadMode('live');
-                    if (empty) empty.textContent = '正在直播。点「回放」可拖进度条看每步做完的截图。';
-                } else {
-                    const cur = parseInt(slider.value, 10) || 0;
-                    showFrame(Math.min(cur, tlFrames.length - 1));
-                }
-            } catch (e) {
-                if (!liveMode) startLiveQuad();
-                empty.textContent = '时间线不可用，已显示实时画面。';
-            }
-        }
-
-        function showFrame(i) {
-            if (!tlFrames.length) return;
-            stopLiveQuad();
-            followTimeline = true;
-            markQuadMode('replay');
-            i = Math.max(0, Math.min(tlFrames.length - 1, parseInt(i)));
-            const f = tlFrames[i];
-            document.getElementById('quad-img').src = '/task_timeline/' + f.file + '?t=' + Date.now();
-            document.getElementById('timeline-slider').value = i;
-            document.getElementById('frame-label').textContent =
-                `时间点 ${i + 1}/${tlFrames.length} · ${f.label} · t=${f.t}s`;
-            const empty = document.getElementById('timeline-empty');
-            if (empty) empty.textContent = '回放：每个子任务做完截的一帧。点「直播」回到当前画面。';
-        }
-
-        function stepFrame(d) {
-            stopPlay();
-            showFrame(parseInt(document.getElementById('timeline-slider').value) + d);
-        }
-
-        function playTimeline() {
-            const btn = document.getElementById('btn-play');
-            if (tlPlayTimer) { stopPlay(); return; }
-            if (!tlFrames.length) return;
-            btn.textContent = '⏸ 暂停';
-            let i = parseInt(document.getElementById('timeline-slider').value);
-            if (i >= tlFrames.length - 1) i = -1;
-            tlPlayTimer = setInterval(() => {
-                i++;
-                if (i >= tlFrames.length) { stopPlay(); return; }
-                showFrame(i);
-            }, 900);
-        }
-
-        startLiveQuad();
-        loadTimeline();
     </script>
 <script>
 async function loadExecutionEnvironment() {
     const box = document.getElementById('execution-environment');
     try {
-        const response = await fetch('/api/execution_profile');
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || '读取失败');
-        const labels = {reception:'接待', execution:'通用执行 / 桌面整理', observation:'观察 / 当前画面'};
-        box.textContent = data.routes ? Object.entries(data.routes).map(([key, route]) =>
-            `${labels[key]}：${route.mode === 'real' ? '真机' : route.mode === 'simulation' ? '仿真' : '停用'} / ${route.backend}` +
-            (route.available ? '' : ` — 不可用：${route.reason}`)).join('\n') : '尚未启用统一环境配置';
+        const data = await taskJSON('/api/execution_profile');
+        const route = data.routes?.reception;
+        box.textContent = route ? '接待环境：' + (TASK_LABELS.backends[route.backend]
+            || ({real:'真机', simulation:'仿真', disabled:'停用'}[route.mode]) || '未确认')
+            + (route.available ? '' : '（不可用）') : '接待环境：未配置';
+        box.title = route?.available === false ? route.reason || '接待环境不可用' : '';
     } catch (e) { box.textContent = '环境状态暂不可用：' + e.message; }
 }
 loadExecutionEnvironment();

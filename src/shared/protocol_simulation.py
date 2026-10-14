@@ -6,7 +6,7 @@ from contracts.tasks import CONTRACT_VERSION
 from shared.execution_profile import PROTOCOL_URLS
 
 
-def require_simulator_pair(endpoints, get=None, kind='protocol', navigation_legs=None, navigation_only=None):
+def require_simulator_pair(endpoints, get=None, kind='protocol', navigation_legs=None, navigation_only=None, scene=None):
     """kind=protocol: local timed simulators; kind=simple_physics: remote SIMPLE episode service."""
     if kind == 'protocol' and endpoints != PROTOCOL_URLS:
         raise ValueError("协议模拟端点必须是已登记的本机服务")
@@ -20,6 +20,8 @@ def require_simulator_pair(endpoints, get=None, kind='protocol', navigation_legs
     for key, role in [('dream', 'nav'), ('vla', 'vla')]:
         body = get(endpoints[key] + '/health')
         sim = body.get('simulation') or {}
+        if scene is not None and sim.get('scene') != scene:
+            raise ValueError('模拟导航项目不匹配：' + str(sim.get('scene')))
         if (body.get('contract_version') != CONTRACT_VERSION or body.get('status') != 'ok'
                 or sim.get('kind') != kind or sim.get('role') != role or not sim.get('instance_id')):
             raise ValueError('协议模拟服务身份或版本不匹配：' + key)

@@ -1,4 +1,5 @@
-# 2026-10-12 用户提供的新版点位；relay3 横移已由用户确认。
+# 2026-10-12 用户提供的新版点位；2026-10-13 按现场数据修正五点朝向。
+# relay3 横移已由用户确认；旧任务沿用保存的定义快照与内容摘要。
 # 使用原 LAN v1 请求格式；远端仍须登记这五段路线，不代表已完成真机验收。
 # YAML 是可执行的业务定义；核验、停止与交接要求由编译器推导，不能在此关闭。
 schema_version: 2
@@ -17,31 +18,31 @@ points:
     target_id: table_2
     route_phase: ""
     leg_index: 1
-    goal_xyt: [-3.658864, 4.424073, 0.178434]
+    goal_xyt: [-3.658864, 4.024073, -2.963158]
     motion_mode: forward_path
   relay1:
     target_id: relay_1
     route_phase: relay1_approach
     leg_index: 2
-    goal_xyt: [-2.248818, -0.541162, 1.476931]
+    goal_xyt: [-2.248818, -0.541162, -1.664662]
     motion_mode: forward_path
   relay2:
     target_id: door_1
     route_phase: door_approach
     leg_index: 3
-    goal_xyt: [-2.423402, -6.008235, -3.021833]
+    goal_xyt: [-2.423402, -6.008235, 0.119759]
     motion_mode: forward_path
   relay3:
     target_id: door_1
     route_phase: door_lateral_exit
     leg_index: 4
-    goal_xyt: [-2.168660, -7.378595, -2.981830]
+    goal_xyt: [-2.168660, -7.378595, 0.159763]
     motion_mode: lateral_path_aligned
   table1:
     target_id: table_1
     route_phase: table1_approach
     leg_index: 5
-    goal_xyt: [-0.773222, -7.528610, 1.823351]
+    goal_xyt: [-0.773222, -7.528610, -1.318242]
     motion_mode: forward_path
 steps:
   - id: NAVIGATING_TO_TABLE2

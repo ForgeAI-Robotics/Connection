@@ -29,6 +29,21 @@ NAV_ONLY_SOP = {
     "triggers": ["开始接待（仅导航）", "开始接待(仅导航)", "仅导航接待"],
 }
 
+SIM_MANIPULATION_SOP = {
+    "id": "reception.single_can.sim_manipulation", "version": "1",
+    "description": "导航真机＋操控模拟：完整接待流程，抓取和放置由本地模拟端返回结果。",
+    "constraints": "导航真实执行，操控不驱动物理设备；完成仅代表混合流程通过，不代表真实抓放成功。",
+    "triggers": ["开始接待（导航真机＋操控模拟）", "开始接待(导航真机+操控模拟)"],
+}
+
+ROS_SIM_MANIPULATION_SOP = {
+    **SIM_MANIPULATION_SOP,
+    "id": "reception.single_can.ros_sim_manipulation",
+    "description": "真实导航项目驱动 O6 物理仿真，操控由本地模拟端返回结果。",
+    "constraints": "只用于 office_ros_8001 隔离仿真，不执行真机导航或真实抓放。",
+    "triggers": ["开始接待（导航仿真＋操控模拟）"],
+}
+
 # Without a manipulation step every transition stays within one navigation source.
 NAV_ONLY_PHASES = tuple(_replace(step, handoff_before="") for step in PHASES
                         if step.kind in {"local", "navigate"})

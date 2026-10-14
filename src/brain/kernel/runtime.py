@@ -123,21 +123,27 @@ def status_from_record(record) -> dict:
             if old.get("verdict") != "FAIL" and old_progress.get("terminal") not in {"failed", "cancelled"}:
                 continue
             raw = (old_progress.get("evidence") or {}).get("downstream") or {}
+            rejection = (old_progress.get("evidence") or {}).get("submission_rejected") or {}
             error = raw.get("error") if isinstance(raw, dict) else None
             error = error if isinstance(error, dict) else {}
-            message = error.get("message") or old_progress.get("error") or old.get("outcome") or "fail"
+            message = rejection.get("message") or error.get("message") or old_progress.get("error") or old.get("outcome") or "fail"
+            code = rejection.get("code") or error.get("code")
             failure_history.append({"step_id": spec["step_id"], "command_id": old.get("command_id"),
-                                    "attempt_id": old.get("attempt_id"), "code": error.get("code"),
-                                    "message": message, "display_message": failure_text(message, error.get("code"))})
+                                    "attempt_id": old.get("attempt_id"), "code": code,
+                                    "kind": "rejected" if rejection else "unknown" if old.get("verdict") == "UNKNOWN" else "cancelled" if old_progress.get("terminal") == "cancelled" else "execution_failed",
+                                    "message": message, "display_message": failure_text(message, code)})
         latest = attempts[-1] if attempts else {}
         verdict = latest.get("verdict")
         evidence = (latest.get("progress") or {}).get("evidence") or {}
         marker = bucket.get("status")
         manual_skip = marker == "manual_skipped"
+        simulated = ((record or {}).get("execution_backend") in {"reception_real_sim_manipulation",
+                                                                "reception_ros_sim_manipulation"}
+                     and spec.get("kind") in {"pick", "place", "verify"})
         done = verdict == "PASS" or marker in {"done", "skipped", "manual_skipped"}
         tasks.append({"order": order, "robot_name": spec.get("robot_name") or "FQrobot",
                       "subtask": spec.get("key") or spec["step_id"], "done": done,
-                      "step_id": spec["step_id"], "skipped": manual_skip,
+                      "step_id": spec["step_id"], "skipped": manual_skip, "simulated": simulated,
                       "status": "skipped" if manual_skip else "success" if done else "failure" if verdict == "FAIL" else "unknown" if verdict == "UNKNOWN" else "pending",
                       "result": "人工跳过；未确认该步骤完成" if manual_skip else evidence.get("text") or evidence.get("detail") or latest.get("outcome") or "",
                       "reported_success": evidence.get("reported_success"),
@@ -166,6 +172,21 @@ def status_from_record(record) -> dict:
             failure = {"kind": "unknown", "message": progress["error"], "not_started": False}
     if failure:
         failure["display_message"] = failure_text(failure.get("message"), failure.get("code"))
+    latest = attempts[-1] if attempts else {}
+    command_stage = "prepared"
+    if latest.get("submitted"):
+        command_stage = "submitted"
+    if progress.get("terminal"):
+        command_stage = "terminal"
+    if latest.get("verdict") == "UNKNOWN" or ((record or {}).get("command_unknown")
+                                               and state not in {"running", "verifying"}):
+        command_stage = "unknown"
+    if latest.get("verdict") == "FAIL":
+        command_stage = "cancelled" if progress.get("terminal") == "cancelled" else "failed"
+    if latest.get("verdict") == "PASS":
+        command_stage = "succeeded"
+    if receipt:
+        command_stage = "rejected"
     can_skip = (state in {"running", "verifying", "waiting_human", "recovery_required", "paused"}
                 and current.get("kind") not in {None, "local", "verify"}
                 and (record or {}).get("control_request") != "cancel"
@@ -178,6 +199,8 @@ def status_from_record(record) -> dict:
         "skip_step_id": current.get("step_id") if can_skip else None,
         "control_step_id": current.get("step_id"),
         "control_command_id": (attempts[-1].get("command_id") if attempts else None),
+        "current_command": {"command_id": latest.get("command_id"),
+                            "attempt_id": latest.get("attempt_id"), "stage": command_stage},
         "manual_skips": deepcopy((record or {}).get("manual_skips") or []),
         "flow_finished": bool((record or {}).get("flow_finished")),
         "active": bool(state) and not terminal,

@@ -32,11 +32,18 @@ unknown results.
 The existing `reception_simple` physical-simulation routing is reused, with
 `scene=office_ros_8001` identifying this executor. `/reception/vla/health` only
 identifies the same isolated fixture and declares `manipulation_supported=false`;
-all manipulation operations return 501. Run only the explicit
-`开始接待（仅导航）` SOP. A health response does not establish manipulation capability.
-Both health responses declare `navigation_only=true` and the configured
+all manipulation operations return 501. The explicit `开始接待（仅导航）` SOP
+uses navigation alone. For a complete flow with local simulated pick/place,
+submit `开始接待（导航仿真＋操控模拟）`: Brain binds
+`reception_ros_sim_manipulation`, routes only navigation to this bridge, and
+routes manipulation to its local simulated client. The latter does not use the
+bridge VLA endpoint or drive the arms. A health response does not establish
+physical manipulation capability.
+Both bridge health responses continue to declare `navigation_only=true` and the configured
 `navigation_legs`, allowing the current Brain to reject a mismatched Skill
-before submitting actions. A five-leg declaration requires an upstream 8001
+before submitting actions. Mixed simulation additionally requires
+`scene=office_ros_8001`; the fixed-waypoint SIMPLE executor is not accepted
+for this mode. A five-leg declaration requires an upstream 8001
 fixture that actually accepts that same route; the bridge does not add or
 bypass upstream route admission.
 

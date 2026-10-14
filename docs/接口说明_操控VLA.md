@@ -727,3 +727,10 @@ X-Content-SHA256: <摘要>
 本轮另增加可选状态字段 `control_receipt`，版本 `fq/control-receipt/v1`。VLA 在 `/v1/vla/control/status` 中返回 `to_vla/manipulation` 或 `safe_idle/safe_idle`。字段绑定 `task_id`、`source_command_id`、`kind`、`controller`、`active_command_id=null`、`confirmed=true` 和带时区的 `observed_at`。具体时效与来源要求见上述说明。
 
 这是新增目标契约，尚未声称真机实现。2026-10-08 起大脑把它当作可选：服务无此字段时，在原命令已停止、两侧无活动命令且通路就绪的条件下放行，记为 `transport_ready_without_receipt`；返回了该字段的仍须核验通过。这只是联调放行规则，通路空闲仍不等于目标控制器已经接管，真机适配仍应从实际控制器生成该凭证。大脑具体判断统一见[大脑接口第 8.3 节](接口说明_大脑%20Brain.md#83-控制交接与人工跳过)。
+
+
+## 大脑本地操控模拟（2026-10-14）
+
+“导航真机＋操控模拟”联调模式仅由大脑本地模拟 pick/place 的提交、查询与终态，
+不连接本操控服务，也不启动策略或占用动作端口。请求结构保持一致，结果明确标为模拟，
+模式选择、恢复与真实性边界统一见[大脑接待流程](接口说明_大脑%20Brain.md#81-流程与请求身份)。

@@ -17,7 +17,7 @@ class FailurePresentationTests(unittest.TestCase):
             self.assertIn(f'id="task-{name}" disabled', page)
         self.assertIn('>取消任务</button>', page)
         code = page[page.index('        let taskSubmitting'):page.index('        // 发布任务')]
-        script = '''const assert=require('assert'); const nodes={};
+        script = '''const assert=require('assert'); const nodes={}; const setInterval=()=>1;
 const document={getElementById(id){return nodes[id] ||= {}}};
 ''' + code + '''
 updateTaskButtons();
@@ -108,7 +108,9 @@ assert(Object.values(nodes).every(n=>n.disabled));
                              ('goal is not in inflated known-free space', '目标点'),
                              ('position_hard_failure', '末端位置'),
                              ('no_reliable_predictive_retry_window', '重试空间'),
-                             ('terminal pose adjustment made no progress for 35.0s; navigation_state=HOLD_ARRIVAL_DWELL', '持续无进展')]:
+                             ('terminal pose adjustment made no progress for 35.0s; navigation_state=HOLD_ARRIVAL_DWELL', '持续无进展'),
+                             ('terminal correction has insufficient known-free turn clearance', '转向空间不足'),
+                             ('terminal correction has a live nearby obstacle; holding stand', '附近障碍')]:
             text = failure_text(raw)
             self.assertIn(chinese, text)
             self.assertIn(raw, text)
@@ -131,17 +133,17 @@ assert(Object.values(nodes).every(n=>n.disabled));
 
     def test_browser_omits_analysis_and_escapes_failure_history(self):
         page = Path('src/entries/web/templates/index.html').read_text()
-        functions = page[page.index('        function renderAttemptHistory'):page.index('        let _prevAllDone')]
+        functions = page[page.index('        function renderAttemptHistory'):page.index("        let reportContext =")]
         reasons = page[page.index('        function taskReason'):page.index('        function showTaskResponse')]
         fixture = self.fixture()
         status = status_from_record(fixture)
-        status.update(active=True, state='recovery_required', phase='NAVIGATING_TO_TABLE2',
+        status.update(active=True, terminal=False, state='recovery_required', phase='NAVIGATING_TO_TABLE2',
                       recovery_advice={'applicable': True, 'summary': 'MODEL_ANALYSIS', 'action': 'request_help'},
                       reasoning='MODEL_THINKING')
         status['failure_detail'] = dict(status['failure_history'][0])
         status['failure_history'][0]['command_id'] = '<script>bad</script>'
         script = 'const TASK_LABELS=' + json.dumps(presentation_labels()) + ';\n'
-        script += '''let displayedTask, taskReceiptId=null, taskControlPending=false, taskSubmitting=false; const nodes={};
+        script += '''let taskNoticeContext=null; let displayedTask, taskReceiptId=null, taskControlPending=false, taskSubmitting=false; const nodes={};
 const document={getElementById(id){return nodes[id] ||= {style:{},innerHTML:''}}};
 function updateTaskButtons(){}
 function taskText(x){return String(x ?? '').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
@@ -155,11 +157,11 @@ function taskText(x){return String(x ?? '').replace(/[&<>]/g,c=>({'&':'&amp;','<
 
     def test_browser_progress_and_receipt_follow_rejection_retry_and_finish(self):
         page = Path('src/entries/web/templates/index.html').read_text()
-        functions = page[page.index('        function renderAttemptHistory'):page.index('        let _prevAllDone')]
+        functions = page[page.index('        function renderAttemptHistory'):page.index("        let reportContext =")]
         reasons = page[page.index('        function taskReason'):page.index('        function showTaskResponse')]
         script = 'const TASK_LABELS=' + json.dumps(presentation_labels()) + ';\n'
         script += '''const assert=require('assert');
-let displayedTask, taskReceiptId='round2', taskControlPending=false, taskSubmitting=false;
+let taskNoticeContext=null; let displayedTask, taskReceiptId='round2', taskControlPending=false, taskSubmitting=false;
 const nodes={};
 const document={getElementById(id){return nodes[id] ||= {style:{},innerHTML:'',textContent:''}}};
 function updateTaskButtons(){}

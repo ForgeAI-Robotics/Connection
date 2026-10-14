@@ -51,6 +51,8 @@ def create_app(brain_url=None, *, client=None, ops_client=None):
         if request.headers.get('X-FQ-Operator'):
             headers['X-FQ-Operator'] = request.headers['X-FQ-Operator']
         kwargs = {'headers': headers, 'params': request.args}
+        if request.path == '/api/task_status':
+            kwargs['timeout'] = 5
         if request.files:
             kwargs['files'] = [(key, (value.filename, value.stream, value.content_type))
                                for key, value in request.files.items(multi=True)]
@@ -68,6 +70,8 @@ def create_app(brain_url=None, *, client=None, ops_client=None):
                               content_type=response.headers.get('content-type', 'application/json'))
             if response.headers.get('content-disposition'):
                 result.headers['Content-Disposition'] = response.headers['content-disposition']
+            if request.path == '/api/task_status':
+                result.headers['Cache-Control'] = 'no-store'
             return result
         except Exception as exc:
             return jsonify({'success': False, 'error': str(exc), 'unavailable': True}), 503

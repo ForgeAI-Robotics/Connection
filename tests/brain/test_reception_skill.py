@@ -103,9 +103,9 @@ class ReceptionDefinitionTests(unittest.TestCase):
         skill = load_skill(path=BASELINE_PATH.with_name("reception_single_can_v2.yaml"))
         nav = [s for s in skill.steps if s.kind == "navigate"]
         self.assertEqual([s.navigation["goal_xyt"] for s in nav], [
-            [-3.658864, 4.424073, 0.178434], [-2.248818, -0.541162, 1.476931],
-            [-2.423402, -6.008235, -3.021833], [-2.168660, -7.378595, -2.981830],
-            [-0.773222, -7.528610, 1.823351]])
+            [-3.658864, 4.024073, -2.963158], [-2.248818, -0.541162, -1.664662],
+            [-2.423402, -6.008235, 0.119759], [-2.168660, -7.378595, 0.159763],
+            [-0.773222, -7.528610, -1.318242]])
         self.assertEqual([s.navigation["leg_index"] for s in nav], [1, 2, 3, 4, 5])
         self.assertEqual([s.navigation["motion_mode"] for s in nav],
                          ["forward_path"] * 3 + ["lateral_path_aligned", "forward_path"])
@@ -291,4 +291,4 @@ class ReceptionDefinitionIntegrationTests(unittest.TestCase):
         self.assertEqual(len(attempts), 2)
         self.assertEqual(attempts[0]["command_id"], original)
         self.assertNotEqual(attempts[1]["command_id"], original)
-        self.assertEqual(attempts[1]["request"]["body"]["goal_xyt"], [-2.248818, -0.541162, 1.476931])
+        self.assertEqual(attempts[1]["request"]["body"]["goal_xyt"], [-2.248818, -0.541162, -1.664662])

@@ -69,6 +69,9 @@ PHASES = {
     'VERIFYING_PLACE': '确认饮料已放好',
 }
 REASONS = {
+    'RECOVERY_COMMAND_REQUIRED': '目标与导航记录不一致，导航要求关联恢复命令；原命令结果仍需核对',
+    'NAVIGATION_INPUT_INTERRUPTED': '导航定位输入中断或过期',
+    'NAVIGATION_LOCALIZATION_LOST': '导航定位校验未通过',
     'MOTOR_HEALTH_NOT_READY': '电机保护或降温确认中，指令未受理',
     'SAFETY_NOT_READY': '导航执行条件未就绪，指令未受理',
     'submission_rejected': '指令被拒绝，未开始执行',
@@ -93,6 +96,7 @@ REASONS = {
     'Task accepted': '任务已接收', 'Task was not accepted': '任务未被接受',
 }
 HANDOFFS = {
+    'simulated_manipulation_boundary': '模拟操控衔接已核验，未进行实体控制权交接',
     'manual_skip': '因人工跳过由大脑补齐，未向下游核验',
     'transport_ready_without_receipt': '下游未提供控制器凭证，按通路空闲放行',
     'controller_confirmed': '控制器凭证核验通过',
@@ -106,6 +110,8 @@ ACTIONS = {'query_original': '查询原指令的执行状态', 'request_help': '
            'wait': '等待执行条件就绪', 'cancel': '通过原任务入口取消任务',
            'continue': '确认执行条件后，通过原任务入口继续'}
 BACKENDS = {'reception_real': '真机接待', 'reception_protocol': '接待协议模拟',
+            'reception_ros_sim_manipulation': '真实 ROS 导航项目仿真＋操控模拟',
+            'reception_real_sim_manipulation': '导航真机＋操控模拟（不含真实抓放）',
             'reception_simple': 'SIMPLE 物理仿真接待',
             'unselected': '尚未选择', 'desk': '桌面仿真'}
 SKILLS = {'local': '本地', 'navigate': '导航', 'inspect': '检查', 'pick': '抓取',
@@ -148,15 +154,21 @@ def reason_text(reason):
     return f'{REASONS[value]}（{value}）' if value in REASONS else value
 
 
+FAILURE_PHRASES = {
+    'Agent navigation result wait timed out': '导航等待执行结果超时',
+    'terminal correction is not bound to this stopped goal': '导航末端修正与已停止目标的绑定校验失败',
+    'localization pose is not in inflated known-free space': '当前定位点不在地图膨胀后的已知可通行区域内',
+    'goal is not in inflated known-free space': '目标点不在地图膨胀后的已知可通行区域内',
+    'no route exists in inflated known-free space': '地图膨胀后的已知可通行区域内不存在连通路径',
+    'terminal pose adjustment made no progress for ': '末端位姿调整持续无进展，导航已报告失败',
+    'terminal correction has insufficient known-free turn clearance': '导航判断末端修正的可通行转向空间不足',
+    'terminal correction has a live nearby obstacle; holding stand': '导航检测到附近障碍，末端修正受阻，正在保持站立',
+}
+
+
 def failure_text(message, code=None):
     """Translate recognized downstream failures without inferring a physical cause."""
     raw = str(message or code or '')
-    phrases = {
-        'localization pose is not in inflated known-free space': '当前定位点不在地图膨胀后的已知可通行区域内',
-        'goal is not in inflated known-free space': '目标点不在地图膨胀后的已知可通行区域内',
-        'no route exists in inflated known-free space': '地图膨胀后的已知可通行区域内不存在连通路径',
-        'terminal pose adjustment made no progress for ': '末端位姿调整持续无进展，导航已报告失败',
-    }
     chinese = REASONS.get(raw)
     order = re.fullmatch(r'(\w+) navigation must succeed under the same task_id before (\w+)', raw)
     if order:
@@ -165,7 +177,7 @@ def failure_text(message, code=None):
         before, after = (targets.get(name, name) for name in order.groups())
         chinese = f'导航顺序不满足：同一任务内必须先成功到达{before}，才能前往{after}'
     if not chinese:
-        chinese = next((text for phrase, text in phrases.items() if phrase in raw), None)
+        chinese = next((text for phrase, text in FAILURE_PHRASES.items() if phrase in raw), None)
     chinese = chinese or REASONS.get(code) or '执行异常，详情见原始错误'
     return f'{chinese}；原始错误：{raw}' + (f'（{code}）' if code and code not in raw else '')
 
@@ -176,7 +188,8 @@ def task_context(record):
 
 
 def presentation_labels():
-    return {'states': STATES, 'phases': PHASES, 'reasons': REASONS, 'actions': ACTIONS}
+    return {'states': STATES, 'phases': PHASES, 'reasons': REASONS, 'actions': ACTIONS,
+            'backends': BACKENDS, 'failure_phrases': FAILURE_PHRASES}
 
 
 def format_plan(steps):

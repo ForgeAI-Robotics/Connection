@@ -21,6 +21,16 @@ class PlanningService:
             snapshot = selected.get("workflow")
             skill = from_snapshot(snapshot) if snapshot else load_skill(self.config)
             sop = selected.get("sop") or {}
+            hybrid_backends = {skill.sop["id"] + ".sim_manipulation": "reception_real_sim_manipulation",
+                               skill.sop["id"] + ".ros_sim_manipulation": "reception_ros_sim_manipulation"}
+            if sop.get("id") in hybrid_backends:
+                if (sop.get("version") != skill.sop["version"]
+                        or runtime.record["execution_backend"] != hybrid_backends[sop["id"]]):
+                    raise Rejected("混合接待 SOP 与流程快照或执行后端不一致")
+                # No camera inspection or physical controller transfer in this mode.
+                # The adapter verifies stopped navigation and simulated receipts at boundaries.
+                return Plan(tuple(s for s in skill.phases() if s.kind != "inspect"),
+                            "导航＋操控模拟：完整流程核验，导航环境以任务后端为准；模拟抓放不代表真实物体效果。")
             if sop.get("id") == skill.sop["id"] + ".nav_only":
                 if sop.get("version") != skill.sop["version"]:
                     raise Rejected("仅导航 SOP 与流程快照版本不一致")

@@ -80,16 +80,26 @@ class BrainService:
             return Plan(())
         package = chosen["package"]
         backend = select_backend(self.config, package, mock=options.get("mock") is True)
+        if (chosen.get("sop") or {}).get("id", "").endswith(".ros_sim_manipulation"):
+            if backend != "reception_simple":
+                raise Rejected("导航仿真＋操控模拟仅支持真实 ROS 导航仿真环境")
+            backend = "reception_ros_sim_manipulation"
+        if (chosen.get("sop") or {}).get("id", "").endswith(".sim_manipulation"):
+            if backend != "reception_real":
+                raise Rejected("导航真机＋操控模拟仅支持真机接待环境")
+            backend = "reception_real_sim_manipulation"
         if chosen.get("workflow"):
             from brain.packages.reception_skill import from_snapshot, validate_backend
             skill = from_snapshot(chosen["workflow"])
             validate_backend(skill, backend)
-            if backend == "reception_simple":
+            if backend in {"reception_simple", "reception_ros_sim_manipulation"}:
                 from brain.adapters.ports import protocol_endpoints
                 from shared.protocol_simulation import require_simulator_pair
-                require_simulator_pair(protocol_endpoints(backend), kind="simple_physics",
+                require_simulator_pair(protocol_endpoints("reception_simple"), kind="simple_physics",
                                        navigation_legs=skill.definition["points"],
-                                       navigation_only=(chosen.get("sop") or {}).get("id", "").endswith(".nav_only"))
+                                       navigation_only=backend == "reception_ros_sim_manipulation" or
+                                       (chosen.get("sop") or {}).get("id", "").endswith(".nav_only"),
+                                       scene="office_ros_8001" if backend == "reception_ros_sim_manipulation" else None)
         if backend == "reception_mock":
             chosen = dict(chosen, sop={"id": "reception.demo", "version": "legacy",
                                       "description": "既有会议补货演示，不经过导航／操控 HTTP。"})

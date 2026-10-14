@@ -12,7 +12,8 @@ SOPS = {
     "desk": {"id": "desk.tidy", "version": "1", "description": "按当前桌面关系整理，展开已有技能并核验。"},
 }
 # Alternative SOPs of a package, reachable only by their exact triggers.
-VARIANTS = {"reception": (reception.NAV_ONLY_SOP,)}
+VARIANTS = {"reception": (reception.NAV_ONLY_SOP, reception.SIM_MANIPULATION_SOP,
+                          reception.ROS_SIM_MANIPULATION_SOP)}
 
 
 def reception_catalog(config):
@@ -22,7 +23,11 @@ def reception_catalog(config):
     variant = dict(reception.NAV_ONLY_SOP, id=skill.sop["id"] + ".nav_only",
                    version=skill.sop["version"],
                    description="仅导航联调：执行当前接待 Skill 的全部导航步骤，不派发抓取与放置。")
-    return dict(SOPS, reception=skill.sop), {"reception": (variant,)}, skill
+    hybrid = dict(reception.SIM_MANIPULATION_SOP, id=skill.sop["id"] + ".sim_manipulation",
+                  version=skill.sop["version"])
+    ros_hybrid = dict(reception.ROS_SIM_MANIPULATION_SOP, id=skill.sop["id"] + ".ros_sim_manipulation",
+                      version=skill.sop["version"])
+    return dict(SOPS, reception=skill.sop), {"reception": (variant, hybrid, ros_hybrid)}, skill
 
 
 def match_name(task) -> str:

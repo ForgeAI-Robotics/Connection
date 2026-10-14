@@ -423,15 +423,8 @@ def create_app(application, *, facade=None):
         status = master_agent.get_task_status()
         if status.get("task_type") != "reception":
             return jsonify({"success": False, "error": "当前没有接待任务"}), 404
-        return jsonify({"success": True, "report": {
-            "task_id": status.get("task_id"), "verdict": status.get("state") == "succeeded",
-            "attempt_summary": status.get("attempt_summary", {}),
-            "failure_history": status.get("failure_history", []),
-            "state": status.get("state"), "checks": [
-                {"name": item["subtask"], "pass": item["status"] == "success", "detail": item["result"]}
-                for item in status.get("subtask_list", [])],
-            "advice": status.get("blocked_reason") or "", "spoken": status.get("state"),
-        }})
+        from brain.api.reporting import reception_report as build_report
+        return jsonify({"success": True, "report": build_report(status)})
 
     @app.get('/health')
     def health():

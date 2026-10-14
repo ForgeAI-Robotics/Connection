@@ -47,6 +47,10 @@ class NavigationBridgeTests(unittest.TestCase):
         get = lambda path: bridge.handle('GET', path)[1]
         self.assertEqual(require_simulator_pair(endpoints, get=get, kind='simple_physics',
                          navigation_legs=contract, navigation_only=True), 'five-leg-test')
+        self.assertEqual(require_simulator_pair(endpoints, get=get, kind='simple_physics',
+                         scene='office_ros_8001'), 'five-leg-test')
+        with self.assertRaises(ValueError):
+            require_simulator_pair(endpoints, get=get, kind='simple_physics', scene='other_navigation')
         with self.assertRaises(ValueError):
             require_simulator_pair(endpoints, get=get, kind='simple_physics',
                                    navigation_legs=NAVIGATION_LEGS, navigation_only=True)

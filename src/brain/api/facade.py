@@ -22,7 +22,8 @@ class HttpFacade:
         return self.application.status()
 
     def get_task_preflight(self, task):
-        return {'ready': True, 'required': False, 'task_type': 'runtime', 'blockers': []}
+        from brain.adapters.preflight import reception_preflight
+        return reception_preflight(self.config, task)
 
     def publish_global_task(self, task, refresh, task_id, force_new_task=False, resume=False, *, options=None):
         try:
