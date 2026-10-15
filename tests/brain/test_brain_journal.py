@@ -19,6 +19,19 @@ from shared.brain_journal import (
 
 
 class BrainJournalTests(unittest.TestCase):
+    def test_control_and_background_analysis_have_process_log_messages(self):
+        from shared.task_text import format_process_event
+        for event, phrase in [('received', '收到控制请求'), ('processing', '正在处理控制请求'),
+                              ('accepted', '控制请求已处理'), ('rejected', '控制请求未受理')]:
+            line = format_process_event({'kind': 'CONTROL', 'event': event, 'action': 'skip',
+                                         'task_id': 'task', 'control_id': 'request-1'})
+            self.assertIn(phrase, line)
+            self.assertIn('跳过', line)
+            self.assertIn('request-1', line)
+        line = format_process_event({'kind': 'ADVICE', 'event': 'started', 'task_id': 'task'})
+        self.assertIn('不阻塞任务推进', line)
+        self.assertIn('丢弃迟到', format_process_event({'kind': 'ADVICE', 'event': 'discarded'}))
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         os.environ[log_setup.LOG_ROOT_ENV] = self.tmp.name

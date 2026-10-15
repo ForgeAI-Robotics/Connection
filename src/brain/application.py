@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import threading
 import time
+import uuid
 from concurrent.futures import TimeoutError
 from contracts.tasks import Rejected
 from brain.workers import RuntimeOwner, WorkerPool, CooperativePort
@@ -23,6 +24,9 @@ class BrainApplication:
         self.io = WorkerPool('brain-io', max(2, int(settings.get('io_workers', 4))))
         self.controls = WorkerPool('brain-control', 2)
         self.planner = WorkerPool('brain-planner', 1, capacity=1)
+        self.adviser = WorkerPool('brain-advice', 1, capacity=1)
+        self._advice_inflight = None
+        self._advice_pending = None
         root = Path(runtime_dir(self.config))
         self.learning = ReflectionWorker(root / 'learning', self.config,
                                          processor=reflection_processor, emit=emit)
@@ -54,13 +58,68 @@ class BrainApplication:
         service.runtime_factory = runtime
         service.plan_call = lambda rt, options: self.owner.wait(self.planner.submit(service.planning.plan, rt, options))
         service.select_call = lambda task, options: self.owner.wait(self.planner.submit(service.reasoner.select, task, options))
-        service.advice_call = lambda context: self.owner.wait(self.planner.submit(service.reasoner.advise, context))
+        # Advice reads immutable evidence off-thread; only the owner applies its result.
+        # It must never occupy the planner or the owner's cooperative wait path.
+        service._advise = self._schedule_advice
         service._launch = lambda rt: self.owner.submit(service._drive, rt)
         service.refresh_advice = lambda rt: self.owner.submit(service._advise, rt)
         service.reflection = self.learning.enqueue
 
+    def _advice_log(self, event, context, **details):
+        from shared.brain_journal import emit as journal
+        journal('ADVICE', event=event, inherit_task=False, task_id=context.get('task_id'),
+                step_id=context.get('phase'), command_id=context.get('open_command_id'),
+                revision=context.get('revision'), **details)
+
+    def _schedule_advice(self, runtime):
+        if self._closing:
+            return
+        context = self.service.advice_context(runtime)
+        if context is None:
+            return
+        key = (context['task_id'], context['revision'])
+        if self._advice_inflight == key:
+            return
+        if self._advice_inflight is not None:
+            # One latest pending snapshot, never an unbounded backlog of old failures.
+            self._advice_pending = (runtime, context)
+            self._advice_log('queued', context)
+            return
+        self._advice_inflight = key
+        self._advice_log('started', context)
+        future = self.adviser.submit(self.service.compute_advice, context)
+
+        def completed(result):
+            if not self._closing:
+                try:
+                    self.owner.submit(self._finish_advice, runtime, context, result, control=True)
+                except Rejected:
+                    pass  # Closing: no off-thread write and no replay on restart.
+        future.add_done_callback(completed)
+
+    def _finish_advice(self, runtime, context, future):
+        self._advice_inflight = None
+        if self._closing:
+            self._advice_pending = None
+            return
+        advice = future.result()
+        applied = runtime.record_advice(context, advice)
+        self._advice_log('completed' if applied else 'discarded', context,
+                         error=advice.get('error'), source=advice.get('source'))
+        pending, self._advice_pending = self._advice_pending, None
+        if pending:
+            pending_runtime, snapshot = pending
+            try:
+                current = pending_runtime.snapshot()
+            except Rejected:
+                return
+            if all(current.get(k) == snapshot.get(k) for k in
+                   ('task_id', 'revision', 'state', 'open_command_id')):
+                self._schedule_advice(pending_runtime)
+
     def _event(self, event, record):
         if event == 'task_cancelled':
+            self._advice_pending = None
             self.owner.interrupt_waits()
             for port in self._execution_ports:
                 abandon = getattr(port, 'abandon_waits', None)
@@ -111,7 +170,15 @@ class BrainApplication:
 
     def control(self, action, *, task_id=None, step_id=None, expected_command_id=None):
         self.start()
+        from shared.brain_journal import emit as journal
+        control_id = uuid.uuid4().hex
+        def log(event, **details):
+            journal('CONTROL', event=event, inherit_task=False, action=action,
+                    control_id=control_id, task_id=task_id, step_id=step_id,
+                    command_id=expected_command_id, **details)
+        log('received')
         def apply():
+            log('processing')
             result = self.service.control(action, task_id=task_id,
                 **({"step_id": step_id} if step_id is not None else {}),
                 **({"expected_command_id": expected_command_id} if expected_command_id is not None else {}))
@@ -119,7 +186,14 @@ class BrainApplication:
             if not result.get('no_op') and runtime and runtime.state in {'succeeded', 'failed', 'cancelled', 'recovery_required'}:
                 self.learning.enqueue(runtime.record)
             return result
-        return self.owner.call(apply, control=True)
+        try:
+            result = self.owner.call(apply, control=True)
+        except Exception as exc:
+            log('rejected', error=str(exc))
+            raise
+        log('accepted' if result.get('accepted') else 'rejected', state=result.get('state'),
+            detail=result.get('message'), error=result.get('error'))
+        return result
 
     def status(self):
         # Atomic read only: health/status do not wait behind any remote call.
@@ -140,7 +214,7 @@ class BrainApplication:
         return {'ready': self._started and not self._closing,
                 'state': 'stopping' if self._closing else 'healthy' if self._started else 'created',
                 'runtime_thread': bool(self.owner.thread and self.owner.thread.is_alive()),
-                'workers': [p.health() for p in (self.planner, self.io, self.controls)],
+                'workers': [p.health() for p in (self.planner, self.adviser, self.io, self.controls)],
                 'reflection_error': self.learning.last_error}
 
     def _checkpoint(self):
@@ -165,7 +239,8 @@ class BrainApplication:
         remaining = lambda: max(0, deadline - time.monotonic())
         stopped = self.owner.close(remaining())
         stopped = self.learning.close(remaining()) and stopped
-        for pool in (self.planner, self.io, self.controls, self.media, *self.extra_workers):
+        self._advice_pending = None
+        for pool in (self.planner, self.adviser, self.io, self.controls, self.media, *self.extra_workers):
             stopped = pool.close(remaining()) and stopped
         for transport in self.service.transports:
             transport.close(remaining())

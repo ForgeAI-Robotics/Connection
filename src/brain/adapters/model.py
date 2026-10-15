@@ -3,6 +3,7 @@ from openai import OpenAI, AzureOpenAI
 from typing import Dict
 import logging
 import time
+import threading
 
 
 def _purpose(messages):
@@ -40,11 +41,15 @@ class ModelClient:
     def __init__(self, config):
         self.config = config
         self.global_model = None
+        self._init_lock = threading.Lock()
         self.profiling = bool(config.get("profiling", False))
 
     def __call__(self, messages):
         if self.global_model is None:
-            self.global_model, self.model_name = self._get_model_info_from_config(self.config["model"])
+            with self._init_lock:
+                if self.global_model is None:
+                    client, self.model_name = self._get_model_info_from_config(self.config["model"])
+                    self.global_model = client
         return self._call_llm(messages)
 
     def display_profiling_info(self, description, message):

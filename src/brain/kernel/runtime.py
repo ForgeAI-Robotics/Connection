@@ -845,20 +845,29 @@ class TaskRuntime:
             original_state = self.state
             command_id = self.record.get('open_command_id')
             skipped_command_id = (self._latest(step_id) or {}).get('command_id')
+            refused = self._refused_attempt_observation(self._latest(step_id) or {})
+            viewed = None
             if not command_id:
                 # A handoff failure can occur after the previous action closed.
                 # Recheck its stop evidence before skipping an unsubmitted step.
                 for previous in reversed(self.phases[:int(self.record['cursor']) + 1]):
                     attempt = self._latest(previous.step_id) or {}
                     if attempt.get('submitted') and attempt.get('command_id'):
+                        # Rejected submissions never created a downstream command.
+                        # Still check any earlier accepted action: a refusal says
+                        # nothing about another command's stop/resource state.
+                        if self._refused_attempt_observation(attempt):
+                            continue
                         command_id = attempt['command_id']
                         break
+                if not command_id and refused and not self.record.get('command_unknown'):
+                    command_id = refused['command_id']
+                    viewed = refused
             request = self._request_of(command_id) if command_id else None
             if not command_id and not self.record.get('resources_cleared'):
                 raise Rejected("动作资源尚未核清，不能跳过")
         # Query only. A timeout/failed command may still own the action port.
-        viewed = None
-        if command_id:
+        if command_id and viewed is None:
             try:
                 viewed = self.port.query(command_id, request)
             except Exception as exc:
@@ -902,6 +911,20 @@ class TaskRuntime:
                 self.record.update(flow_finished=True, blocked_reason='流程结束，含人工跳过，任务未全部成功')
             self._save('step_manually_skipped')
             return {'skipped_step_id': step_id, 'next_step_id': nxt.step_id if nxt else None}
+
+    def _refused_attempt_observation(self, attempt):
+        """Use only the bound, explicit pre-execution refusal, never a missing receipt."""
+        progress = attempt.get('progress') or {}
+        receipt = (progress.get('evidence') or {}).get('submission_rejected') or {}
+        identity = {'task_id': self.record['task_id'], 'command_id': attempt.get('command_id')}
+        if (attempt.get('outcome') != 'rejected' or attempt.get('accepted') is not False
+                or progress.get('started') is not False or not identity['command_id']
+                or any(receipt.get(k) != v or progress.get(k) != v for k, v in identity.items())
+                or progress.get('attempt_id') != attempt.get('attempt_id')
+                or progress.get('step_id') != attempt.get('step_id')):
+            return None
+        validated = submission_refusal(receipt.get('status_code'), receipt.get('raw'), **identity)
+        return refusal_observation(validated) if validated else None
 
     def continue_same_attempt(self):
         with self._exclusive():

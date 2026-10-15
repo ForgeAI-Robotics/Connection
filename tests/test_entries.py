@@ -15,6 +15,27 @@ from brain.learning.demo import DemoLearning
 
 
 class EntryTests(unittest.TestCase):
+    def test_chat_and_ambiguous_intent_share_brain_model_without_task_dispatch(self):
+        with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'CONNECTION_WORKSPACE': root}):
+            config = {'reflection': {'enabled': False}, 'reception_real': {'kernel_runtime_dir': root + '/kernel'}}
+            model = Mock(return_value='task')
+            ports = Mock(side_effect=AssertionError('chat must not open an execution port'))
+            application = BrainApplication(create_service(config, model=model, port_factory=ports)).start()
+            try:
+                client = create_app(application).test_client()
+                self.assertEqual(client.post('/api/chat/route', json={'task': '帮忙处理一下'}).json['answer'], 'task')
+                with patch('brain.api.views.classify_entry', side_effect=[{'needs_llm_route': True}, {'intent': 'task'}]):
+                    result = client.post('/api/task_intent', json={'task': '帮忙处理一下'}).json
+                self.assertEqual(result['llm_route'], 'task')
+                model.return_value = '你好'
+                self.assertEqual(client.post('/api/chat', json={'task': '你好'}).json['answer'], '你好')
+                model.side_effect = TimeoutError('configured provider timed out')
+                self.assertEqual(client.post('/api/chat', json={'task': '你好'}).status_code, 503)
+                ports.assert_not_called()
+                self.assertFalse((Path(root) / 'kernel/current_task.json').exists())
+            finally:
+                application.close()
+
     def test_advice_confirmation_is_forwarded_once_with_its_identity(self):
         client = Mock()
         client.request.return_value = Mock(content=b'{"accepted":false}', status_code=409,

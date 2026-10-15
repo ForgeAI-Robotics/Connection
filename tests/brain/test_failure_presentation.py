@@ -105,6 +105,9 @@ assert(Object.values(nodes).every(n=>n.disabled));
 
     def test_translations_preserve_original_and_distinguish_start_and_goal(self):
         for raw, chinese in [('localization pose is not in inflated known-free space', '当前定位点'),
+                             ('terminal correction scan coverage is insufficient; largest_gap_deg=45.5', '末端修正受阻：扫描覆盖不足'),
+                             ('final_path_not_straight', '直线要求'),
+                             ('insufficient_final_straight', '直线段不足'),
                              ('goal is not in inflated known-free space', '目标点'),
                              ('position_hard_failure', '末端位置'),
                              ('no_reliable_predictive_retry_window', '重试空间'),
@@ -181,7 +184,7 @@ assert(nodes['task-result'].textContent.includes('指令被拒绝，未开始执
 assert(!nodes['task-result'].textContent.includes('新尝试已准备'));
 data.state='running'; data.failure_detail=null;
 renderTaskProgress(data);
-assert(nodes['task-result'].textContent.includes('执行中'));
+assert(nodes['task-result'].textContent.includes('等待下发当前步骤'));
 assert(!nodes['task-result'].textContent.includes('同一任务先到2号桌'));
 data.state='failed'; data.flow_finished=true;
 renderTaskProgress(data);

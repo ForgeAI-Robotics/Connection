@@ -47,8 +47,8 @@ def register_views(app, application):
         report = classify_entry(task.strip())
         if report.get('needs_llm_route'):
             try:
-                from brain.adapters.intent import route_ambiguous_with_llm
-                label = route_ambiguous_with_llm(task)
+                from contracts.intent import ROUTE_SYSTEM
+                label = entry_completion(task, ROUTE_SYSTEM)
                 report = classify_entry(task, llm_label=label)
                 report['llm_route'] = label
             except Exception as exc:
@@ -58,16 +58,24 @@ def register_views(app, application):
     @app.post('/api/chat')
     @app.post('/api/chat/route')
     def chat():
-        from brain.adapters.chat import DeepSeekChat
+        from brain.adapters.chat import CHAT_SYSTEM
+        from contracts.intent import ROUTE_SYSTEM
         text = (request.get_json(silent=True) or {}).get('task')
         if not isinstance(text, str) or not text.strip():
             return jsonify({'error': '缺少有效 task 字段'}), 400
         try:
-            model = DeepSeekChat()
-            answer = model._route(text) if request.path.endswith('/route') else model._reply(text)
+            answer = entry_completion(text, ROUTE_SYSTEM if request.path.endswith('/route') else CHAT_SYSTEM)
             return jsonify({'answer': answer})
         except Exception as exc:
             return jsonify({'error': str(exc)}), 503
+
+    def entry_completion(text, system):
+        # Entry classification/chat use the same configured model as planning.
+        answer = service.reasoner.model([{'role': 'system', 'content': system},
+                                         {'role': 'user', 'content': text}]).strip()
+        if not answer:
+            raise RuntimeError('模型返回空内容')
+        return answer
 
     @app.get('/api/auto_tools')
     @app.post('/api/get_tool_config')

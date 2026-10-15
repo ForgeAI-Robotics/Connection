@@ -117,6 +117,46 @@ class MixedReceptionTests(unittest.TestCase):
         pick = next(raw for raw in self.mock._commands.values() if raw["operation"] == "pick")
         self.assertEqual(pick["navigation_proof"]["dream_command_id"], self.nav.submits[1]["command_id"])
 
+    def test_skip_refused_mock_pick_after_skipped_navigation_survives_restart(self):
+        self.nav.fail_leg = 1
+        service = self.service()
+        service.publish(TRIGGER, 'skip-refused-pick')
+        service.control('skip', task_id='skip-refused-pick', step_id='NAVIGATING_TO_TABLE2')
+        self.assertEqual(service.status()['failure_detail']['code'], 'NAVIGATION_PROOF_INVALID')
+        service.control('continue', task_id='skip-refused-pick')
+        self.assertEqual(service.status()['failure_detail']['code'], 'NAVIGATION_PROOF_INVALID')
+        original = deepcopy(service.runtime.record['steps']['VLA_PICKING']['attempts'])
+        restarted = self.service()
+        runtime = restarted.attach()
+        with patch.object(self.mock, 'task', side_effect=AssertionError('refused command must not be queried')), \
+             patch.object(self.nav, 'command', wraps=self.nav.command) as query:
+            result = runtime.skip_current(step_id='VLA_PICKING')
+        self.assertEqual(result['next_step_id'], 'NAVIGATING_TO_RELAY1')
+        query.assert_called_once_with(self.nav.submits[0]['command_id'])
+        self.assertEqual(runtime.record['steps']['VLA_PICKING']['attempts'], original)
+        self.assertEqual(runtime.record['steps']['VLA_PICKING']['status'], 'manual_skipped')
+        self.assertEqual(runtime.record['steps']['VERIFYING_GRASP']['status'], 'manual_skipped')
+        self.assertFalse(self.mock._commands)
+        self.assertIsNone(runtime.record['holding'])
+        runtime.drive()
+        self.assertEqual(self.nav.submits[1]['leg_index'], 2)
+        self.assertFalse(any(x['operation'] == 'pick' for x in self.mock._commands.values()))
+
+    def test_refused_pick_does_not_bypass_previous_navigation_stop_check(self):
+        from contracts.tasks import Rejected
+        self.nav.fail_leg = 1
+        service = self.service()
+        service.publish(TRIGGER, 'skip-with-unknown-nav')
+        service.control('skip', task_id='skip-with-unknown-nav', step_id='NAVIGATING_TO_TABLE2')
+        command = self.nav.submits[0]['command_id']
+        self.nav.commands[command]['state'] = 'running'
+        self.nav.commands[command]['result'] = None
+        before = deepcopy(service.runtime.record['manual_skips'])
+        with self.assertRaises(Rejected):
+            service.runtime.skip_current(step_id='VLA_PICKING')
+        self.assertEqual(service.runtime.record['manual_skips'], before)
+        self.assertEqual(len(self.nav.submits), 1)
+
     def test_busy_navigation_boundary_blocks_simulated_grasp(self):
         self.nav.busy = True
         service = self.service()

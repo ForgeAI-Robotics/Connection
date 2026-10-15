@@ -255,8 +255,8 @@ class BrainService:
                 if runtime.record.get("reflection_enabled", True):
                     self._reflect(runtime)
 
-    def _advise(self, runtime):
-        from brain.reasoning import RECOVERY_STATES, recovery_context, fallback_advice
+    def advice_context(self, runtime):
+        from brain.reasoning import RECOVERY_STATES, recovery_context
         if self.reasoner is None:
             return
         snapshot = runtime.snapshot()
@@ -265,12 +265,19 @@ class BrainService:
         # Do not repeat a model call merely because drive is called again.
         if (snapshot.get("recovery_advice") or {}).get("record_revision") == snapshot["revision"]:
             return
-        context = recovery_context(snapshot)
+        return recovery_context(snapshot)
+
+    def compute_advice(self, context):
+        from brain.reasoning import fallback_advice
         try:
-            advice = self.advice_call(context)
+            return self.advice_call(context)
         except Exception as exc:
-            advice = dict(fallback_advice(context), source="rules", error=str(exc)[:1000])
-        runtime.record_advice(context, advice)
+            return dict(fallback_advice(context), source="rules", error=str(exc)[:1000])
+
+    def _advise(self, runtime):
+        context = self.advice_context(runtime)
+        if context is not None:
+            runtime.record_advice(context, self.compute_advice(context))
 
     def _reflect(self, runtime):
         if self.reflection is not None:

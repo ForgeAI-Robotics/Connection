@@ -475,7 +475,12 @@
                     statusCls = 'status-ok';
                 }
             } else {
-                statusLabel = '执行中...';
+                const stage = data.current_command?.stage;
+                statusLabel = data.state === 'verifying' ? '正在核验执行结果'
+                    : stage === 'unknown' ? '原命令执行结果待确认'
+                    : stage === 'submitted' ? '等待动作执行结果'
+                    : !data.current_command?.command_id || stage === 'prepared' ? '等待下发当前步骤'
+                    : '正在处理当前步骤';
                 statusCls = 'status-run';
             }
             const barCls = recovery || skippedCount ? 'task-bar-fill recovery' : (anyFailed ? 'task-bar-fill fail' : 'task-bar-fill');

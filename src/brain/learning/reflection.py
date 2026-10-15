@@ -3,7 +3,7 @@
 兼容旧的桌面 skills / 接待 rounds trace；新路径吃统一 episode
 (fq/reflection-episode/v1)。不区分仿真或真机：由调用方记账，这里只提炼事实。
 
-两档:结构化事实 → deepseek 写候选经验 / 模板档降级。
+两档:结构化事实 → 大脑配置的模型写候选经验 / 模板档降级。
 默认只落 data/memory/reflections/,不改 SOP;mock 接待仍可 write_sop。
 
 用法:
@@ -319,11 +319,11 @@ def maybe_reflect(
     if llm_fn is not None:
         produce = llm_fn
     elif _llm_allowed(config):
-        produce = llm_rules
+        produce = lambda *args: llm_rules(*args, config=config)
     else:
         produce = lambda *_args, **_kwargs: (None, "LLM 已关闭")
     rules, err = produce(findings, existing, desc)
-    source = "LLM(deepseek)"
+    source = "LLM(" + str(((config or {}).get('model') or {}).get('model_select') or 'deepseek') + ")"
     if rules is None:
         rules = template_rules(findings)
         source = f"模板档(LLM 不可用: {err})" if err else "模板档"
@@ -382,7 +382,7 @@ def template_rules(findings):
     return [_TEMPLATE_RULES[f["type"]] for f in findings if f["type"] in _TEMPLATE_RULES]
 
 
-# ---------------- LLM 反思(deepseek,失败降级) ----------------
+# ---------------- LLM 反思(跟随大脑配置，失败降级) ----------------
 
 def _api_key():
     key = os.environ.get("CLOUD_API_KEY")
@@ -397,9 +397,10 @@ def _api_key():
     return None
 
 
-def llm_rules(findings, existing_rules, task_desc="机器人刚完成一次桌面整理任务"):
-    key = _api_key()
-    if not key:
+def llm_rules(findings, existing_rules, task_desc="机器人刚完成一次桌面整理任务", *, config=None):
+    configured = bool((config or {}).get('model'))
+    key = None if configured else _api_key()
+    if not configured and not key:
         return None, "无 CLOUD_API_KEY"
     facts = "\n".join(f"- [{f['type']}] {f['detail']}" for f in findings)
     known = "\n".join(f"- {r}" for r in existing_rules)
@@ -418,6 +419,22 @@ def llm_rules(findings, existing_rules, task_desc="机器人刚完成一次桌�
 
 【既有经验规则】
 {known}"""
+    try:
+        if configured:
+            from brain.adapters.model import ModelClient
+            content = ModelClient(config)([{"role": "user", "content": prompt}])
+        else:
+            content = _legacy_completion(prompt, key)
+        if content.strip() == '[]':
+            return [], None
+        rules = [ln.strip("-• ").strip() for ln in content.strip().splitlines() if ln.strip()]
+        return [r for r in rules if len(r) > 8], None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def _legacy_completion(prompt, key):
+    """Standalone historical scripts without Brain settings retain their endpoint."""
     req = urllib.request.Request(
         "https://api.deepseek.com/chat/completions",
         data=json.dumps({
@@ -427,15 +444,8 @@ def llm_rules(findings, existing_rules, task_desc="机器人刚完成一次桌�
         }).encode("utf-8"),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
         method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            content = json.loads(r.read())["choices"][0]["message"]["content"]
-        if content.strip() == '[]':
-            return [], None
-        rules = [ln.strip("-• ").strip() for ln in content.strip().splitlines() if ln.strip()]
-        return [r for r in rules if len(r) > 8], None
-    except Exception as exc:
-        return None, str(exc)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.loads(r.read())["choices"][0]["message"]["content"]
 
 
 # ---------------- 新版 SOP ----------------

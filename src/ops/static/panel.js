@@ -436,7 +436,6 @@ async function act(item, action) {
 }
 
 async function loadLogs(reset) {
-  if (busy) return;
   const current = currentItem();
   if (!current) return;
   if (!reset && activeLogRequest === current.id) return;
@@ -444,17 +443,19 @@ async function loadLogs(reset) {
   const token = ++logToken;
   if (logAbort) logAbort.abort();
   logAbort = new AbortController();
+  const controller = logAbort;
+  const deadline = setTimeout(() => controller.abort(), 5000);
   const log = $("log");
   const stick = !reset && stickToBottom(log);
   try {
     const params = new URLSearchParams({lines: "8000"});
     const logs = await fetch(
       `/api/services/${encodeURIComponent(current.id)}/logs?${params}`,
-      { signal: logAbort.signal }
+      { signal: controller.signal, cache: "no-store" }
     );
     const body = await logs.json();
     if (!logs.ok) throw new Error(body.error || "日志读取失败");
-    if (busy || token !== logToken || body.id !== selected) return;
+    if (token !== logToken || body.id !== selected) return;
     log.classList.remove("error", "loading");
     const signature = JSON.stringify([current.id, body.text]);
     if (signature !== renderedLog) {
@@ -467,12 +468,13 @@ async function loadLogs(reset) {
     $("log-meta").textContent = logPath;
     if (reset || stick) log.scrollTop = log.scrollHeight;
   } catch (error) {
-    if (error.name === "AbortError" || token !== logToken || busy) return;
+    if (token !== logToken) return;
     log.classList.remove("loading");
     renderedLog = "";
-    log.textContent = String(error);
+    log.textContent = error.name === "AbortError" ? "日志读取超时，正在重试…" : String(error);
     log.classList.add("error");
   } finally {
+    clearTimeout(deadline);
     if (token === logToken) activeLogRequest = "";
   }
 }
@@ -542,5 +544,10 @@ showLogPlaceholder();
 loadLogs(true);
 refresh();
 setInterval(() => {
-  if (!document.hidden) { refresh(); loadLogs(false); }
+  if (!document.hidden) refresh();
 }, 3000);
+// Follow process output independently of slow health checks and service actions.
+// loadLogs keeps one request in flight and discards replies for old selections.
+setInterval(() => {
+  if (!document.hidden) loadLogs(false);
+}, 500);

@@ -24,6 +24,36 @@ def adapter(error):
 
 
 class SubmissionRefusalTests(unittest.TestCase):
+    def test_skip_first_refused_command_uses_original_refusal_without_remote_query(self):
+        port = adapter(HttpContractError('HTTP 409', status_code=409, payload=REFUSAL))
+        with tempfile.TemporaryDirectory() as root:
+            runtime = _runtime(root, port)
+            runtime.drive()
+            original = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'])
+            result = runtime.skip_current(step_id='NAVIGATING_TO_TABLE2')
+            self.assertEqual(result['next_step_id'], 'VLA_PICKING')
+            self.assertEqual(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'], original)
+            self.assertFalse(runtime.record['manual_skips'][-1]['stop_observation']['started'])
+            port.dream.command.assert_not_called()
+            port.dream.cancel.assert_not_called()
+
+    def test_skip_does_not_treat_mismatched_or_ambiguous_refusal_as_stop_evidence(self):
+        from contracts.tasks import Rejected
+        for field, value in [('command_id', 'another-command'), ('task_id', 'another-task'),
+                             ('status_code', 404), ('raw', {'success': False, 'error': {'code': 'COMMAND_ID_CONFLICT'}})]:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as root:
+                port = adapter(HttpContractError('HTTP 409', status_code=409, payload=REFUSAL))
+                runtime = _runtime(root, port)
+                runtime.drive()
+                with runtime._exclusive():
+                    runtime._reload_locked()
+                    a = runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][-1]
+                    a['progress']['evidence']['submission_rejected'][field] = value
+                    runtime._save('test_invalid_refusal')
+                with self.assertRaises(Rejected):
+                    runtime.skip_current(step_id='NAVIGATING_TO_TABLE2')
+                self.assertFalse(runtime.record.get('manual_skips'))
+
     def test_admission_refusals_cancel_locally_and_allow_a_new_task(self):
         cases = [(code, {}) for code in (
             'MOTOR_HEALTH_NOT_READY', 'SAFETY_NOT_READY', 'VLA_ACTION_PORT_OWNED',

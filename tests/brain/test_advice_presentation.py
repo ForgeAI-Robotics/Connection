@@ -46,6 +46,20 @@ assert(renderRecoveryAdvice(data).includes('失败原文'));
 assert(!renderRecoveryAdvice(data).includes('onclick'));
 ''')
 
+    def test_running_without_dispatch_is_not_shown_as_executing(self):
+        self.run_browser('''
+data.state='running';data.failure_detail=null;data.current_command={stage:'prepared',command_id:null};
+renderTaskProgress(data);assert(nodes['task-progress'].innerHTML.includes('等待下发当前步骤'));
+assert(!nodes['task-progress'].innerHTML.includes('执行中...'));
+data.current_command={stage:'submitted',command_id:'nav-new'};
+renderTaskProgress(data);assert(nodes['task-progress'].innerHTML.includes('等待动作执行结果'));
+data.failure_history=[{step_id:'NAVIGATING_TO_TABLE2',message:'9882 rejected: terminal correction scan coverage is insufficient; largest_gap_deg=45.5'}];
+data.attempt_summary={failure_count:1};
+const history=renderAttemptHistory(data);
+assert(history.includes('末端修正受阻：扫描覆盖不足'));
+assert(history.includes('largest_gap_deg=45.5'));
+''')
+
     def test_stale_or_consumed_advice_never_offers_current_action(self):
         self.run_browser('''
 for (const patch of [{applicable:false},{task_id:'old'},{step_id:'old'},{control_command_id:'old'}]) {
@@ -165,5 +179,5 @@ assert(html.indexOf('原命令仍需核清')<html.indexOf('<details'));
 // A new running task must display normally, outside the old history wrapper.
 data.task_id='new';data.state='running';data.terminal=false;data.active=true;
 renderTaskProgress(data);html=nodes['task-progress'].innerHTML;
-assert(!html.includes('上一轮已取消'));assert(html.includes('执行中...'));
+assert(!html.includes('上一轮已取消'));assert(html.includes('正在处理当前步骤'));
 ''')

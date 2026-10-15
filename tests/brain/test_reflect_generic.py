@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -156,6 +157,21 @@ class GenericReflectionTests(unittest.TestCase):
         result = maybe_reflect(episode, llm_fn=lambda *_: (None, 'timeout'), quiet=True)
         self.assertIn('timeout', result['source'])
         self.assertTrue(result['new_rules'])
+
+    def test_configured_reflection_uses_current_model_and_keeps_failure_fallback(self):
+        episode = episode_from_steps('synthetic', '测试任务', [], final='failure')
+        config = {'model': {'model_select': 'test-alternative'}, 'reflection': {'use_llm': True}}
+        with patch.dict(os.environ, {'FQPLANNER_REFLECTION_LLM': 'on'}), \
+             patch('brain.adapters.model.ModelClient') as client, \
+             patch('brain.learning.reflection._legacy_completion', side_effect=AssertionError('old provider used')):
+            client.return_value.return_value = '[]'
+            result = maybe_reflect(episode, config=config, quiet=True)
+            self.assertEqual(result['source'], 'LLM(test-alternative)')
+            self.assertEqual(result['new_rules'], [])
+            client.return_value.side_effect = TimeoutError('alternative timeout')
+            result = maybe_reflect(episode, config=config, quiet=True)
+            self.assertIn('alternative timeout', result['source'])
+            self.assertTrue(result['new_rules'])
 
     def test_uppercase_navigation_phase_is_classified_from_ledger(self):
         episode = episode_from_steps('nav-fail', '开始接待', [{

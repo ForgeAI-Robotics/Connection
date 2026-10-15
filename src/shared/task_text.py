@@ -79,6 +79,11 @@ REASONS = {
     'NAVIGATION_NO_PATH': '导航无法规划可通行路径',
     'NAVIGATION_NO_PROGRESS': '导航持续无进展',
     'NAVIGATION_TERMINAL_UNREACHABLE': '导航末端未满足到达条件',
+    'NAVIGATION_EXECUTION_FAILED': '导航执行失败，具体原因见导航原始回包',
+    'NAVIGATION_PROOF_INVALID': '缺少原导航到达并停止的有效回执，操控尚未执行；人工跳过导航不代表已经到达',
+    'final_path_not_straight': '末端接近路径不满足直线要求，导航无法完成末端修正',
+    'insufficient_final_straight': '末端接近的直线段不足，导航无法完成末端修正',
+    'terminal_heading_recovery_requires_replan': '末端朝向恢复需要重新规划路径',
     'no_reliable_predictive_retry_window': '未满足到达条件，且没有可靠的预测停车重试空间',
     'stationary_goal_pose_drift': '停车后定位位姿偏离目标',
     'goal_overshot_without_reverse_token': '已越过目标，当前无可用后退动作',
@@ -155,6 +160,7 @@ def reason_text(reason):
 
 
 FAILURE_PHRASES = {
+    'terminal correction scan coverage is insufficient': '末端修正受阻：扫描覆盖不足，导航无法确认修正区域的通行条件',
     'Agent navigation result wait timed out': '导航等待执行结果超时',
     'terminal correction is not bound to this stopped goal': '导航末端修正与已停止目标的绑定校验失败',
     'localization pose is not in inflated known-free space': '当前定位点不在地图膨胀后的已知可通行区域内',
@@ -230,7 +236,17 @@ def format_process_event(record):
     phase = record.get('step_id')
     task = str(record.get('task_id') or record.get('id') or '')
     message, tag = None, '任务'
-    if kind == 'TASK' and event in EVENTS:
+    if kind == 'CONTROL':
+        action = {'continue': '继续', 'skip': '跳过', 'pause': '暂停', 'cancel': '取消任务'}.get(record.get('action'), record.get('action') or '')
+        message = {'received': '收到控制请求，等待处理', 'processing': '正在处理控制请求',
+                   'accepted': '控制请求已处理；下发与执行结果见后续日志',
+                   'rejected': '控制请求未受理'}.get(event, '控制请求') + '：' + action
+    elif kind == 'ADVICE':
+        message = {'started': '后台开始分析异常建议，不阻塞任务推进',
+                   'queued': '异常建议后台繁忙，保留最新待分析状态；任务推进不等待',
+                   'completed': '异常建议已更新',
+                   'discarded': '任务状态已变化，丢弃迟到异常建议'}.get(event, '后台异常建议')
+    elif kind == 'TASK' and event in EVENTS:
         message = EVENTS[event]
         if event in {'task_opened', 'task_restored'}:
             message += '：' + str(record.get('task_desc') or '任务')
