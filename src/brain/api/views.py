@@ -166,8 +166,9 @@ def register_views(app, application):
         reception = '/reception/' in request.path
         path = root / 'config/business' / ('reception_sop.yaml' if reception else 'demo_sop.yaml')
         version = 'v1'
-        if reception and path.with_name('reception_sop_v2.yaml').is_file():
-            path = path.with_name('reception_sop_v2.yaml'); version = 'v2'
+        generated = root / 'data/business/reception_sop_v2.yaml'
+        if reception and generated.is_file():
+            path = generated; version = 'v2'
         try:
             payload = {'success': True, 'sop': yaml.safe_load(path.read_text())}
             if reception:

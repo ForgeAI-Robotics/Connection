@@ -29,6 +29,11 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 
 网页保留原路径，通过 `BrainClient` 转发。配置校验由 Ops `POST /api/validate-config` 提供。反思线程读取任务快照，按任务和账本版本去重；评测、影子和发布继续在学习侧，只有新任务绑定新快照，已开任务保留原版本。
 
+`GET /api/reception/sop` 优先展示本机 `data/business/reception_sop_v2.yaml`（`version=v2`），
+没有生成文件时展示 `config/business/reception_sop.yaml`（`version=v1`）。不再读取配置目录中的
+历史 v2 副本；生成文件解析失败时返回错误，不以基础 SOP 冒充生成结果。`GET /api/sop`
+仍展示 `config/business/demo_sop.yaml`。这些接口只展示内容，不发布经验或修改任务规则。
+
 任务网页首页仅展示大脑连接状态、接待环境，以及任务发布、控制、进度、异常、历史和总结。
 机器人坐标、录像、四宫格与回放、配置校验、工具列表、belief 和桌面整理 SOP 已从首页移除，
 不另设调试页，也不再由首页请求或轮询这些数据。现有后端接口与大脑侧任务证据采集保留；SIMPLE O6 仍可通过脚本运行。

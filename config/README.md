@@ -6,10 +6,12 @@
 
 - `examples/`：安全的公开模板；`scripts/bootstrap_local.py` 将它们复制到各模块约定的本地路径。
 - `dependencies/`：轻量开发、飞书和 3DGS 专用安装清单。
+- `business/`、`scene/`：随代码评审的基础业务规则与静态场景；生成的 SOP、经验和现场数据放在 `data/`。
 
 项目完整 Python 依赖集合以根目录 `pyproject.toml` 为声明源，`uv.lock` 为锁定结果。两者必须保留在项目根目录，以兼容 uv 和 Python 构建工具。`dependencies/` 下的清单是按运行边界提取的安装子集，服务于本机环境、组件启动或 CI；修改重叠依赖时必须与 `pyproject.toml` 保持兼容。
 
-Git 忽略规则保留在根目录 `.gitignore`。Git 不支持从 `config/` 引入一份全局忽略文件，因此不要复制第二份规则。公开模板集中在这里，实际生成的 `.env`、`*/config.yaml` 和 `serve_dream/dream_navigation_sop.yaml` 继续由根目录 `.gitignore` 排除。
+Git 忽略规则保留在根目录 `.gitignore`，不另建第二份规则。下表右侧的本机文件均不入 Git；
+`config/` 不能整体忽略，公开模板、依赖清单、基础业务规则和静态场景仍需版本管理。
 
 ## 初始化本地配置
 
@@ -21,13 +23,42 @@ python scripts/bootstrap_local.py
 
 ```text
 config/examples/env.example                 -> .env
-config/examples/brain.yaml                 -> config/brain.yaml
+config/examples/networks.yaml               -> config/networks.yaml
+config/examples/execution.yaml              -> config/execution.yaml
+config/examples/brain.yaml                  -> config/brain.yaml
 config/examples/slaver.yaml                 -> config/slaver.yaml
 config/examples/robot_api.yaml              -> config/robot_api.yaml
 config/examples/serve_dream.yaml             -> config/dream.yaml
-config/examples/serve_real.yaml              -> extensions/serve_real/config.yaml
-config/examples/dream_navigation_sop.yaml    -> serve_dream/dream_navigation_sop.yaml
+config/examples/serve_real.yaml              -> config/serve_real.yaml
+config/examples/dream_navigation_sop.yaml    -> config/dream_navigation_sop.yaml
 ```
+
+模板里的 `192.0.2.*`、`*_user`、`/path/to/...` 是占位值，初始化后按机器填写。
+`config/examples/execution_reception_protocol.yaml` 是手动选择的协议模拟预设，不在初始化时覆盖运行环境。
+
+## 多服务器代码同步
+
+vla-ai 与 nav-ai 使用同一 Git 分支同步代码和公开模板：修改端先拉取、修改、验证并提交推送，
+另一端再 `git pull --ff-only`。可双向进行；遇到本地改动或分叉先保留并审查，不能用强制覆盖解决。
+各机的 `.env`、上表中的本机 YAML、`venv/`、`data/`、`logs/` 独立保留，不通过 Git 或整目录覆盖同步。
+
+```bash
+git status --short
+git pull --ff-only
+python3 scripts/bootstrap_local.py
+```
+
+初始化只补缺失文件；模板更新不会合并进已有本机配置。新增必需字段需按变更说明补入本机文件，
+依赖声明变化需更新对应环境；常驻进程需按运行状态安排重载。拉取代码不等于运行实例已经更新，
+不能据此重置任务、自动继续动作或切换环境。
+
+首次升级到取消跟踪 `networks.yaml` 的版本前，先将原文件备份到忽略提交的目录并记录校验值，
+保留已有未提交改动后再拉取，最后恢复原文件并核对。Git 中删除已跟踪文件会影响另一端工作树，
+不能仅靠新增忽略规则保护首次升级。
+
+历史 `config/business/reception_sop_v2.yaml` 同样先备份，再迁入 `data/business/reception_sop_v2.yaml`；
+若目标已有文件则保留目标，将历史副本另行归档，不覆盖新的运行数据。接待 SOP 展示优先读取该
+运行数据文件，不存在时使用 `config/business/reception_sop.yaml`；显示生成结果不代表规则已发布。
 
 ## 依赖边界
 

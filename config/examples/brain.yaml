@@ -41,6 +41,7 @@ experience:
 camera:
   enabled: false
 reflection:
+  # Candidates go to data/memory/reflections/; generated SOPs go to data/business/.
   enabled: true
   use_llm: true
   write_sop: false
@@ -106,8 +107,3 @@ reception_real:
       api_base: https://api.deepseek.com
       api_key_env: CLOUD_API_KEY
       timeout_sec: 60
-# Post-task DeepSeek/template reflection for every top-level task (sim and real).
-# Candidates are written under data/memory/reflections/. write_sop remains mock-reception only.
-reflection:
-  enabled: true
-  write_sop: false

@@ -90,3 +90,6 @@ Thumbs.db
 /config/dream.yaml
 /config/serve_real.yaml
 /config/dream_navigation_sop.yaml
+/config/networks.yaml
+# Historical generated SOPs belong in data/business/, not the source tree.
+/config/business/*_sop_v2.yaml

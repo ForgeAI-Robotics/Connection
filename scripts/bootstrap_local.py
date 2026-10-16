@@ -5,6 +5,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / 'config' / 'examples'
 PAIRS = [
+    ('networks.yaml', 'config/networks.yaml'),
     ('execution.yaml', 'config/execution.yaml'),
     ('env.example', '.env'),
     ('brain.yaml', 'config/brain.yaml'),

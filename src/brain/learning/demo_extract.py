@@ -1,4 +1,4 @@
-"""以人类示教视频更新 SOP —— demo 准备第4步"人类示范一次 → 可复用记忆"的大脑端。
+"""从人类示教动作提炼候选记忆，不直接改写基础 SOP。
 
 分工:
   [video_to_actions·上游] 第一人称示范视频 → qwen-vl → 动作序列(segments + summary)
@@ -8,7 +8,7 @@
   · Task Specific Memory:这次示范的【具体实例事实】(哪里取/放哪/这次特情)。换场景就可能变。
       → reception_memory/demonstration_*.json,部署时 retrieve 给规划器 re-ground。
   · Global Memory / SOP:【通用规则】(换任何接待都成立)。
-      → global_memory.json 的 success_rules + 追加进 reception_sop.yaml 的 learned_rules。
+      → 由 DemoLearning 保存至 data/business/demonstration_candidates/，待评测与发布。
 
 ★★ 反幻觉是硬要求:只提【动作序列里明确出现】的,严禁 LLM 靠常识脑补视频里没有的东西
    (位置别精确化、没出现的动作别补)。宁可少写。
@@ -18,9 +18,7 @@
 接口 = 动作序列 JSON(video_to_actions 的输出):
   {"task_summary": "...", "segments": [{"start_time","end_time","action","object","confidence"}, ...]}
 
-用法:
-  python learn_from_demo.py demo_actions.json --dry-run   # 只提炼打印不落盘
-  python learn_from_demo.py demo_actions.json             # 提炼并写入 Task Specific + Global + SOP
+入口调用 learn_from_demo(..., write=False) 提炼；保存统一由 DemoLearning 管理。
 """
 
 import json
@@ -118,18 +116,6 @@ def _existing_rules():
     import yaml
     sop = yaml.safe_load(open(str(workspace_root() / "config/business/reception_sop.yaml"), encoding="utf-8")) or {}
     return sop.get("learned_rules", [])
-
-
-def _append_learned_rules(new_rules):
-    """通用规则文本追加到 reception_sop.yaml 的 learned_rules 末尾(它是文件最后一节,
-    保留全部原注释;safe_dump 会丢注释,故用文本追加)。返回追加条数。"""
-    if not new_rules:
-        return 0
-    tag = f"[demo·{date.today().isoformat()}]"
-    with open(str(workspace_root() / "config/business/reception_sop.yaml"), "a", encoding="utf-8") as f:
-        for r in new_rules:
-            f.write(f"  - {tag} {r}\n")
-    return len(new_rules)
 
 
 def save_demonstration(task_specific, raw, name="reception_restock"):

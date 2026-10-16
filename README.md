@@ -63,6 +63,7 @@ venv/core/bin/python -m execution.slaver
 
 ## 日常配置与数据
 
+- `config/networks.yaml`：本机网络地址和 SSH 用户，参考模板为 `config/examples/networks.yaml`；不入 Git。
 - `config/brain.yaml`：大脑模型、任务与反思设置。
 - `config/execution.yaml`：接待、通用执行、观察各模块的仿真／真机选择。
 - `config/robot_api.yaml`、`config/slaver.yaml`、`config/dream.yaml`：执行配置。
@@ -74,6 +75,9 @@ venv/core/bin/python -m execution.slaver
 - `data/system/execution.json`：已经应用的环境快照。
 - `data/retired/`：只读保存的历史数据，不运行旧程序。
 - `logs/YYYY-MM-DD/<服务>/`：服务日志。
+
+多服务器通过 Git 同步代码和公开模板，本机配置、依赖环境及运行数据各自保留。
+首次解除网络配置跟踪的升级步骤与日常同步流程见[配置说明](config/README.md#多服务器代码同步)。
 
 网页、飞书、语音文本入口、外部 API 以及接待演示共用 Runtime。通用任务由 Planner 生成步骤；接待与观察使用业务包；桌面整理通过现有规则展开。Runner 不改路线；Verifier 只输出 PASS / FAIL / UNKNOWN。反思读取任务快照，不改正在执行的任务，也不自动改内核代码。
 

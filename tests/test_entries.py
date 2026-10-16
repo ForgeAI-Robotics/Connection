@@ -15,6 +15,40 @@ from brain.learning.demo import DemoLearning
 
 
 class EntryTests(unittest.TestCase):
+    def test_sop_view_reads_runtime_generation_without_mutating_or_dispatching(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'CONNECTION_WORKSPACE': directory}):
+            root = Path(directory)
+            seed = root / 'config/business/reception_sop.yaml'
+            seed.parent.mkdir(parents=True)
+            seed.write_text('learned_rules: [base]\n')
+            seed.with_name('demo_sop.yaml').write_text('standard_layout: []\n')
+            stale = seed.with_name('reception_sop_v2.yaml')
+            stale.write_text('learned_rules: [stale-checkout-copy]\n')
+            generated = root / 'data/business/reception_sop_v2.yaml'
+            config = {'reflection': {'enabled': False}, 'reception_real': {'kernel_runtime_dir': str(root / 'kernel')}}
+            ports = Mock(side_effect=AssertionError('SOP display must not open an execution port'))
+            application = BrainApplication(create_service(config, port_factory=ports)).start()
+            try:
+                client = create_app(application).test_client()
+                initial = client.get('/api/reception/sop').json
+                self.assertEqual((initial['version'], initial['sop']['learned_rules']), ('v1', ['base']))
+                generated.parent.mkdir(parents=True, exist_ok=True)
+                generated.write_text('learned_rules: [local-generated]\n')
+                current = client.get('/api/reception/sop').json
+                self.assertEqual((current['version'], current['sop']['learned_rules']), ('v2', ['local-generated']))
+                self.assertEqual(client.get('/api/sop').json['sop'], {'standard_layout': []})
+                generated.write_text('learned_rules: [unterminated')
+                failed = client.get('/api/reception/sop')
+                self.assertEqual(failed.status_code, 500)
+                self.assertFalse(failed.json['success'])
+                self.assertEqual(seed.read_text(), 'learned_rules: [base]\n')
+                self.assertEqual(stale.read_text(), 'learned_rules: [stale-checkout-copy]\n')
+                self.assertEqual(generated.read_text(), 'learned_rules: [unterminated')
+                ports.assert_not_called()
+                self.assertFalse((root / 'kernel/current_task.json').exists())
+            finally:
+                application.close()
+
     def test_chat_and_ambiguous_intent_share_brain_model_without_task_dispatch(self):
         with tempfile.TemporaryDirectory() as root, patch.dict('os.environ', {'CONNECTION_WORKSPACE': root}):
             config = {'reflection': {'enabled': False}, 'reception_real': {'kernel_runtime_dir': root + '/kernel'}}

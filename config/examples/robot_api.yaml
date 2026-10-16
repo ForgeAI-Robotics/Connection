@@ -7,7 +7,7 @@ backends:
     provide_state: 1
     accept_action: 1
     required: 1
-    url: http://192.168.31.69:18770
+    url: http://192.0.2.60:18770  # documentation address; configure the local simulator
     timeout: 900
     launch_hint: 远端独立服务，参见 docs/接口说明_simple o6 仿真.md
   mujoco:
@@ -41,7 +41,7 @@ backends:
     required: 1
     url: http://127.0.0.1:5006
     timeout: 200
-    launch_hint: serve_dream/main.py
+    launch_hint: python -m execution.dream
   isaacsim:
     enabled: 0
     provide_state: 0

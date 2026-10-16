@@ -1,0 +1,30 @@
+# Public reference only: replace documentation addresses and SSH users locally.
+# This file is copied to ignored config/networks.yaml without overwriting it.
+# Select a locally configured Wi-Fi profile through active; passwords stay in .env.
+active: example_office
+roles:
+  brain:
+    name: 大脑
+    http_port: 5000
+    web_port: 8888
+    ops_port: 5678
+    ssh_user: brain_user
+  nav:
+    name: 导航
+    ssh_user: nav_user
+    http_port: 8001
+    review_port: 9882
+  control:
+    name: 操控
+    ssh_user: control_user
+    http_port: 8091
+  robot:
+    name: 真机
+    ssh_user: robot_user
+    camera_port: 5555
+wifis:
+  example_office:
+    brain: 192.0.2.10
+    nav: 192.0.2.20
+    control: 192.0.2.30
+    robot: 192.0.2.40
