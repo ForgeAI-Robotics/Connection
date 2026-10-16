@@ -28,10 +28,10 @@ from typing import TYPE_CHECKING, Any, Dict
 import yaml
 from dotenv import load_dotenv
 from execution.collaboration import Collaborator
+from shared.paths import workspace_root
 
 # Load .env from project root
-_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-load_dotenv(os.path.join(_project_root, '.env'))
+load_dotenv(workspace_root() / '.env')
 
 if TYPE_CHECKING:
     from memory import AgentLogger
