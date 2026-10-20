@@ -29,7 +29,7 @@ Ops :5678 → 服务启停、健康、日志、运行环境切换
 | `scripts/` | 配置初始化、测试、环境切换、一次性数据迁移 |
 | `simulation/` | Desk、MuJoCo、3DGS、SIMPLE 远端后端及资产 |
 | `infra/` | systemd 与 Docker/ROS 部署设施 |
-| `docs/` | 架构、接口、实施与联调记录 |
+| `docs/` | 接口、按模块持续维护的联调验证与系统架构 |
 
 `src` 是源码根，不是 Python 包名。项目只有根目录这一份 `pyproject.toml`；启动和导入直接使用 `brain`、`entries`、`ops` 等包。
 
