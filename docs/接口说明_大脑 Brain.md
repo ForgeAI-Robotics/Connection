@@ -45,12 +45,48 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 普通抓取、放置、导航请求不因未匹配接待 SOP 而拒绝；没有要求接待的普通动作交给通用 Planner 校验能力与场景。
 接待的数量、物体、桌子和路线限制适用于接待请求，不扩展为全部任务的限制。
 
+Desk 通用规划中的每个 `subtask` 只能包含一个抓取或放置动作，抓取后放置必须拆成两个步骤。
+派发前核验整份计划；“抓取 milk_1 并放置到 milk_area”等合并动作会被拒绝并进入
+`recovery_required`，不会截取其中的抓取动作后把整项请求记为完成。已知目标区的定点导航
+仍按原规则省略，其他后端已支持的搜索抓取合同不变。
+
 正式大脑的任务选择、规划、异常建议、`/api/task_intent` 的模型分流、`/api/chat`、`/api/chat/route`
 及后台反思共用 `config/brain.yaml` 的 `model` 配置；反思来源记录实际模型名称。
 切换 OpenAI 兼容服务时一起设置 `model_select`、`model_dict.cloud_model`、`cloud_server` 和对应凭据引用，
 重启大脑后生效，不更改任务账本、路线或核验标准，不自动故障切换。
+
+`model.max_tokens`、`temperature`、`top_p`、`seed` 可显式设置，缺省分别保持
+2048、0.2、0.9、42；`presence_penalty`、`extra_body` 只在配置时转发。
+思考模型可通过 `extra_body.chat_template_kwargs.enable_thinking` 及后端支持的
+`top_k` 等参数启用对应模式，不能只修改模型服务而让大脑仍发送原来的输出上限。
+
+现场描述使用 `config/slaver.yaml` 的 `camera.vlm` 配置，支持 `max_tokens`、
+`temperature`、`top_p`、`presence_penalty`、`seed`、`extra_body` 和 HTTP `timeout_sec`；
+未配置时保持原默认值。`config/brain.yaml` 的 `brain.observation_timeout_sec`
+控制描述步骤期限，默认 30 秒，必须为正的有限值。长思考模型须同时核对生成预算、
+HTTP 等待时间和步骤期限；增加等待不降低核验要求，也不改变取消与迟到结果隔离。
+
+本地 VLM 可通过上述端点配置接入，并用
+`camera.vlm.extra_body.chat_template_kwargs.enable_thinking=false` 对现场描述关闭思考；
+现场描述适配器每次读取配置，环境变量端点覆盖仍有优先级。图像尺寸上限、任务专用
+结构化输出与延迟必须分别验证，不能把单次缓存命中的速度当作新图或并发保证。
+本机切换及原图／4MP 实测见[本地 VLM 识别稳定性](多端联调_20261019_本地VLM识别稳定性.md)。
+模型服务执行序列数与大脑 Runtime 任务并发不是同一配置；增加推理服务的并发不改变
+任务状态权威、动作派发顺序或核验标准。当前本机推理服务的四序列档及单通道三机器人
+适用边界见该联调第 6 节，不能将短字段模型耗时当作整条业务链路验收。
+
 视觉／照片核验仍使用 `reception_real.verification.vlm/llm` 的独立配置，需要分别核对；
-不传大脑配置的历史独立学习脚本保留原接口。实际模型切换与验证见[千问切换联调](多端联调_20261015_千问模型切换与O6任务.md)。
+切换图片 VLM 不会同时切换文字裁决 LLM，也不会开启原来关闭的照片核验开关。
+实际模型切换与验证见[千问切换联调](多端联调_20261015_千问模型切换与O6任务.md)。
+
+2026-10-20 图片接入更新：上述视觉配置均支持显式 `auth_required: false`，用于无鉴权本地模型；
+未配置时仍要求各入口原有的云端凭据，不从模型地址猜测是否免鉴权。`camera.vlm` 还被桌面
+双图判断、Slaver 相机／候选物体识别及抽帧学习复用，显式生成参数与 `extra_body` 会转发；
+未配置的调用预算保留各入口默认值，配置后的 `max_tokens` 会覆盖对应默认预算。
+`extra_body` 不能覆盖 model、messages、流式方式和标准生成参数。SDK 回环模型请求不继承桌面代理。
+Slaver 诊断遇到空回答、模型失败或无合法状态时返回 unknown，工具结果为 failure，不报 normal。
+接待核验配置在大脑初始化时绑定，旧 Slaver 相机配置在模块导入时读取，修改文件不等于既有进程生效。
+本机配置、调用范围、真实测试与部署限制见[本地图像 API 替换](多端联调_20261020_本地图像API替换.md)。
 
 `GET /api/task_status` 增加以下只读字段：
 

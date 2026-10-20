@@ -143,6 +143,9 @@ class PlanningInputs:
             all_environments_info["execution_rules"] = (
                 "固定桌面，所有物体和区域均在同一操作范围内，没有导航能力，不生成导航步骤。"
                 "抓取写成‘抓取 milk_1’，放置写成‘放置 milk_1 到 milk_area’，"
+                "每个 subtask 只能包含一个动作。抓取和放置必须拆成两个列表元素，"
+                "例如先‘抓取 milk_1’，再‘放置 milk_1 到 milk_area’；"
+                "禁止把‘抓取 milk_1 并放置到 milk_area’合并为一个步骤，否则整份计划会被拒绝。"
                 "也可直接选已有技能‘整理牛奶’等，由大脑展开。"
                 "已持有的物体直接放置；已在目标区且已释放的物体无需重复抓取。"
             )

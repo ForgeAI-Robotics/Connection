@@ -27,6 +27,7 @@ import tempfile
 import urllib.request
 
 from brain.adapters import vlm as vlm_judge
+from shared.vision_options import generation_options
 
 _TASK_HINT = "会议接待补货:人从茶水间取可乐、搬运到会议室、在桌上间隔摆放"
 
@@ -101,7 +102,7 @@ def _extract_ffmpeg(video, fps, max_frames, tmpdir):
 def video_to_actions(video, fps=2.0, max_frames=24, hint=_TASK_HINT):
     """视频 → {task_summary, segments:[{start_time,end_time,action,object,confidence}]}。"""
     ep = vlm_judge._endpoint_cfg()
-    key = vlm_judge._api_key(ep["key_names"])
+    key = vlm_judge._endpoint_key(ep)
     if not key:
         raise RuntimeError(f"无 VLM API key(需环境变量 {' 或 '.join(ep['key_names'])})")
 
@@ -113,14 +114,15 @@ def video_to_actions(video, fps=2.0, max_frames=24, hint=_TASK_HINT):
             content.append({"type": "text", "text": f"[t={t:.1f}s]"})
             content.append({"type": "image_url",
                             "image_url": {"url": f"data:image/jpeg;base64,{vlm_judge._to_jpg_b64(path)}"}})
+        config = vlm_judge._vlm_cfg()
         body = json.dumps({"model": ep["model"],
                            "messages": [{"role": "user", "content": content}],
-                           "temperature": 0}).encode("utf-8")
+                           **generation_options(config, max_tokens=None, raw=True)}).encode("utf-8")
         req = urllib.request.Request(
             ep["api_base"].rstrip("/") + "/chat/completions", data=body, method="POST",
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
         print(f"调 {ep['model']} 解析动作序列…", flush=True)
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with urllib.request.urlopen(req, timeout=float(config.get('timeout_sec', 120))) as r:
             out = json.loads(r.read())["choices"][0]["message"]["content"]
 
     m = re.search(r"\{.*\}", out, re.S)

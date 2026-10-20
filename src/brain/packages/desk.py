@@ -48,7 +48,9 @@ def normalize_subtasks(subtasks, world, zones):
     normalized = []
     for item in subtasks:
         text = item.get("subtask", "")
-        action = parse_sim_action(text)
+        # Do not truncate a compound instruction to whichever verb matches first.
+        # Otherwise a grasp-and-place plan can finish after only the grasp.
+        action = parse_sim_action(text, strict=True)
         if not action:
             raise Rejected(f"Desk 不支持计划步骤：{text}")
         kind = action[0]

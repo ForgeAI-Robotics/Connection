@@ -20,6 +20,7 @@ from collections import Counter
 import yaml
 
 from shared.paths import workspace_root
+from shared.vision_options import generation_options
 _ROOT = str(workspace_root())
 _HERE = str(workspace_root() / "data/business")
 _CACHE = "/tmp/vlm_judge_cache"
@@ -70,7 +71,14 @@ def _endpoint_cfg():
             "api_base": cfg.get("api_base", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
             "model": cfg.get("model", "qwen-vl-max"),
             "key_names": ("VLM_API_KEY", "CLOUD_API_KEY"),
+            "auth_required": cfg.get("auth_required", True),
             "detail": None}
+
+
+def _endpoint_key(endpoint):
+    if endpoint.get("auth_required", True) is False:
+        return "local"
+    return _api_key(endpoint["key_names"])
 
 
 def _to_jpg_b64(path):
@@ -109,7 +117,7 @@ def judge(current_dir, standard_dir, sop, current_img=None):
     if not cur:
         return None, f"current 目录无照片: {current_dir}"
     ep = _endpoint_cfg()
-    key = _api_key(ep["key_names"])
+    key = _endpoint_key(ep)
     if not key:
         return None, f"无 API key(需环境变量 {' 或 '.join(ep['key_names'])})"
 
@@ -159,11 +167,14 @@ def judge(current_dir, standard_dir, sop, current_img=None):
     ]
     if std:
         content += [{"type": "text", "text": "【标准图】(目标):"}, _img(std)]
+    config = _vlm_cfg()
+    options = generation_options(config, max_tokens=2000, raw=True)
+    if "VLM_TEMPERATURE" in os.environ:
+        options["temperature"] = float(os.environ["VLM_TEMPERATURE"])
     body = json.dumps({
         "model": ep["model"],
         "messages": [{"role": "user", "content": content}],
-        "max_tokens": 2000,
-        "temperature": float(os.environ.get("VLM_TEMPERATURE", 0)),  # 默认 0:去掉采样抖动
+        **options,
     }).encode()
 
     import urllib.request
@@ -173,7 +184,7 @@ def judge(current_dir, standard_dir, sop, current_img=None):
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"})
     started = time.perf_counter()
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with urllib.request.urlopen(req, timeout=float(config.get("timeout_sec", 120))) as r:
             status = getattr(r, "status", 200)
             raw = json.loads(r.read())["choices"][0]["message"]["content"]
     except Exception as exc:

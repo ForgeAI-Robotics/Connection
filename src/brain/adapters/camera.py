@@ -3,6 +3,7 @@ import json
 import time
 from contracts.look import cameras_for
 from brain.adapters.vlm import _endpoint_cfg, _api_key, _vlm_cfg
+from shared.vision_options import generation_options, client_options
 
 
 def capture_scene(context='', camera_name=''):
@@ -20,13 +21,15 @@ def capture_scene(context='', camera_name=''):
     if not captured:
         raise RuntimeError('截图失败：所有相机均不可用')
     endpoint, config = _endpoint_cfg(), _vlm_cfg()
-    client = OpenAI(api_key=_api_key(endpoint['key_names']), base_url=endpoint['api_base'], timeout=60, max_retries=0)
-    options = {'extra_body': config['extra_body']} if config.get('extra_body') else {}
+    key = 'local' if endpoint.get('auth_required', True) is False else _api_key(endpoint['key_names'])
+    client = OpenAI(api_key=key, base_url=endpoint['api_base'],
+                    **client_options(endpoint['api_base'], timeout=config.get('timeout_sec', 60)))
+    options = generation_options(config, max_tokens=1000)
     url = str(endpoint['api_base']).rstrip('/') + '/chat/completions'
     started = time.perf_counter()
     try:
         result = client.chat.completions.create(model=endpoint['model'], messages=[{'role': 'user', 'content': content}],
-            max_tokens=config.get('max_tokens', 1000), temperature=0, **options)
+            **options)
     except Exception as exc:
         _log_capture(url, endpoint['model'], context, started, error=exc)
         raise

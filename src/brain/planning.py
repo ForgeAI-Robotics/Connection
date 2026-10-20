@@ -39,8 +39,14 @@ class PlanningService:
                 raise Rejected("所选接待 SOP 与流程快照版本不一致")
             return Plan(skill.phases(), "从已校验的接待 Skill 定义展开步骤，交给统一 Runtime 管理。")
         if package == "look":
+            from dataclasses import replace
+            import math
             from brain.packages.look import PHASES
-            return Plan(tuple(PHASES), "现场观察交给 Runtime，只读取现场，不下发身体动作。")
+            timeout = float((self.config.get("brain") or {}).get("observation_timeout_sec", 30))
+            if not math.isfinite(timeout) or timeout <= 0:
+                raise Rejected("observation_timeout_sec 必须为正的有限秒数")
+            return Plan(tuple(replace(step, deadline_sec=timeout) for step in PHASES),
+                        "现场观察交给 Runtime，只读取现场，不下发身体动作。")
         if package == "desk":
             planned = self.desk_planner(runtime.record["task_desc"])
             if runtime.record["execution_backend"] == "desk":

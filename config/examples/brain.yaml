@@ -15,6 +15,12 @@ tts:
 model:
   model_select: deepseek-chat
   model_retry_planning: 5
+  # 可按模型官方配置调整；不设置时保持原生成参数。
+  # max_tokens: 32768
+  # temperature: 1.0
+  # top_p: 0.95
+  # presence_penalty: 1.5
+  # extra_body: {top_k: 20, chat_template_kwargs: {enable_thinking: true}}
   model_dict:
     cloud_model: deepseek-chat
     cloud_type: default
@@ -48,6 +54,8 @@ reflection:
   # 候选规则发布目录。不设置时，新任务不绑定规则版本。
   # release_dir: data/releases
 brain:
+  # 视觉任务的步骤期限（默认 30 秒）；长思考模型需与视觉 HTTP 超时分别核对。
+  # observation_timeout_sec: 1800
   reasoning:
     # 明确的 SOP 触发词直接命中；其它任务由 LLM 选择业务包，再按现场能力规划。
     semantic_selection: true
@@ -102,6 +110,9 @@ reception_real:
       api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
       api_key_env: VLM_API_KEY
       timeout_sec: 120
+      # 独立配置本地视觉核验时，可设 auth_required: false，并修改 model/api_base。
+      # extra_body: {chat_template_kwargs: {enable_thinking: false}}
+      # 核验的 llm 端点及核验规则不随 vlm 端点改变。
     llm:
       model: deepseek-chat
       api_base: https://api.deepseek.com

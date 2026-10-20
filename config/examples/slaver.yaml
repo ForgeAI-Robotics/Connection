@@ -30,6 +30,14 @@ camera:
     model: qwen3-vl-plus
     api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
     max_tokens: 400
+    # 无鉴权的本地服务可设 auth_required: false；云端默认仍要求凭据。
+    # 本地 Qwen 非思考：extra_body: {chat_template_kwargs: {enable_thinking: false}}
+    # 长思考模型可显式设置 max_tokens: 32768，并按官方要求设置下列参数。
+    # temperature: 1.0
+    # top_p: 0.95
+    # presence_penalty: 1.5
+    # timeout_sec: 1800
+    # extra_body: {top_k: 20, chat_template_kwargs: {enable_thinking: true}}
 robot:
   call_type: local
   path: robot

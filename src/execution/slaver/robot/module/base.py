@@ -237,9 +237,8 @@ def _vlm_observe() -> set:
             vcfg = ((yaml.safe_load(f) or {}).get('camera') or {}).get('vlm') or {}
         model = vcfg.get('model', 'qwen-vl-max')
         api_base = vcfg.get('api_base', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1')
-        max_tokens = int(vcfg.get('max_tokens', 800))
-        extra_body = vcfg.get('extra_body') or {}   # GLM 关思考 {thinking:{type:disabled}};原样透传
-        key = os.environ.get('VLM_API_KEY') or os.environ.get('CLOUD_API_KEY', '')
+        from shared.vision_options import api_key as vision_api_key, generation_options, client_options
+        key = vision_api_key(vcfg)
         # 用英文 prompt(mimo 对中文常思考到 token 耗尽返回空);清单里选可见项,逗号分隔
         prompt = (
             "These are photos from a robot camera looking around a kitchen from several angles. "
@@ -251,12 +250,11 @@ def _vlm_observe() -> set:
         content = [{"type": "text", "text": prompt}]
         for _c, b64 in images.items():
             content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
-        client = OpenAI(api_key=key, base_url=api_base)
+        client = OpenAI(api_key=key, base_url=api_base,
+                        **client_options(api_base, timeout=vcfg.get('timeout_sec', 60)))
         # 推理模型(mimo/GLM-4.6V)要么关思考(extra_body.thinking.disabled,~5s),要么留足 max_tokens。
         create_kw = dict(model=model, messages=[{"role": "user", "content": content}],
-                         max_tokens=max_tokens, temperature=0)
-        if extra_body:
-            create_kw['extra_body'] = extra_body
+                         **generation_options(vcfg, max_tokens=800))
         # 免费 Flash 档偶发 429 限流("访问量过大"):退避重试,别让限流被当成"没看到"→ 误判漂移。
         import time as _time
         resp = None

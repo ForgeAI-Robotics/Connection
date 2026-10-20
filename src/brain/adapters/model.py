@@ -89,14 +89,21 @@ class ModelClient:
         base = str(getattr(self.global_model, 'base_url', '') or '').rstrip('/')
         endpoint = base + ('' if base.endswith('/chat/completions') else '/chat/completions')
         purpose = _purpose(messages)
+        settings = self.config["model"]
+        generation = {
+            "temperature": settings.get("temperature", 0.2),
+            "top_p": settings.get("top_p", 0.9),
+            "max_tokens": settings.get("max_tokens", 2048),
+            "seed": settings.get("seed", 42),
+        }
+        for key in ("presence_penalty", "extra_body"):
+            if key in settings:
+                generation[key] = settings[key]
         try:
             response = self.global_model.chat.completions.create(
                 model=self.model_name,
                 messages=messages,
-                temperature=0.2,
-                top_p=0.9,
-                max_tokens=2048,
-                seed=42,
+                **generation,
             )
         except Exception as exc:
             self._log_forward(purpose, endpoint, started, request_text=_excerpt(messages), error=exc)

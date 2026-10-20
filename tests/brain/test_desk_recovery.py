@@ -112,6 +112,36 @@ class DeskRecoveryTests(unittest.TestCase):
             with self.assertRaises(Rejected):
                 normalize_subtasks([*self.plan, {'subtask': text}], self.world, self.zones)
 
+    def test_compound_action_is_rejected_before_any_desk_dispatch(self):
+        for text in ('抓取 milk_1 并放置到 milk_area',
+                     '导航到 milk_1 并抓取 milk_1',
+                     '抓取 milk_1 然后放置 milk_1 到 milk_area',
+                     '抓取milk_1并放置到milk_area'):
+            with self.subTest(text=text), self.assertRaises(Rejected):
+                normalize_subtasks([{'subtask': '抓取 milk_2'}, {'subtask': text}],
+                                   self.world, self.zones)
+        self.assertEqual(self.sent, [])
+        self.assertFalse(any(item['grasped'] for item in self.world.values()))
+
+    def test_runtime_rejects_compound_plan_before_executing_valid_prefix(self):
+        from brain.planning import PlanningService
+        planned = {'subtask_list': [
+            {'robot_name': 'FQrobot', 'subtask': '抓取 milk_2'},
+            {'robot_name': 'FQrobot', 'subtask': '抓取 milk_1 并放置到 milk_area'},
+        ]}
+        planning = PlanningService(self.config, Mock(plan=Mock(return_value=planned)),
+                                   Mock(), Mock(load=Mock(return_value='')))
+        runtime = create_runtime(self.config, self.port(), package='generic')
+        runtime.open_task('compound-regression', task_desc='把牛奶放到牛奶区',
+                          execution_backend='desk', planning=True)
+        runtime.plan(lambda: planning.plan(runtime, {}))
+        runtime.drive()
+        self.assertEqual(runtime.state, 'recovery_required')
+        self.assertIn('Desk 不支持计划步骤', runtime.record['blocked_reason'])
+        self.assertEqual(self.sent, [])
+        self.assertEqual(runtime.record['dispatch_counts'], {})
+        self.assertFalse(any(item['grasped'] for item in self.world.values()))
+
     def test_explicit_resume_does_not_overwrite_a_new_cancel(self):
         previous = self.legacy_task()
         port = self.port()

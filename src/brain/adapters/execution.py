@@ -564,7 +564,7 @@ class LookAdapter:
             pool.shutdown(wait=False, cancel_futures=True)
 
 
-def parse_sim_action(subtask: str):
+def parse_sim_action(subtask: str, *, strict=False):
     """Map a planner sentence onto the existing sim actions. Unknown text is refused."""
     text = str(subtask or "").strip()
     if not text:
@@ -588,10 +588,11 @@ def parse_sim_action(subtask: str):
     placed = re.fullmatch(r"(?:放置|放到|搁到)\s*(\S+?)\s*(?:到|至)\s*(\S+?)(?:\s*上)?[，。,.；;]?", text)
     if placed:
         return ("place", _sim_token(placed.group(1)), _sim_token(placed.group(2)))
-    grasped = re.search(r"(?:抓取|拿起|取走|拾起|捡起)\s*(\S+(?: \d+)?)", text)
+    match_action = re.fullmatch if strict else re.search
+    grasped = match_action(r"(?:抓取|拿起|取走|拾起|捡起)\s*(\S+(?: \d+)?)[。.]?", text)
     if grasped:
         return ("grasp", _sim_token(grasped.group(1)))
-    moved = re.search(r"(?:导航到|前往|走到|移动到|到达|靠近)\s*([^\s（()）]+(?: \d+)?)", text)
+    moved = match_action(r"(?:导航到|前往|走到|移动到|到达|靠近)\s*([^\s（()）]+(?: \d+)?)", text)
     if moved:
         return ("navigate", _sim_token(moved.group(1)))
     return None

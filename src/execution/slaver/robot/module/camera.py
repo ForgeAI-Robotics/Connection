@@ -8,6 +8,7 @@ import sys
 
 
 from shared.paths import workspace_root
+from shared.vision_options import api_key as vision_api_key, generation_options, client_options
 _project_root = str(workspace_root())
 
 import yaml
@@ -42,8 +43,6 @@ CAMERAS = (
 )
 VLM_MODEL = _vlm_cfg.get("model", "qwen-vl-max")
 VLM_API_BASE = _vlm_cfg.get("api_base", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1")
-VLM_MAX_TOKENS = _vlm_cfg.get("max_tokens", 1000)
-VLM_EXTRA_BODY = _vlm_cfg.get("extra_body") or {}  # GLM 关思考 {thinking:{type:disabled}};原样透传
 
 
 def _is_describe_request(context=""):
@@ -91,23 +90,21 @@ def _call_vlm(images, context=""):
                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
             })
 
-        api_key = os.environ.get("VLM_API_KEY") or os.environ.get("CLOUD_API_KEY", "")
-        client = OpenAI(api_key=api_key, base_url=VLM_API_BASE)
+        api_key = vision_api_key(_vlm_cfg)
+        client = OpenAI(api_key=api_key, base_url=VLM_API_BASE,
+                        **client_options(VLM_API_BASE, timeout=_vlm_cfg.get('timeout_sec', 60)))
         create_kw = dict(
             model=VLM_MODEL,
             messages=[{"role": "user", "content": content}],
-            max_tokens=VLM_MAX_TOKENS,
-            temperature=0,
+            **generation_options(_vlm_cfg, max_tokens=1000),
         )
-        if VLM_EXTRA_BODY:
-            create_kw["extra_body"] = VLM_EXTRA_BODY
         response = client.chat.completions.create(**create_kw)
         raw_content = response.choices[0].message.content
         result = raw_content.strip() if raw_content else ""
         print(f"[camera] VLM 原始输出: {repr(raw_content)}", file=sys.stderr)
 
         if not result:
-            return "normal", "VLM 返回空内容，无法判断场景状态"
+            return "unknown", "VLM 返回空内容，无法判断场景状态"
 
         if _is_describe_request(context):
             print(f"[camera] VLM 观察: {result}", file=sys.stderr)
@@ -115,13 +112,13 @@ def _call_vlm(images, context=""):
 
         lines = result.split("\n")
         status_line = lines[-1].strip().lower()
-        status = "abnormal" if "abnormal" in status_line else "normal"
+        status = status_line if status_line in {"normal", "abnormal"} else "unknown"
         description = "\n".join(lines[:-1]).strip() if len(lines) > 1 else result
         print(f"[camera] VLM 结果: {status}, 描述: {description}", file=sys.stderr)
         return status, description
     except Exception as e:
         print(f"[camera] VLM 调用失败: {e}", file=sys.stderr)
-        return "normal", f"VLM 调用失败: {e}"
+        return "unknown", f"VLM 调用失败: {e}"
 
 
 def capture_scene(context: str = "", camera_name: str = "") -> str:
@@ -151,6 +148,9 @@ def capture_scene(context: str = "", camera_name: str = "") -> str:
     n_cams = len(images)
     print(f"[camera] VLM 分析: {n_cams} 个相机", file=sys.stderr)
     scene_status, vlm_description = _call_vlm(images, context)
+
+    if scene_status == "unknown":
+        return json.dumps(["视觉状态无法确认：" + vlm_description, {"_status": "failure"}])
 
     cam_list = "、".join(images.keys())
     if scene_status == "described":

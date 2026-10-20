@@ -9,6 +9,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from shared.vision_options import api_key, generation_options
 
 
 class VerificationError(RuntimeError):
@@ -90,12 +91,15 @@ class ReceptionVerifier:
         model = str(endpoint_config.get("model") or "")
         if not api_base or not model:
             raise VerificationError("模型api_base/model未配置")
-        key = _env_key(endpoint_config.get("api_key_env"))
+        try:
+            key = api_key(endpoint_config, default_names=())
+            options = generation_options(endpoint_config, max_tokens=int(max_tokens), raw=True)
+        except ValueError as exc:
+            raise VerificationError(str(exc)) from exc
         body = {
             "model": model,
             "messages": messages,
-            "temperature": 0,
-            "max_tokens": int(max_tokens),
+            **options,
         }
         url = api_base + "/chat/completions"
         req = urllib.request.Request(
