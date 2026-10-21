@@ -82,7 +82,7 @@ policy RGB inputs when available. The last actual input is held until the next
 inference frame; it is not presented as a live camera stream. This rendering
 option does not add manipulation support to `bridge.py`. The temporary pick
 task facade, its lack of a verified place entry, and actual failures are recorded
-in the [dated integration evidence](../../../docs/多端联调_操控与仿真.md#e-n1-s9).
+in the [dated integration evidence](../../../docs/多端联调_操控与抓取.md#e-n1-s9).
 
 The fixture uses ground-truth localization and synthetic scans. Its motor-health
 input represents numerical/controller readiness. Neither a passing task nor a
