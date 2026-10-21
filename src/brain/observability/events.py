@@ -46,6 +46,16 @@ def emit(event, record, **details):
         details.setdefault('handoff_reason', observed.get('reason'))
         details.setdefault('handoff_confirmed', observed.get('confirmed') is True)
         details.setdefault('skipped_steps', observed.get('skipped_steps'))
+    elif event == 'recovery_plan_applied':
+        change = (record.get('plan_revisions') or [{}])[-1]
+        details.setdefault('plan_revision', record.get('plan_revision'))
+        details.setdefault('original_command_id', change.get('original_command_id'))
+        details.setdefault('observation_id', change.get('observation_id'))
+        details.setdefault('advice_id', change.get('advice_id'))
+    elif event == 'recovery_scene_observed':
+        observation = record.get('recovery_observation') or {}
+        details.setdefault('observation_id', observation.get('observation_id'))
+        details.setdefault('observation_scope', (observation.get('data') or {}).get('scope'))
     attempts = (record.get('steps', {}).get(phase) or {}).get('attempts') or []
     attempt = attempts[-1] if attempts else {}
     abnormal = (record.get('blocked_reason') or record.get('state') in

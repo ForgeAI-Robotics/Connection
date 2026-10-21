@@ -22,6 +22,19 @@ class BodyAdapter:
 
     contract_version = CONTRACT_VERSION
 
+    def observe_recovery(self):
+        """Read existing NAV status/world; this is not a new camera inspection."""
+        nav = self.dream.status()
+        world = self.dream.world()
+        if not isinstance(nav, dict) or nav.get("interface_online") is not True or not isinstance(world, dict):
+            raise RuntimeError("导航现场状态不可用")
+        # Do not copy historical commands or let a world read certify manipulation.
+        return {"scope": "navigation_status_and_world_not_visual", "source": "dream_http",
+                "navigation": {key: nav.get(key) for key in (
+                    "navigation_transport_ready", "motion_ready", "motion_blockers",
+                    "localization_initialized", "localization_approved", "active_command_id")},
+                "world": world}
+
     def __init__(self, dream, vla):
         self.dream = dream
         self.vla = vla
@@ -666,6 +679,13 @@ class SimAdapter:
     """Run a generic step on the existing simulation client. It does not call DREAM or VLA."""
 
     contract_version = CONTRACT_VERSION
+
+    def observe_recovery(self):
+        world, zones = self._read_world(), self._read_zones()
+        if not isinstance(world, dict) or world.get("success") is False or not isinstance(zones, dict):
+            raise RuntimeError("仿真现场状态不可用")
+        return {"scope": "simulation_state_not_visual", "source": "simulation_state",
+                "world": world, "zones": zones}
 
     def __init__(self, perform=None, world=None, zones=None, api=None):
         self._perform = perform

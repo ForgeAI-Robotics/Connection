@@ -38,13 +38,11 @@ function $(id) {
 }
 
 function layerItems() {
-  return snapshot[selectedLayer] || [];
+  const items = snapshot[selectedLayer] || [];
+  return selectedLayer === "environment" ? items.filter((item) => item.id === "simple_o7") : items;
 }
 
 function logItems() {
-  if (selectedLayer === "environment" && $("execution-support").open) {
-    return [...layerItems(), ...(snapshot.support || [])];
-  }
   return layerItems();
 }
 
@@ -320,20 +318,18 @@ function render(full) {
   $("layer-count").textContent = brain ? `1 个大脑 · ${items.filter((item) => item.id !== "master").length} 个输入通道` : `${items.length} 个${environment ? "仿真" : "真机"}服务`;
   $("layer-hint").textContent = {
     brain: "点击上方卡片查看对应服务的运行日志。",
-    environment: "统一配置仿真与真机，也可按模块单独选择。仿真服务在这里启停。",
+    environment: "选择 SIMPLE 仿真或真机，应用后到任务网页开始测试。",
     robot: "DREAM 导航与 VLA 操控。启停服务不会发布「开始接待」任务。",
   }[selectedLayer];
   document.querySelector(".workspace").classList.toggle("environment", environment);
   $("execution-settings").hidden = !environment;
-  $("execution-support").hidden = !environment;
   $("services-title").hidden = !environment;
-  $("tabs").hidden = brain;
+  $("tabs").hidden = brain || environment;
   document.querySelector(".workspace").classList.toggle("brain", brain);
   $("layer-hint").hidden = brain;
   renderCards($("cards"), items, full);
   $("log-pin").hidden = true;
   $("log-pin").textContent = "";
-  if (environment) renderCards($("support-cards"), snapshot.support || [], full);
   const tabs = $("tabs");
   const logs = logItems();
   const tabIds = logs.map((item) => item.id).join(",");
@@ -343,8 +339,7 @@ function render(full) {
   }
   markActive();
   dots(snapshot.brain || [], "brain-dots");
-  dots(snapshot.environment || [], "environment-dots");
-  dots(snapshot.support || [], "support-dots");
+  dots((snapshot.environment || []).filter((item) => item.id === "simple_o7"), "environment-dots");
   dots(snapshot.robot || [], "robot-dots");
 }
 
@@ -483,7 +478,7 @@ async function refreshLayer(layer) {
   if (statusInFlight.has(layer)) return;
   statusInFlight.add(layer);
   try {
-    const response = await fetch(`/api/status?layer=${layer}`, {signal: AbortSignal.timeout(15000)});
+    const response = await fetch(`/api/status?layer=${layer}&view=panel`, {signal: AbortSignal.timeout(15000)});
     if (!response.ok) throw new Error("服务状态读取失败");
     const data = await response.json();
     snapshot[layer] = data[layer];
@@ -516,7 +511,7 @@ async function refreshOverview() {
 function refresh() {
   // Each layer completes independently. Logs never wait for health checks.
   refreshLayer(selectedLayer);
-  for (const layer of ["brain", "environment", "support", "robot"]) {
+  for (const layer of ["brain", "environment", "robot"]) {
     if (layer !== selectedLayer) refreshLayer(layer);
   }
   refreshOverview();
@@ -525,14 +520,6 @@ function refresh() {
 document.querySelectorAll(".layer").forEach((button) => {
   button.onclick = () => selectLayer(button.dataset.layer);
 });
-
-$("execution-support").ontoggle = () => {
-  if (selectedLayer !== "environment") return;
-  ensureSelection();
-  render(false);
-  showLogPlaceholder();
-  loadLogs(true);
-};
 
 $("server-address").textContent = window.location.host;
 document.addEventListener("visibilitychange", () => {

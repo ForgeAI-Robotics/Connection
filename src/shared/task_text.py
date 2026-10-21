@@ -126,6 +126,8 @@ EVENTS = {
     'task_restored': '已读取原任务状态',
     'task_opened': '已接收任务', 'execution_selected': '已选择执行流程', 'plan_ready': '计划已生成',
     'drive_cursor': '准备执行', 'gate': '执行条件未满足', 'recovery_advised': '已生成处理建议',
+    'recovery_scene_observed': '已读取执行端状态，等待重新分析',
+    'recovery_plan_applied': '已接受恢复方案，等待执行与核验',
     'submit_intent': '准备下发动作指令', 'observe_intent': '准备读取现场状态',
     'action_finished': '已收到动作返回，等待核验', 'step_passed': '当前步骤核验通过',
     'task_succeeded': '任务完成', 'task_finished_with_skips': '流程结束，含人工跳过的步骤',

@@ -356,13 +356,13 @@ def catalog() -> list[Service]:
         ),
         Service(
             id="simple_o7",
-            name="SIMPLE（远端）",
+            name="SIMPLE 仿真（远端）",
             layer="environment",
             controllable=False,
             log_service="simple_o7",
             remote_control="ssh_simple",
             remote_actions=("start", "restart", "stop"),
-            note="同事服务器 · 当前 O6 校准汤罐抓取；有未核清命令时拒绝停止",
+            note="O6 物理仿真 · 接待与单步抓取；有未核清命令时拒绝停止",
             health=simple_remote.health,
         ),
         Service(
@@ -490,6 +490,44 @@ def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def _matches_service_process(argv: list[str], match: str) -> bool:
+    """Match the executable/entrypoint, never text inside a launcher command.
+
+    A tmux server can retain its first new-session command in argv, including
+    `python -m brain`. Treating that as the brain kills every independent session.
+    """
+    if not argv or not match:
+        return False
+    executable = Path(argv[0]).name
+    if match == "redis-server":
+        # Redis rewrites argv[0] to include its listening address.
+        return executable.split(" ", 1)[0] == "redis-server"
+    import re
+    if not re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", executable):
+        return False
+    index = 1
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "-m":
+            expected = match.split()
+            return expected[0] == "-m" and argv[index:index + len(expected)] == expected
+        if arg == "-c":
+            return False
+        if arg in {"-W", "-X", "--check-hash-based-pycs"}:
+            index += 2
+            continue
+        if arg == "--":
+            index += 1
+            break
+        if not arg.startswith("-"):
+            break
+        index += 1
+    if index >= len(argv) or match.startswith("-m "):
+        return False
+    script = Path(argv[index]).as_posix()
+    return script == match or script.endswith("/" + match)
+
+
 def iter_matching_pids(match: str) -> list[int]:
     if not match:
         return []
@@ -505,8 +543,8 @@ def iter_matching_pids(match: str) -> list[int]:
             raw = (entry / "cmdline").read_bytes()
         except (FileNotFoundError, PermissionError, ProcessLookupError, OSError):
             continue
-        cmdline = raw.replace(b"\x00", b" ").decode("utf-8", "replace")
-        if match in cmdline:
+        argv = [part.decode("utf-8", "replace") for part in raw.split(b"\x00") if part]
+        if _matches_service_process(argv, match):
             found.append(pid)
     return found
 

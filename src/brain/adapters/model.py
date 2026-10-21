@@ -58,6 +58,8 @@ class ModelClient:
 
     def _get_model_info_from_config(self, config: Dict) -> tuple:
         """Get the model info from config."""
+        from shared.networks import normalize_proxy_environment
+        normalize_proxy_environment()
         candidate = config["model_dict"]
         if candidate["cloud_model"] in config["model_select"]:
             if candidate["cloud_type"] == "azure":

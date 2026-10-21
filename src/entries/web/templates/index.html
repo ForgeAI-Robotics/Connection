@@ -386,14 +386,18 @@
         function renderAttemptHistory(data) {
             const summary = data.attempt_summary || {};
             const oldAdvice = data.recovery_confirmation_enabled && data.recovery_advice && !currentRecoveryAdvice(data) ? data.recovery_advice : null;
-            if (!summary.failure_count && !summary.retry_count && !oldAdvice) return '';
-            const title = `历史失败 ${Number(summary.failure_count) || 0} 次 · 重试 ${Number(summary.retry_count) || 0} 次（人工继续触发 ${Number(summary.manual_retry_count) || 0} 次）`;
+            if (!summary.failure_count && !summary.retry_count && !oldAdvice && !data.plan_revisions?.length) return '';
+            const title = `历史失败 ${Number(summary.failure_count) || 0} 次 · 重试 ${Number(summary.retry_count) || 0} 次（人工确认触发 ${Number(summary.manual_retry_count) || 0} 次）`;
             const rows = (data.failure_history || []).map(item =>
                 `<div style="margin:8px 0"><strong>失败环节：${taskText(taskPhase(item.step_id))}</strong>
                 <div>失败原文：${taskText(item.message || item.code || '未提供')}</div>
                 <div>原因解读：${taskText(failureExplanation(item))}</div>
                 <small>命令：${taskText(item.command_id)}</small></div>`).join('');
-            return `<details data-task-detail="history:${encodeURIComponent(data.task_id || '')}"><summary>${taskText(title)}</summary>${rows}
+            const revisions = (data.plan_revisions || []).map(change => '<div style="margin:8px 0"><strong>恢复方案版本 '
+                + taskText(change.version) + '</strong><div>' + taskText(change.summary) + '</div><small>原失败命令：'
+                + taskText(change.original_command_id) + '</small><details><summary>调整前后与依据</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
+                + taskText(JSON.stringify(change, null, 2)) + '</pre></details></div>').join('');
+            return `<details data-task-detail="history:${encodeURIComponent(data.task_id || '')}"><summary>${taskText(title)}</summary>${rows}${revisions}
                 ${oldAdvice ? '<div>历史建议（已失效或已处理）</div>' + recoveryAdviceDetails(oldAdvice, data) : ''}</details>`;
         }
 
@@ -565,6 +569,7 @@
         }
 
         const adviceActionLabels = {query_original: '确认查询原命令（不重试）', continue: '确认继续当前环节（可能重试）',
+            observe_scene: '读取现场并重新分析（不执行动作）', revise_plan: '确认按此方案恢复执行',
             cancel: '确认结束本轮任务（不代表机器人停止）', wait: '确认等待', request_help: '确认由人工处理'};
         function currentRecoveryAdvice(data) {
             const advice = data.recovery_advice;
@@ -586,7 +591,8 @@
         function recoveryAdviceDetails(advice, data) {
             return '<details data-task-detail="advice:' + encodeURIComponent(advice.advice_id || '') + '"><summary>详细信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
                 + taskText(JSON.stringify({source: advice.source, command_id: advice.command_id,
-                    summary: advice.summary, reason: advice.reason, facts: advice.facts,
+                    summary: advice.summary, reason: advice.reason, plan: advice.plan, facts: advice.facts,
+                    plan_revisions: data.plan_revisions,
                     error: advice.error, confirmations: (data.advice_confirmations || []).filter(r => r.advice_id === advice.advice_id)}, null, 2))
                 + '</pre></details>';
         }
@@ -608,12 +614,23 @@
             }
             if (advice) {
                 const suggestions = {query_original: '先查询原命令，确认执行结果。',
+                    observe_scene: '只读刷新执行端状态和场景，再由模型分析下一步；不代表重新拍照或识别。',
+                    revise_plan: '按以下顺序完成原任务，执行前仍会核查原命令和前置条件。',
                     continue: '确认执行条件后继续当前环节。', cancel: '取消本轮任务；此操作不代表机器人停止。',
                     wait: '等待执行条件恢复。', request_help: '请现场人员检查并处理。'};
                 html += line('建议', suggestions[advice.action] || '请核对现场情况。');
+                if (['observe_scene', 'revise_plan'].includes(advice.action)) {
+                    html += line('处理理由', advice.summary + '\n' + advice.reason);
+                }
+                if (advice.action === 'revise_plan' && Array.isArray(advice.plan?.step_order)) {
+                    const steps = Object.fromEntries((data.subtask_list || []).map(s => [s.step_id, s.subtask]));
+                    html += '<ol>' + advice.plan.step_order.map(id => '<li>'
+                        + taskText(steps[id] && steps[id] !== id ? steps[id] : taskPhase(id)) + '</li>').join('') + '</ol>';
+                    html += line('依据', '本次读取的现场证据 ' + advice.plan.observation_id);
+                }
                 html += recoveryAdviceDetails(advice, data);
                 if (adviceActionLabels[advice.action]) {
-                    html += '<button class="btn btn-outline btn-sm" onclick="confirmRecoveryAdvice()" ' + (taskControlPending || (pendingTaskControl && advice.action === 'continue') ? 'disabled' : '') + '>'
+                    html += '<button class="btn btn-outline btn-sm" onclick="confirmRecoveryAdvice()" ' + (taskControlPending || (pendingTaskControl && ['continue', 'revise_plan'].includes(advice.action)) ? 'disabled' : '') + '>'
                         + taskText(adviceActionLabels[advice.action]) + '</button>';
                 }
             } else {
@@ -627,7 +644,7 @@
             const shown = displayedTask;
             const advice = shown && currentRecoveryAdvice(shown);
             if (!advice?.applicable || !advice.advice_id) return;
-            if (pendingTaskControl && advice.action === 'continue') return;
+            if (pendingTaskControl && ['continue', 'revise_plan'].includes(advice.action)) return;
             if (!window.confirm((adviceActionLabels[advice.action] || '') + '？仅授权本次操作，不修改长期规则。')) return;
             taskNoticeContext = taskDisplayContext(shown);
             taskControlPending = true;

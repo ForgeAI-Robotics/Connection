@@ -85,7 +85,7 @@ venv/core/bin/python -m execution.slaver
 
 ## 仿真与真机
 
-使用原 v1 Skill 时，单罐接待可在运维面板「运行环境」点击「仅接待协议模拟」，启动两个独立 NAV/VLA HTTP 进程，再从任务网页首页发布「开始接待」。共用大脑通过正式指令与结果查询完成流程；默认延时成功，不依赖真机或物理仿真器。接口边界、持久化、控制器凭证扩展和故障场景见[模拟真机接口说明](docs/接口说明_模拟真机.md)。
+日常在运维面板「运行环境」选择 SIMPLE 仿真或真机并应用，任务入口与接待流程沿用现有实现。旧协议模拟保留为命令行维护能力：使用原 v1 Skill 和协议模拟预设，启动两个独立 NAV/VLA HTTP 进程，再从任务网页首页发布「开始接待」。共用大脑通过正式指令与结果查询完成流程；默认延时成功，不依赖真机或物理仿真器。接口边界、持久化、控制器凭证扩展和故障场景见[模拟真机接口说明](docs/接口说明_模拟真机.md)。
 
 接待已抽取为版本化 Skill：[v1 原流程](src/brain/packages/definitions/reception_single_can_v1.yaml) 保留四段基线，[v2 新流程](src/brain/packages/definitions/reception_single_can_v2.yaml) 使用新坐标并增加 relay1，抓放不变。新任务校验并绑定定义快照，继续旧任务不重读文件。可用 `venv/core/bin/python scripts/reception_skill.py --config config/brain.yaml` 离线预览当前所选定义；旧协议模拟仅支持 v1，SIMPLE O6 新房子需部署匹配的五段路线；配置、字段及 NAV/VLA 合同限制见[接待 Skill 定义](docs/接口说明_大脑%20Brain.md#111-接待-skill-定义与任务快照)。
 

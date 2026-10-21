@@ -211,6 +211,10 @@ class BrainService:
             try:
                 if action == "query_original":
                     result = runtime.query_advice_original()
+                elif action == 'observe_scene':
+                    result = runtime.observe_recovery_scene(advice_id)
+                elif action == 'revise_plan':
+                    result = runtime.apply_recovery_plan(advice_id)
                 elif action in {"continue", "cancel"}:
                     result, _ = control_task(self.config, action, runtime=runtime)
                 else:
@@ -220,9 +224,9 @@ class BrainService:
                 result = {"accepted": False, "error": str(exc), "state": runtime.state}
             confirmation = runtime.finish_advice(advice_id, result) or receipt
             # The persisted claim is never replayed, including after a process restart.
-            if result.get("accepted") and action == "continue":
+            if result.get("accepted") and action in {"continue", "revise_plan"}:
                 self._launch(runtime)
-            elif action == "query_original":
+            elif action in {"query_original", "observe_scene"}:
                 self.refresh_advice(runtime)
             return {**result, "task_id": task_id, "confirmation": confirmation}
 

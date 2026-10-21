@@ -44,6 +44,12 @@ class SimpleO7Adapter:
     contract_version = CONTRACT_VERSION
     gate_open = True
 
+    def observe_recovery(self):
+        scene = self._call("/v1/scene")
+        if not isinstance(scene, dict) or scene.get("capabilities") not in (["pick_hold_coke"], ["pick_hold_can"]):
+            raise Rejected("SIMPLE 现场能力声明不可用")
+        return {"scope": "simulation_scene_definition_not_live_state", "source": "simple_scene", "world": scene}
+
     def __init__(self, url, *, token=None, timeout=5, poll_interval=.5, deadline=900):
         self.url = url.rstrip("/")
         self.token = os.environ.get("SIMPLE_O7_TOKEN", "") if token is None else token

@@ -23,6 +23,22 @@ class PanelLoadingTests(unittest.TestCase):
         for name in ('master', 'deploy', 'feishu', 'voice'):
             self.assertIn(f'"id": "{name}"', text)
         self.assertIn('"state": "checking"', text)
+        self.assertIn('"id": "simple_o7"', text)
+        for name in ('desk', 'mujoco', 'gs', 'reception_nav', 'reception_vla', 'redis', 'slaver'):
+            self.assertNotIn(f'"id": "{name}"', text)
+
+    def test_panel_environment_only_probes_simple_and_keeps_maintenance_catalog(self):
+        with patch('ops.app._service_status', side_effect=lambda service, **kw: service_description(service)) as probe, \
+             patch('ops.tmuxctl.tmux_available', return_value=True):
+            payload = self.client.get('/api/status?layer=environment&view=panel').get_json()
+            self.assertEqual([s['id'] for s in payload['environment']], ['simple_o7'])
+            self.assertEqual([call.args[0].id for call in probe.call_args_list], ['simple_o7'])
+            probe.reset_mock()
+            self.client.get('/api/status?view=panel')
+            self.assertEqual({call.args[0].id for call in probe.call_args_list},
+                             {'master', 'deploy', 'feishu', 'voice', 'simple_o7', 'dream', 'vla'})
+            legacy = self.client.get('/api/status?layer=environment').get_json()
+            self.assertIn('desk', [s['id'] for s in legacy['environment']])
 
     def test_brain_layer_does_not_wait_for_or_probe_unrelated_services(self):
         def status(service, *, include_pids):

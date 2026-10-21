@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQPlanner 控制面板</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=17">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=19">
 </head>
 <body>
   <div class="app">
@@ -27,7 +27,7 @@
         </button>
         <button type="button" class="layer" data-layer="environment">
           <span>运行环境</span>
-          <small>环境配置与仿真</small>
+          <small>SIMPLE 仿真 · 真机</small>
           <span id="environment-dots" class="dots"></span>
         </button>
         <button type="button" class="layer" data-layer="robot">
@@ -44,32 +44,26 @@
         <p id="layer-hint" class="hint layer-hint"></p>
         <p id="action-status" role="status" hidden></p>
         <section id="execution-settings" class="execution-settings" hidden>
-          <h3>环境配置</h3>
-          <p class="hint">全局选择可被模块覆盖。应用时重启本机大脑服务；有未核清任务时拒绝切换。不会启动远端机器人。接待选真机会打开真机动作许可，选仿真、协议模拟或停用会关闭。下游闸门仍可拦住派发。</p>
-          <div class="execution-fields">
-            <label>全局环境 <select id="exec-mode"><option value="simulation">仿真</option><option value="real">真机</option></select></label>
-            <label>默认仿真器 <select id="exec-sim"><option value="desk">Desk（无画面）</option><option value="mujoco">MuJoCo</option><option value="mujoco_3dgs">3DGS</option><option value="simple_o7">SIMPLE（O6 远端）</option></select></label>
+          <div class="execution-toolbar">
+            <span class="execution-label">环境</span>
+            <fieldset class="execution-choices" id="exec-choices" disabled>
+              <legend class="sr-only">运行环境</legend>
+              <label class="execution-choice"><input type="radio" name="exec-mode" value="simulation"><span>SIMPLE 仿真</span></label>
+              <label class="execution-choice"><input type="radio" name="exec-mode" value="real"><span>真机</span></label>
+            </fieldset>
+            <button type="button" id="exec-apply" disabled>应用</button>
+            <span id="exec-selection" class="hint" hidden></span>
+            <span id="exec-status" role="status">正在读取生效环境…</span>
           </div>
-          <div id="exec-modules" class="execution-fields"></div>
-          <div class="execution-fields execution-actions">
-            <button type="button" id="exec-preview">预览选择</button>
-            <button type="button" id="exec-apply">应用当前选择</button>
-            <button type="button" id="exec-all-sim">一键全仿真</button>
-            <button type="button" id="exec-all-real">一键全真机</button>
-            <button type="button" id="exec-reception-protocol">仅接待协议模拟</button>
-            <button type="button" id="exec-reception-simple">仅接待 SIMPLE 仿真</button>
-          </div>
-          <p class="hint">“仅接待协议模拟”启动本机导航与操控进程，停用通用执行和画面模块；在任务网页输入“开始接待”。默认延时成功，无物理运动。“仅接待 SIMPLE 仿真”把同一接待流程发往远端 SIMPLE（O6 + SONIC MuJoCo 物理执行），不启动本机进程。“一键全…”会清除模块覆盖；默认接待仍为旧演示。</p>
-          <pre id="exec-preview-text" hidden></pre>
-          <pre id="exec-status">正在读取生效环境…</pre>
+          <p id="exec-feedback" role="status" hidden></p>
+          <details class="execution-details">
+            <summary>详情</summary>
+            <p class="hint">大脑任务与「开始接待」沿用现有流程。切换会重载大脑，有未核清任务时拒绝切换。请先启动目标服务，真机仍需完成现场定位与动作批准。</p>
+            <pre id="exec-details"></pre>
+          </details>
         </section>
-        <h3 id="services-title" class="section-title" hidden>仿真服务</h3>
+        <h3 id="services-title" class="section-title" hidden>SIMPLE 仿真服务</h3>
         <div id="cards" class="cards"></div>
-        <details id="execution-support" hidden>
-          <summary>高级：仿真执行依赖 <span id="support-dots" class="dots"></span></summary>
-          <p class="hint">MuJoCo / 3DGS 的动作执行仍使用 Slaver 和 Redis。Desk 和 SIMPLE O7 直连，不需要这两个执行依赖。SIMPLE O7 仅支持抓可乐实验；远端服务单独启停。</p>
-          <div id="support-cards" class="cards"></div>
-        </details>
         <div id="tabs" class="tabs"></div>
         <div class="log-wrap">
           <div class="log-head">
@@ -83,7 +77,7 @@
     </div>
   </div>
   <script id="initial-services" type="application/json">{{ bootstrap|tojson }}</script>
-  <script src="{{ url_for('static', filename='panel.js') }}?v=19"></script>
-  <script src="{{ url_for('static', filename='execution.js') }}?v=2"></script>
+  <script src="{{ url_for('static', filename='panel.js') }}?v=20"></script>
+  <script src="{{ url_for('static', filename='execution.js') }}?v=4"></script>
 </body>
 </html>

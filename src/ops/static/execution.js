@@ -1,102 +1,140 @@
 (() => {
   const el = (id) => document.getElementById(id);
-  const names = {reception: '接待', execution: '通用执行 / 桌面整理', observation: '现场观察 / 网页画面'};
-  let loaded = false;
+  const choices = [...document.querySelectorAll('input[name="exec-mode"]')];
+  const labels = {simulation: 'SIMPLE 仿真', real: '真机'};
+  const modules = {reception: '接待', execution: '通用执行', observation: '现场观察 / 网页画面'};
+  const backends = {reception_real: '真机', reception_simple: 'SIMPLE 仿真', simple_o7: 'SIMPLE 仿真'};
+  let state = null;
+  let dirty = false;
   let submitting = false;
-  for (const [key, label] of Object.entries(names)) {
-    const row = document.createElement('label');
-    row.textContent = label + ' ';
-    const mode = document.createElement('select');
-    mode.id = 'exec-' + key;
-    for (const [value, text] of Object.entries({inherit: '跟随全局', simulation: '仿真', real: '真机', disabled: '停用'})) {
-      mode.add(new Option(text, value));
-    }
-    row.append(mode);
-    {
-      const backend = document.createElement('select');
-      backend.id = 'exec-' + key + '-sim';
-      const choices = key === 'reception'
-        ? {inherit: '默认旧演示', reception_mock: '旧会议补货演示', reception_protocol: '单罐接待 · NAV/VLA 协议模拟',
-           reception_simple: '单罐接待 · SIMPLE 远端物理仿真'}
-        : {inherit: '跟随默认仿真器', desk: 'Desk（无画面）', mujoco: 'MuJoCo', mujoco_3dgs: '3DGS', simple_o7: 'SIMPLE（O6 远端）'};
-      for (const [value, text] of Object.entries(choices)) {
-        backend.add(new Option(text, value));
-      }
-      row.append(backend);
-    }
-    el('exec-modules').append(row);
-  }
+  let refreshing = false;
+  let generation = 0;
+  let lastNotice = '';
+
+  function selectedMode() { return choices.find((choice) => choice.checked)?.value; }
+
+  // Use the existing configuration contract and switch transaction. Explicitly
+  // select reception_simple: inheriting the simulation default selects the old demo.
   function config() {
-    const modules = {};
-    for (const key of Object.keys(names)) {
-      modules[key] = {mode: el('exec-' + key).value};
-      modules[key].simulation_backend = el('exec-' + key + '-sim').value;
-    }
-    return {mode: el('exec-mode').value, simulation_backend: el('exec-sim').value, modules};
+    const mode = selectedMode();
+    if (!labels[mode]) throw new Error('请先选择 SIMPLE 仿真或真机');
+    return {mode, simulation_backend: 'simple_o7', modules: {
+      reception: {mode: 'inherit', simulation_backend: 'reception_simple'},
+      execution: {mode: 'inherit', simulation_backend: 'inherit'},
+      observation: {mode: 'inherit', simulation_backend: 'inherit'}
+    }};
   }
-  function fill(c) {
-    el('exec-mode').value = c.mode || 'simulation';
-    el('exec-sim').value = c.simulation_backend || 'desk';
-    for (const key of Object.keys(names)) {
-      el('exec-' + key).value = c.modules?.[key]?.mode || 'inherit';
-      el('exec-' + key + '-sim').value = c.modules?.[key]?.simulation_backend || 'inherit';
-    }
+
+  function appliedMode(profile) {
+    const routes = profile?.routes;
+    if (!routes) return null;
+    const all = Object.keys(modules).map((key) => routes[key]);
+    if (all.every((route) => route?.mode === 'real') && routes.reception.backend === 'reception_real') return 'real';
+    if (all.every((route) => route?.mode === 'simulation') &&
+        routes.reception.backend === 'reception_simple' &&
+        routes.execution.backend === 'simple_o7' && routes.observation.backend === 'simple_o7') return 'simulation';
+    return null;
   }
+
+  function controls() {
+    const busy = submitting || state?.applying;
+    el('exec-choices').disabled = !state || busy;
+    el('exec-apply').disabled = !state || busy || !selectedMode();
+    el('exec-apply').textContent = busy ? '应用中…' : '应用';
+    const mode = selectedMode();
+    el('exec-selection').hidden = Boolean(mode && mode === appliedMode(state?.applied));
+    el('exec-selection').textContent = mode ? '待应用' : '请选择环境';
+  }
+
   function describe(profile) {
-    return Object.entries(profile.routes).map(([key, r]) =>
-      `${names[key]}：${r.mode === 'real' ? '真机' : r.mode === 'simulation' ? '仿真' : '停用'} / ${r.backend}` +
-      (r.available ? (r.url ? `（${r.url}）` : '') : ` — 不可用：${r.reason}`)).join('\n');
+    return Object.entries(profile?.routes || {}).map(([key, route]) => {
+      const target = backends[route.backend] || route.backend;
+      const urls = route.endpoints ? Object.values(route.endpoints).join('、') : route.url;
+      return `${modules[key] || key}：${target}` +
+        (route.available ? (urls ? `（${urls}）` : '') : ` — 不可用：${route.reason}`);
+    }).join('\n');
   }
-  async function post(action) {
-    const response = await fetch('/api/execution/' + action, {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(config())
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || '请求失败');
-    return data;
+
+  function feedback(text, error = false) {
+    el('exec-feedback').textContent = text;
+    el('exec-feedback').hidden = !text;
+    el('exec-feedback').classList.toggle('error', error);
   }
+
   async function refresh() {
+    if (refreshing) return;
+    refreshing = true;
+    const requestedGeneration = generation;
     try {
-      const r = await fetch('/api/execution');
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error);
-      if (!loaded) { fill(data.draft); loaded = true; }
-      const busy = data.applying || submitting;
-      for (const button of document.querySelectorAll('.execution-settings button')) button.disabled = busy;
-      el('exec-status').textContent = (data.applying ? '正在应用，请稍候…\n' : '') +
-        (data.error ? `应用失败：${data.error}\n` : '') +
-        (data.blocked ? '环境未恢复，已阻止新任务。重新应用成功后解除。\n' : '') +
-        (data.applied ? '已生效：\n' + describe(data.applied) : '尚未启用统一配置；当前沿用原配置。') +
-        '\n真机动作许可：' + (data.real_motion_enabled ? '已开启（仍需通过下游闸门）' : '关闭');
-    } catch (e) { el('exec-status').textContent = e.message; }
+      const response = await fetch('/api/execution', {cache: 'no-store', signal: AbortSignal.timeout(5000)});
+      const data = await response.json();
+      if (requestedGeneration !== generation) return;
+      if (!response.ok) throw new Error(data.error || '环境读取失败');
+      state = data;
+      const mode = appliedMode(data.applied);
+      if (!dirty && !submitting) {
+        for (const choice of choices) choice.checked = choice.value === mode;
+      }
+      const reception = data.applied?.routes?.reception;
+      const current = mode ? labels[mode] : data.applied
+        ? `其他配置（接待：${backends[reception?.backend] || reception?.backend || '未配置'}）`
+        : '未确认，请选择环境并应用';
+      el('exec-status').textContent = `当前已生效：${current}` +
+        (data.blocked ? ' · 新任务已阻断' : '') +
+        (data.applying ? ' · 正在切换，等待完成' : '');
+      el('exec-details').textContent = describe(data.applied) +
+        '\n真机动作许可：' + (data.real_motion_enabled ? '已开启，仍需通过下游闸门' : '关闭') +
+        '\n真机环境可在任务页选择「导航真机＋操控模拟」进行联调。';
+      const failure = data.error || (data.last_apply?.state === 'failed' ? data.last_apply.error : '');
+      const notice = JSON.stringify([data.applying, data.blocked, failure, data.last_apply, data.applied?.revision]);
+      if (notice !== lastNotice) {
+        lastNotice = notice;
+        if (data.applying) feedback('正在检查任务并应用环境，请稍候…');
+        else if (failure) feedback(`上次应用失败：${failure}` +
+          (data.blocked ? '\n环境尚未恢复，请排查后重新应用。' : '\n当前环境以已生效状态为准。'), true);
+        else if (data.blocked) feedback('环境尚未恢复，新任务已阻断，请排查后重新应用。', true);
+        else feedback('');
+      }
+      controls();
+    } catch (error) {
+      if (requestedGeneration !== generation) return;
+      state = null;
+      lastNotice = '';
+      el('exec-status').textContent = '当前生效环境暂时无法确认';
+      feedback(error.message, true);
+      controls();
+    } finally { refreshing = false; }
   }
-  async function apply() {
-    if (submitting) return;
+
+  for (const choice of choices) choice.onchange = () => { dirty = true; controls(); };
+  el('exec-apply').onclick = async () => {
+    if (submitting || state?.applying) return;
+    const payload = config();
+    generation++;
     submitting = true;
+    controls();
+    feedback('正在提交环境切换…');
     try {
-      await post('apply');
-      el('exec-status').textContent = '已提交，正在检查任务并应用环境…';
-    } catch (e) { el('exec-status').textContent = e.message; }
-    finally { submitting = false; }
-  }
-  el('exec-preview').onclick = async () => {
-    el('exec-preview-text').hidden = false;
-    try { el('exec-preview-text').textContent = '待应用：\n' + describe(await post('preview')); }
-    catch (e) { el('exec-preview-text').textContent = e.message; }
+      const response = await fetch('/api/execution/apply', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload), signal: AbortSignal.timeout(10000)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '提交失败');
+      dirty = false;
+      lastNotice = '';
+      // Keep controls locked until a subsequent status read confirms completion.
+      if (state) state.applying = true;
+      feedback('已提交，正在检查任务并应用环境…');
+    } catch (error) {
+      feedback(`切换提交未确认：${error.message}。请核对最新生效状态。`, true);
+    } finally {
+      submitting = false;
+      controls();
+    }
+    await refresh();
   };
-  el('exec-apply').onclick = apply;
-  for (const [id, backend] of [['exec-reception-protocol', 'reception_protocol'], ['exec-reception-simple', 'reception_simple']]) {
-    el(id).onclick = () => {
-      fill({mode: 'simulation', simulation_backend: 'desk', modules: {
-        reception: {mode: 'simulation', simulation_backend: backend},
-        execution: {mode: 'disabled'}, observation: {mode: 'disabled'}
-      }});
-      apply();
-    };
-  }
-  for (const [id, mode] of [['exec-all-sim', 'simulation'], ['exec-all-real', 'real']]) {
-    el(id).onclick = () => { fill({mode, simulation_backend: el('exec-sim').value, modules: {}}); apply(); };
-  }
   refresh();
-  setInterval(refresh, 3000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+  setInterval(() => { if (!document.hidden) refresh(); }, 3000);
 })();

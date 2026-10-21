@@ -63,6 +63,10 @@ brain:
     recovery_advice: true
     # 仅部署并验收建议确认闭环后开启；未确认不会自动执行模型建议。
     confirm_recovery_advice: false
+    # 新任务绑定受限恢复策略：先只读刷新现场，再提议保留全部目标的剩余步骤安排。
+    # 仍需人工逐次确认；旧任务没有此策略时沿用原行为。
+    recovery_plans: true
+    max_recovery_revisions: 2
   # 所有业务共用 Runtime；legacy 仅用于无在途任务时回退。
   scheduler: runtime
   # 通用任务沿用 robot_api 的 active_backend，不强制改成仿真。

@@ -103,6 +103,7 @@ def remote_simulation_hosts() -> list[str]:
 def apply_proxy_bypass() -> None:
     """当前各端 IP 与远端仿真主机不走代理。"""
 
+    normalize_proxy_environment()
     site = lan()
     extras = [site.ip(role) for role in ROLES] + remote_simulation_hosts()
     for key in ("NO_PROXY", "no_proxy"):
@@ -112,3 +113,16 @@ def apply_proxy_bypass() -> None:
                 parts.append(ip)
         if parts:
             os.environ[key] = ",".join(parts)
+
+
+def normalize_proxy_environment() -> None:
+    """Canonicalize the desktop SOCKS alias in this process, preserving routing.
+
+    HTTPX validates all proxy entries when building a client, including ALL_PROXY
+    when an HTTP(S)-specific proxy will actually handle the request.
+    """
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",
+                "http_proxy", "https_proxy", "all_proxy"):
+        value = os.environ.get(key, "")
+        if value[:8].lower() == "socks://":
+            os.environ[key] = "socks5://" + value[8:]

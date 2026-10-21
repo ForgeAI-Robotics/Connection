@@ -108,6 +108,9 @@ def status_from_record(record) -> dict:
     advice = deepcopy((record or {}).get("recovery_advice"))
     if advice:
         advice["applicable"] = advice.get("record_revision") == (record or {}).get("revision")
+        if advice.get('action') == 'revise_plan':
+            from brain.recovery import can_revise
+            advice['applicable'] = advice['applicable'] and can_revise(record)
     tasks = []
     failure_history = []
     retry_count = 0
@@ -117,7 +120,8 @@ def status_from_record(record) -> dict:
         attempts = bucket.get("attempts") or []
         submitted = [a for a in attempts if a.get("submitted")]
         retry_count += max(0, len(submitted) - 1)
-        manual_retry_count += sum(a.get("authorized_by") == "human_continue" for a in submitted)
+        manual_retry_count += sum(a.get("authorized_by") in {"human_continue", "human_recovery_plan"}
+                                  for a in submitted[1:])
         for old in attempts:
             old_progress = old.get("progress") or {}
             if old.get("verdict") != "FAIL" and old_progress.get("terminal") not in {"failed", "cancelled"}:
@@ -229,6 +233,10 @@ def status_from_record(record) -> dict:
         "phase": (record or {}).get("phase") or "",
         "selection": deepcopy((record or {}).get("selection")),
         "recovery_advice": advice,
+        "recovery_policy": deepcopy((record or {}).get("recovery_policy")),
+        "recovery_observation": deepcopy((record or {}).get("recovery_observation")),
+        "plan_revision": (record or {}).get("plan_revision", 0),
+        "plan_revisions": deepcopy((record or {}).get("plan_revisions", [])),
         "advice_confirmations": deepcopy((record or {}).get("advice_confirmations", [])),
         "handoff_observation": deepcopy((record or {}).get("handoff_observation")),
     }
@@ -313,7 +321,10 @@ class TaskRuntime:
         if isinstance(loaded, dict):
             if check_identity and self._owned_task_id and loaded.get("task_id") != self._owned_task_id:
                 raise Rejected("任务已更换，旧 Runtime 不得推进新任务")
+            old_plan_revision = self.record.get('plan_revision', 0)
             self.record = loaded
+            if old_plan_revision != loaded.get('plan_revision', 0):
+                self._bind_package(loaded.get('package'))
 
     def _halted(self) -> bool:
         if self.state in TERMINAL_STATES or self.state in {
@@ -350,6 +361,8 @@ class TaskRuntime:
             self.record["selection"] = deepcopy(selection)
             self.record["execution_backend"] = backend
             self.record["execution_target"] = deepcopy(target)
+            from brain.recovery import bind_policy
+            self.record["recovery_policy"] = bind_policy(self.policy, self.package_name, backend, port, self.config)
             bound = self.release_reader(self.config, self.package_name)
             self.record["release_id"], self.record["release_rules"] = bound["version_id"], bound["rules"]
             self._save("execution_selected")
@@ -365,6 +378,13 @@ class TaskRuntime:
             if any(self.record.get(key) != context.get(key) for key in
                    ("task_id", "revision", "state", "open_command_id")):
                 return False
+            if advice.get('action') == 'revise_plan':
+                from brain.recovery import validate_plan
+                try:
+                    validate_plan(self.record, advice.get('plan'))
+                except Rejected as exc:
+                    from brain.reasoning import fallback_advice
+                    advice = dict(fallback_advice(context), source='rules', error=str(exc))
             self.record["recovery_advice"] = {
                 **deepcopy(advice), "task_id": self.record["task_id"],
                 "advice_id": uuid.uuid4().hex,
@@ -372,7 +392,7 @@ class TaskRuntime:
                 "control_command_id": status_from_record(self.record).get("control_command_id") or "",
                 "execution_target": deepcopy(self.record.get("execution_target")),
                 "facts": {key: deepcopy(context.get(key)) for key in
-                          ("state", "phase", "blocked_reason", "command_unknown", "original_query", "established_facts", "attempts")},
+                          ("state", "phase", "blocked_reason", "command_unknown", "original_query", "established_facts", "attempts", "recovery_planning")},
                 "command_id": self.record.get("open_command_id"),
                 "based_on_revision": self.record["revision"],
                 "record_revision": self.record["revision"] + 1,
@@ -393,7 +413,8 @@ class TaskRuntime:
             advice = self.record.get("recovery_advice") or {}
             current = status_from_record(self.record)
             if (self.state not in RECOVERY_STATES or not self.record.get("phase_specs")
-                    or self.record.get("package") != "reception"
+                    or (self.record.get("package") != "reception" and
+                        (self.record.get('recovery_policy') or {}).get('mode') not in {'preserve_order', 'reorder_remaining'})
                     or advice.get("advice_id") != advice_id
                     or advice.get("record_revision") != expected_revision
                     or self.record["revision"] != expected_revision
@@ -402,6 +423,9 @@ class TaskRuntime:
                     or advice.get("execution_target") != self.record.get("execution_target")
                     or advice.get("action") not in recovery_context(self.record)["allowed_actions"]):
                 raise Rejected("建议已失效或当前任务不支持建议确认，请刷新后再操作")
+            if advice.get('action') == 'revise_plan':
+                from brain.recovery import validate_plan
+                validate_plan(self.record, advice.get('plan'))
             receipt = {"advice_id": advice_id, "task_id": self.record["task_id"],
                        "step_id": advice["step_id"], "command_id": advice["control_command_id"],
                        "action": advice["action"], "status": "processing", "automatic": False,
@@ -423,6 +447,102 @@ class TaskRuntime:
                                    result=deepcopy(result), finished_at=datetime.now().astimezone().isoformat())
                     self._save("advice_control_result")
                     return deepcopy(receipt)
+
+    def _recovery_claim(self, advice_id, action):
+        receipt = next((r for r in self.record.get('advice_confirmations', [])
+                        if r.get('advice_id') == advice_id), None)
+        if not receipt or receipt.get('status') != 'processing' or receipt.get('action') != action:
+            raise Rejected('缺少有效的本次恢复授权')
+        return receipt
+
+    def observe_recovery_scene(self, advice_id):
+        """One approved read; record its scope without certifying physical effects."""
+        from brain.recovery import available_actions, latest_attempt
+        with self._exclusive():
+            self._reload_locked()
+            self._recovery_claim(advice_id, 'observe_scene')
+            if 'observe_scene' not in available_actions(self.record):
+                raise Rejected('当前任务不支持现场状态刷新')
+            snapshot = deepcopy(self.record)
+        started = datetime.now().astimezone()
+        reader = getattr(self.port, 'observe_recovery', None)
+        if not callable(reader):
+            raise Rejected('当前执行端没有只读现场能力')
+        value = reader()
+        if (not isinstance(value, dict)
+                or any(not isinstance(value.get(key), str) or not value[key] for key in ('scope', 'source'))
+                or value.get('success') is False):
+            raise Rejected('现场状态回包缺少来源或范围')
+        with self._exclusive():
+            self._reload_locked()
+            if self.record['revision'] != snapshot['revision'] or self.state != snapshot['state']:
+                raise Rejected('读取现场期间任务已变化，未应用迟到结果')
+            observation = {'observation_id': uuid.uuid4().hex, 'task_id': snapshot['task_id'],
+                           'command_id': latest_attempt(snapshot).get('command_id'),
+                           'plan_revision': snapshot.get('plan_revision', 0),
+                           'observed_at': started.isoformat(), 'data': deepcopy(value),
+                           'timestamp_scope': 'HTTP read start, not sensor capture time',
+                           'advice_id': advice_id}
+            self.record['recovery_observation'] = observation
+            self.record.setdefault('recovery_observations', []).append(deepcopy(observation))
+            self._save('recovery_scene_observed')
+            return {'accepted': True, 'observation_only': True,
+                    'observation_id': observation['observation_id'], 'state': self.state,
+                    'message': '现场接口状态已记录，正在重新分析；未下发动作'}
+
+    def apply_recovery_plan(self, advice_id):
+        """Atomically revise only the unfinished suffix after a fresh original query."""
+        from brain.recovery import validate_plan, refuses_retry
+        with self._exclusive():
+            self._reload_locked()
+            receipt = self._recovery_claim(advice_id, 'revise_plan')
+            proposal = deepcopy(receipt['advice']['plan'])
+            validate_plan(self.record, proposal)
+            snapshot = deepcopy(self.record)
+            step = self._current_step()
+            attempt = self._latest(step.step_id)
+            command_id, request = attempt['command_id'], deepcopy(attempt['request'])
+        result = self.port.query(command_id, request)
+        with self._exclusive():
+            self._reload_locked()
+            if self.record['revision'] != snapshot['revision'] or self.state != snapshot['state']:
+                raise Rejected('核查原命令期间任务已变化，未应用恢复方案')
+            reordered = validate_plan(self.record, proposal)
+            evidence = result.get('evidence') or {} if isinstance(result, dict) else {}
+            if (not isinstance(result, dict) or result.get('command_id') != command_id
+                    or result.get('timed_out') or result.get('terminal') != 'failed'
+                    or result.get('stopped') is not True or result.get('resources_released') is not True
+                    or not isinstance(evidence, dict)
+                    or evidence.get('identity_ok') is not True or evidence.get('time_ok') is not True
+                    or refuses_retry(result, self.record.get('execution_backend'))):
+                raise Rejected('原动作未确认失败并停止、资源未释放或下游禁止重试；方案未执行')
+            # Do not overwrite the failed receipt: save the fresh check with the revision.
+            before = deepcopy(self.record['phase_specs'])
+            cursor = int(self.record.get('cursor') or 0)
+            after = before[:cursor] + reordered
+            version = self.record.get('plan_revision', 0) + 1
+            change = {'version': version, 'advice_id': advice_id,
+                      'reason': receipt['advice']['reason'], 'summary': receipt['advice']['summary'],
+                      'observation_id': proposal['observation_id'], 'original_command_id': command_id,
+                      'original_check': deepcopy(result), 'before': before, 'after': deepcopy(after),
+                      'applied_at': datetime.now().astimezone().isoformat()}
+            # A query may resolve an originally UNKNOWN send. Keep its original
+            # progress untouched and retain the identity-checked failure separately.
+            latest = self._latest(step.step_id)
+            latest.update(finished=True, verdict='FAIL', outcome='failed',
+                          recovery_original_check=deepcopy(result))
+            self.record.setdefault('plan_revisions', []).append(change)
+            self.record.update(plan_revision=version, phase_specs=after,
+                               phase_order=[s['step_id'] for s in after],
+                               open_command_id=None, pending_progress=None, command_unknown=False,
+                               stopped_confirmed=True, resources_cleared=True,
+                               dispatch_closed=False, control_request='', requery_hold=False,
+                               blocked_reason='', breakpoint_phase='', phase=after[cursor]['step_id'])
+            self._bind_package(self.package_name, steps_from_specs(after))
+            self.apply('continue_retry')
+            self._save('recovery_plan_applied')
+            return {'accepted': True, 'plan_revised': True, 'plan_revision': version,
+                    'state': self.state, 'message': '恢复方案已接受，按原核验要求执行；受理不等于完成'}
 
     def query_advice_original(self):
         """Refresh original evidence without resuming, verifying or issuing any action."""
@@ -1432,6 +1552,10 @@ class TaskRuntime:
         if attempt is None or attempt.get("submitted"):
             attempt = self._append_attempt(step, physical=physical)
         attempt["submitted"] = True
+        changes = self.record.get('plan_revisions') or []
+        if changes and step.step_id in {s['step_id'] for s in changes[-1]['after']}:
+            attempt['plan_revision'] = self.record.get('plan_revision', 0)
+            attempt.setdefault('authorized_by', 'human_recovery_plan')
         if physical:
             counts = self.record.setdefault("dispatch_counts", {})
             counts[step.step_id] = int(counts.get(step.step_id) or 0) + 1

@@ -155,7 +155,7 @@ function taskText(x){return String(x ?? '').replace(/[&<>]/g,c=>({'&':'&amp;','<
         result = subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True).stdout
         for unwanted in ('MODEL_ANALYSIS', 'MODEL_THINKING', '分析：', '建议：', '<script>bad'):
             self.assertNotIn(unwanted, result)
-        for wanted in ('当前定位点', 'localization pose', '历史失败 1 次', '人工继续触发 1 次', '&lt;script&gt;'):
+        for wanted in ('当前定位点', 'localization pose', '历史失败 1 次', '人工确认触发 1 次', '&lt;script&gt;'):
             self.assertIn(wanted, result)
 
     def test_browser_progress_and_receipt_follow_rejection_retry_and_finish(self):

@@ -49,6 +49,10 @@ def phases_for(name: str):
 
 
 class PackagePolicy:
+    def recovery_mode(self, name):
+        # New SOPs opt in here; no model may invent a recovery policy.
+        return {"generic": "reorder_remaining", "reception": "preserve_order"}.get(name, "disabled")
+
     def phases(self, name):
         return [] if name in {"generic", "desk"} else phases_for(name)
 

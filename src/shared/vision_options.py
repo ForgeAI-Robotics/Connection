@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 def client_options(api_base, *, timeout):
     """Loopback inference must not inherit desktop HTTP/SOCKS proxy settings."""
+    from shared.networks import normalize_proxy_environment
+    normalize_proxy_environment()
     options = {"timeout": float(timeout), "max_retries": 0}
     if urlsplit(api_base).hostname in {"127.0.0.1", "localhost", "::1"}:
         import httpx

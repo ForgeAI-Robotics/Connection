@@ -9,9 +9,14 @@ from ops import dream_remote, tmuxctl, vla_remote
 def create_app(*, switch_pool=None):
     app = Flask(__name__)
     _STATUS_POOL = ThreadPoolExecutor(max_workers=12, thread_name_prefix='ops-health')
+
+    def panel_services():
+        return [service for service in catalog()
+                if service.layer in {'brain', 'robot'} or service.id == 'simple_o7']
+
     @app.get("/")
     def index():
-        descriptions = [service_description(service) for service in catalog()]
+        descriptions = [service_description(service) for service in panel_services()]
         bootstrap = {layer: [item for item in descriptions if item['layer'] == layer]
                      for layer in ('brain', 'environment', 'support', 'robot')}
         return render_template("index.html", bootstrap=bootstrap)
@@ -68,7 +73,10 @@ def create_app(*, switch_pool=None):
         layer = request.args.get('layer')
         if layer and layer not in {'brain', 'environment', 'support', 'robot'}:
             return jsonify({'error': '未知服务层'}), 400
-        services = [s for s in catalog() if not layer or s.layer == layer]
+        # Keep the full catalog API for existing maintenance clients. The panel
+        # only probes the services it displays, including on the first poll.
+        available = panel_services() if request.args.get('view') == 'panel' else catalog()
+        services = [s for s in available if not layer or s.layer == layer]
         items = list(_STATUS_POOL.map(lambda s: _service_status(s, include_pids=False), services))
         return jsonify(
             {

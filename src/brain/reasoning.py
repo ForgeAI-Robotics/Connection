@@ -87,23 +87,48 @@ class TaskReasoner:
             "你不能自行改 SOP、跳过步骤、重抓、重放、解除保护或把失败写成成功。"
             "人工点击继续会核对原命令，已停止且确认未完成时用新命令尝试原环节，前置检查仍保留。结果不明时只建议查询原命令；不存在原命令时不得建议查询。"
             "只能从 allowed_actions 选择一个建议。\n"
+            "observe_scene 表示只读刷新执行端状态和场景，再根据新证据重新分析；不是拍照或重新识别。"
+            "现场证据不足时优先补充信息，不把静态场景声明当成实时物体证据。"
+            "若 observation_fresh=true 且同一失败没有新变化，不要重复建议相同的 observe_scene；"
+            "它不会新增视觉或碰撞感知。已有证据足够时选择允许的继续或恢复方案；"
+            "若仍缺少接口无法提供的证据，选择 request_help 并具体说明。"
+            "stopped_confirmed/resources_cleared 是程序对原命令停止与资源的核对结果；"
+            "handoff 未确认与原命令未停止是不同事实，不要混淆。"
+            "revise_plan 仅在系统允许时可选：保留全部 remaining_steps 的身份、目标与动作参数，"
+            "只调整独立物体的未完成抓放顺序；preserve_order 模式必须保持原 SOP 顺序。"
+            "preserve_order 的恢复方案可以不改变顺序：重试已确认失败的当前环节，再完成原剩余步骤。"
+            "SIMPLE 仿真接待若明确返回 simulation.retry_allowed=true，表示可经确认以新命令恢复同回合；"
+            "其 error.retryable=false 仍禁止自动重放，两者不可混淆。以 allowed_actions 和程序核查为准。"
+            "错误阶段名称不是确定根因；规划失败不能仅凭阶段名断言发生了碰撞或空间不足。"
+            "不得生成坐标、原始工具请求、新技能或遗漏任务要求。失败或结果未知不能改写成成功。\n"
             "仅输出 JSON：{\"action\":\"允许的建议\",\"summary\":\"异常解释\","
             "\"reason\":\"证据与处理理由\"}。\n"
+            "仅当 action=revise_plan 时，额外加入 plan："
+            "{\"step_order\":[\"全部未完成 step_id，按建议顺序\"],"
+            "\"observation_id\":\"本次现场证据ID\"}。该方案必须经人工确认和 Runtime 再次核查。\n"
             + json.dumps(context, ensure_ascii=False, default=str)
         )
         try:
             result = extract_json(self.model([{"role": "user", "content": prompt}]))
-            if (not isinstance(result, dict) or set(result) != {"action", "summary", "reason"}
+            keys = {"action", "summary", "reason"}
+            if isinstance(result, dict) and result.get('action') == 'revise_plan':
+                keys.add('plan')
+            if (not isinstance(result, dict) or set(result) != keys
                     or result["action"] not in context["allowed_actions"]
                     or any(not isinstance(result[key], str) or not result[key].strip()
-                           for key in ("summary", "reason"))):
+                           for key in ("action", "summary", "reason"))):
                 raise ValueError("LLM 建议超出允许范围或格式无效")
-            return {**{key: value[:2000] for key, value in result.items()}, "source": "llm"}
+            advice = {key: result[key][:2000] for key in ('action', 'summary', 'reason')}
+            if result['action'] == 'revise_plan':
+                from brain.recovery import validate_proposal_shape
+                advice['plan'] = validate_proposal_shape(context['recovery_planning'], result['plan'])
+            return {**advice, "source": "llm"}
         except Exception as exc:
             return dict(fallback, source="rules", error=str(exc)[:1000])
 
 
 def recovery_context(record):
+    from brain.recovery import available_actions, planning_context
     allowed = ["wait", "request_help", "cancel"]
     if record.get("open_command_id") and record.get("state") == "recovery_required":
         allowed.append("query_original")
@@ -111,6 +136,7 @@ def recovery_context(record):
             record.get("state") == "recovery_required" and record.get("stopped_confirmed")
             and record.get("resources_cleared") is True and not record.get("command_unknown"))):
         allowed.append("continue")
+    allowed.extend(available_actions(record))
     attempts = []
     for step_id in record.get("phase_order") or []:
         history = (record.get("steps", {}).get(step_id) or {}).get("attempts") or []
@@ -120,17 +146,21 @@ def recovery_context(record):
                              ("step_id", "attempt_id", "command_id", "request", "verdict", "progress")})
     return {"task_id": record["task_id"], "revision": record["revision"],
             "task": record.get("task_desc"), "package": record.get("package"),
+            "execution_backend": record.get("execution_backend"),
             "selection": deepcopy(record.get("selection")), "state": record.get("state"),
             "phase": record.get("phase"), "blocked_reason": record.get("blocked_reason"),
             "open_command_id": record.get("open_command_id"),
             "command_unknown": record.get("command_unknown"),
+            "stopped_confirmed": record.get("stopped_confirmed"),
+            "resources_cleared": record.get("resources_cleared"),
             "original_query": deepcopy(record.get("advice_query")) if (
                 (record.get("advice_query") or {}).get("command_id") == record.get("open_command_id")) else None,
             "ledger_state": {"holding": record.get("holding"), "object_location": record.get("object_location")},
             "established_facts": [deepcopy(item) for item in (record.get("observations") or [])
                                   if item.get("kind") == "established"][-12:],
             "handoff": deepcopy(record.get("handoff_observation")),
-            "attempts": attempts[-12:], "allowed_actions": allowed}
+            "attempts": attempts[-12:], "allowed_actions": allowed,
+            "recovery_planning": planning_context(record)}
 
 
 def fallback_advice(context):

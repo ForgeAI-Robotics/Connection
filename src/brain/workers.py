@@ -169,7 +169,7 @@ class RuntimeOwner:
 
 class CooperativePort:
     """Offload blocking calls while keeping state changes on the Runtime owner."""
-    CALLS = {'submit', 'wait', 'query', 'cancel', 'handoff', 'handoff_with_context', '_read_world', '_read_zones'}
+    CALLS = {'submit', 'wait', 'query', 'cancel', 'handoff', 'handoff_with_context', '_read_world', '_read_zones', 'observe_recovery'}
 
     def __init__(self, port, owner, io_pool, controls):
         self.port, self.owner, self.io, self.controls = port, owner, io_pool, controls

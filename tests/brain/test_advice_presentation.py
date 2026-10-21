@@ -84,6 +84,24 @@ data.recovery_advice.action='query_original';
 assert(!renderRecoveryAdvice(data).includes('disabled'));
 ''')
 
+    def test_recovery_plan_shows_exact_steps_escaped_reason_and_blocks_unknown_control(self):
+        self.run_browser('''
+data.recovery_advice.action='revise_plan';
+data.recovery_advice.plan={step_order:['STEP_2','STEP_1'],observation_id:'obs-1'};
+data.subtask_list=[{step_id:'STEP_1',subtask:'抓取 A'}, {step_id:'STEP_2',subtask:'<script>bad</script>'}];
+let html=renderRecoveryAdvice(data);
+assert(html.includes('确认按此方案恢复执行'));
+assert(html.includes('obs-1'));
+assert(html.includes('&lt;script&gt;bad'));
+assert(!html.includes('<script>'));
+assert(html.indexOf('&lt;script&gt;bad') < html.indexOf('抓取 A'));
+displayedTask=data; pendingTaskControl={task_id:'t',command_id:'nav-1'};
+assert(renderRecoveryAdvice(data).includes('disabled'));
+confirmRecoveryAdvice();
+data.recovery_advice.action='observe_scene';
+assert(renderRecoveryAdvice(data).includes('读取现场并重新分析'));
+''')
+
     def test_retry_step_advance_and_terminal_remove_old_failure_card(self):
         self.run_browser('''
 renderTaskProgress(data);

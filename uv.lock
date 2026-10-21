@@ -567,6 +567,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "requests" },
+    { name = "socksio" },
 ]
 
 [package.optional-dependencies]
@@ -610,7 +611,6 @@ simulation = [
     { name = "scipy" },
     { name = "sentence-transformers" },
     { name = "setuptools" },
-    { name = "socksio" },
     { name = "torch" },
     { name = "tqdm" },
     { name = "wheel" },
@@ -661,7 +661,7 @@ requires-dist = [
     { name = "scipy", specifier = "==1.15.3", marker = "extra == 'simulation'" },
     { name = "sentence-transformers", specifier = "==2.5.1", marker = "extra == 'simulation'" },
     { name = "setuptools", specifier = "==80.9.0", marker = "extra == 'simulation'" },
-    { name = "socksio", specifier = ">=1.0.0", marker = "extra == 'simulation'" },
+    { name = "socksio", specifier = ">=1.0.0,<2" },
     { name = "torch", specifier = "==2.7.0+cu128", index = "https://download.pytorch.org/whl/cu128", marker = "extra == 'simulation'" },
     { name = "tqdm", marker = "extra == 'simulation'" },
     { name = "wheel", specifier = "==0.45.1", marker = "extra == 'simulation'" },
