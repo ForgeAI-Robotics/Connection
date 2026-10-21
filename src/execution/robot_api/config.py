@@ -215,14 +215,16 @@ def load_robot_api_config() -> RobotApiConfig:
         backends_cfg = copy.deepcopy(backends_cfg)
         execution = profile['routes']['execution']
         observation = profile['routes']['observation']
-        active_backend = execution['backend'] if execution['available'] else '__disabled__'
+        # Shared NAV/VLA body tasks bypass the legacy RobotAPI/Slaver substrate.
+        legacy_execution = execution['available'] and execution['backend'] != 'body_real'
+        active_backend = execution['backend'] if legacy_execution else '__disabled__'
         observation_backend = observation['backend'] if observation['available'] else '__disabled__'
         env_url = None  # An applied profile takes precedence over stale service environments.
         for route in (execution, observation):
-            if route['available']:
+            if route['available'] and route['backend'] != 'body_real':
                 raw = backends_cfg.setdefault(route['backend'], {})
                 raw.update(enabled=True, url=route['url'])
-        if execution['available']:
+        if legacy_execution:
             backends_cfg[active_backend].update(provide_state=True, accept_action=True)
     backends: list[BackendConfig] = []
 

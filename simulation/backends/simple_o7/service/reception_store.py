@@ -149,6 +149,39 @@ class ReceptionStore:
                                            "action_state_uncertain": False}}
 
     # ------------------------------------------------------------------ HTTP side
+    def prepare_plan(self, body):
+        """Pin a simulation segment prefix without starting or reserving physics."""
+        if (not isinstance(body, dict) or set(body) != {'task_id', 'instance_id', 'segments'}
+                or not isinstance(body['task_id'], str) or not 1 <= len(body['task_id']) <= 128
+                or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.' for c in body['task_id'])
+                or body['task_id'] in {'.', '..'}):
+            raise Conflict('INVALID_PLAN', '任务计划身份或字段无效', 400)
+        segments = body['segments']
+        full = list(self.segments)
+        nav = [s for s in full if s.startswith('nav_')]
+        # Prefixes keep the calibrated physical episode's dependencies intact.
+        # A navigation-only prefix is distinct from silently skipping a pick.
+        if (not isinstance(segments, list) or not segments
+                or not any(segments == route[:len(segments)] for route in (full, nav))):
+            raise Conflict('INVALID_PLAN', '只支持已登记正向路线的导航或单罐抓放前缀', 400)
+        navigation_only = 'pick' not in segments
+        if navigation_only and not self.include_relay1:
+            raise Conflict('UNSUPPORTED_CAPABILITY', '通用纯导航需 office_v2 五点场景', 400)
+        with self.transaction() as db:
+            instance = db.execute("SELECT value FROM metadata WHERE key='instance_id'").fetchone()[0]
+            if body['instance_id'] != instance:
+                raise Conflict('INSTANCE_CHANGED', '仿真实例已变化')
+            if (self.root / 'reception.closed').exists():
+                raise Conflict('SERVICE_STOPPING', '仿真正在停止', 503)
+            key = 'task_plan:' + body['task_id']
+            old = db.execute('SELECT value FROM metadata WHERE key=?', (key,)).fetchone()
+            if old and json.loads(old[0]) != body:
+                raise Conflict('TASK_PLAN_CONFLICT', '同任务的物理计划已固定，不能更换')
+            if not old and (self._session(db, body['task_id']) or self._commands(db, body['task_id'])):
+                raise Conflict('TASK_ALREADY_STARTED', '任务已有执行记录，不能补写计划')
+            db.execute('INSERT OR IGNORE INTO metadata VALUES (?, ?)', (key, json.dumps(body)))
+        return dict(body, accepted=True)
+
     def submit(self, role, body, launch):
         """Accept or reject one validated contract request. launch(task_id, episode_dir) -> pid."""
         with self.transaction() as db:
@@ -176,9 +209,11 @@ class ReceptionStore:
                         other.update(state="superseded", failure="superseded_by_new_task")
                         self._save_session(db, other)
                 episode = self.root / "reception_episodes" / f"{task}-{uuid.uuid4().hex[:8]}"
+                declared = db.execute('SELECT value FROM metadata WHERE key=?', ('task_plan:' + task,)).fetchone()
+                segments = json.loads(declared[0])['segments'] if declared else list(self.segments)
                 session = {"task_id": task, "episode": str(episode), "worker_pid": None, "state": "starting",
-                           "segments": list(self.segments), "include_relay1": self.include_relay1,
-                           "navigation_only": self.navigation_only,
+                           "segments": segments, "include_relay1": self.include_relay1,
+                           "navigation_only": ('pick' not in segments) if declared else self.navigation_only,
                            "next": 0, "holding": None, "object_location": "table_2", "last_navigation": None,
                            "receipt": None, "failure": None, "created": now, "heartbeat": now}
                 self._save_session(db, session)

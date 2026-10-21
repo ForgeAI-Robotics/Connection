@@ -73,7 +73,8 @@ assert(!el('exec-choices').disabled);
         self.assertFalse(simulation['observation']['available'])
         self.assertEqual(real['reception']['backend'], 'reception_real')
         self.assertNotIn('endpoints', real['reception'])
-        self.assertFalse(real['execution']['available'])
+        self.assertTrue(real['execution']['available'])
+        self.assertEqual(real['execution']['backend'], 'body_real')
 
     def test_failure_keeps_actual_environment_and_stale_poll_cannot_unlock_switch(self):
         self.run_browser('''

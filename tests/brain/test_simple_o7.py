@@ -225,7 +225,7 @@ class SimpleO7Tests(unittest.TestCase):
         self.assertFalse(profile["routes"]["observation"]["available"])
         self.assertEqual(profile["routes"]["reception"]["backend"], "reception_mock")
         with patch("shared.execution_profile.applied_profile", return_value=profile):
-            self.assertEqual(select_backend({}, "generic"), "simple_o7")
+            self.assertEqual(select_backend({}, "generic"), "body_simple")
             with self.assertRaises(Rejected): select_backend({}, "desk")
             with patch("brain.adapters.simple_o7.settings", return_value=SimpleNamespace(url=self.port.url, timeout=900)):
                 self.assertIsInstance(build_port({}, "simple_o7"), SimpleO7Adapter)

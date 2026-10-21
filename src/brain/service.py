@@ -80,6 +80,9 @@ class BrainService:
             return Plan(())
         package = chosen["package"]
         backend = select_backend(self.config, package, mock=options.get("mock") is True)
+        if backend in {'body_real', 'body_simple'}:
+            from brain.packages.reception_skill import load_skill
+            chosen = dict(chosen, body_capabilities=load_skill(self.config).snapshot())
         if (chosen.get("sop") or {}).get("id", "").endswith(".ros_sim_manipulation"):
             if backend != "reception_simple":
                 raise Rejected("导航仿真＋操控模拟仅支持真实 ROS 导航仿真环境")

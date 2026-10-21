@@ -2,12 +2,13 @@
 
 维护日期：2026-10-21。维护 SIMPLE O6 场景与资产适配、服务接入、物理回合、网页接待和仿真证据的验证与排障。当前接口和启动方式见[SIMPLE 仿真接口](接口说明_simple%20o6%20仿真.md)；GR00T 接线、抓放与开关门效果见[操控与抓取](多端联调_操控与抓取.md)，真实 ROS 导航代码和定位问题仍归[导航与定位](多端联调_导航与定位.md)。
 
-快速定位：[排障章节导航](#排障章节导航)。以下完整内容从原模块按职责移动，参数、命令、失败与复验记录保留；2026-10-21 仅整理文档，没有新跑仿真。
+快速定位：[排障章节导航](#排障章节导航)。以下完整内容从原模块按职责移动，参数、命令、失败与复验记录保留；历史正文整理不代表重跑；2026-10-21 新增实测见下方相应验证项。
 
 ## 验证概览
 
 | 验证项／环境 | 证据日期与结果 | 适用边界／未完成项 |
 | --- | --- | --- |
+| 通用身体技能共用 NAV/VLA | 2026-10-21：导航 1/1、抓取复验 3/3、通用搬运复验 9/9；原接待对照 12/12 | 搬运复验经 3 次人工继续，首轮抓取与搬运失败保留；真机仅做离线接口验证。[通用技能](#generic-body-skills) |
 | O6 原生单步抓取 | 2026-09-24：固定校准物体三轮抓取与持有；旧 O7 失败另存 | 固定场景通过不等于泛化，原 O7 失败不被后续 O6 成功覆盖。[P1](#e-p1) |
 | Desk、MuJoCo、3DGS 及通用入口 | 2026-09-28：不同后端分别验证任务、恢复、持久化或观察 | 各后端的证明范围不同，不能合成“所有后端抓放通过”。[P2](#e-p2) |
 | SIMPLE 连续接待物理回合 | 2026-10-08～09 的场景结果保留；10-21 新版五点完整接待 12/12、七个物理动作通过，桌前规划失败后一次人工继续 | 10-21 为恢复后完成，不是一次通过；验证了 LLM 读取状态／求助和原继续入口，未执行 LLM revise_plan 物理分支。[P3](#e-p3)～[P5](#e-p5)、[最新复验](#e-p5-recovery) |
@@ -36,6 +37,76 @@
 - [正式网页接待：动作次数与物理核验](#e-p4)（证据日期：2026-10-09）
 - [新办公室物理接待：场景适配与失败重试](#e-p5)（证据日期：2026-10-09）
 - [新版五点接待与异常恢复复验](#e-p5-recovery)（证据日期：2026-10-21）
+- [通用身体技能与接待共用执行链路](#generic-body-skills)（证据日期：2026-10-21）
+
+<a id="generic-body-skills"></a>
+
+## 通用身体技能与接待共用执行链路
+
+证据日期：2026-10-21。修改基于 `941d502` 后的本地工作区；复用 `BodyAdapter`、NAV/VLA v1 合同和现有 Runtime。
+真实模型为 DeepSeek `deepseek-chat`，SIMPLE 为 office_v2、table 源、seed 605、五点 Skill v2、完整抓放配置。
+新通用任务经真实 LLM 选择与编译；测试脚本为 `scripts/simple_reception_experiment.py`，
+独立账本在 `data/experiments/body-skills-20261021/`，未应用主服务环境或开启真机动作。
+
+远端只更新 `reception_http.py` 和 `reception_store.py`，先通过 `manage.py stop` 检查无在途命令，
+备份为 `/home/fangqi/connection-simple-o7/runtime/body-plan-backup-20261021-181446/` 后启动原容器。
+没有改抓取阈值、控制算法、场景或种子；回合结果不能外推为长期稳定性。
+
+复现示例：
+
+```bash
+venv/core/bin/python scripts/simple_reception_experiment.py run \
+  --ledger data/experiments/body-skills-20261021/nav --task '去二号桌'
+venv/core/bin/python scripts/simple_reception_experiment.py run \
+  --ledger data/experiments/body-skills-20261021/transfer --task '把二号桌的可乐抓起来，搬到一号桌并放下'
+```
+
+| 案例 | 原任务与结果 | 物理证据 |
+| --- | --- | --- |
+| 去二号桌 | `simple-reception-20261021-181502`，1/1 成功 | `body-nav-table2-261021181502`，到达误差 2.82 cm；没有抓放命令 |
+| 导航后抓取首轮 | `simple-reception-20261021-181735`，导航 PASS、抓取 FAIL，任务 recovery_required | `body-pick-261021181735`：`lift_hold: state completion timed out after 8s`，抬升 8.08 cm、接触 true、无支撑，但 `lifted_gate=false`，不能算稳定抓持 |
+| 通用搬运首轮 | `simple-reception-20261021-182021`，抓取通过；门前段两次人工继续后 PASS，横移段触发倾斜保护，任务 recovery_required | 原门前误差 14.52 cm，第一次重试 9.79 cm，均未达 8 cm；后续横移报 `base_tilt_exceeded_20_degrees`，不重试安全失败 |
+| 原开始接待对照 | `simple-reception-20261021-182749`，12/12，7 个物理动作均首次 PASS，0 重试、0 人工跳过 | 五段误差 2.82 / 3.30 / 4.37 / 2.27 / 2.00 cm；抓取抬升 10.66 cm；放置误差 5.29 mm，释放且最终持物为空 |
+| 导航后抓取复验 | `simple-reception-20261021-183424`，3/3，导航与抓取首次 PASS，0 重试 | 目标仍为 `cola_can_1`；抬升 11.22 cm、接触 true、支撑 false、`lifted_gate=true`，末段抓取完成后回合正常结束 |
+| 通用搬运复验 | `simple-reception-20261021-183634`，9/9；7 个物理动作、10 次尝试，3 次人工继续、0 人工跳过 | 抓取抬升 11.20 cm；最终五段导航误差 2.82 / 5.76 / 6.07 / 4.54 / 2.92 cm；放置误差 14.04 mm，释放 true，持物为空 |
+
+首轮失败回合为远端 `runtime/reception_episodes/simple-reception-20261021-181735-e444876b/`。
+回合已结束，操控返回 `retryable=false`；没有在该回合重抓、改成功或清除失败。
+LLM 提出 `observe_scene` 建议，未确认派发；其文字不是物理根因证明。
+通用搬运的 `body-nav-relay2-261021182021` 与 `-r1` 均记录 FAIL；只在核实停止、持物保持、
+`simulation.retry_allowed=true` 后由测试操作者调用原 `continue`，`-r2` 通过。此为人工测试恢复，不是 LLM 自动执行。
+`body-nav-relay3-261021182021` 触发机身倾斜保护，回合不可恢复；没有新命令越过保护。
+随后使用相同配置的新任务做对照，旧失败仍保留。每条完整 HTTP 回包在各账本 `remote-commands.json`，
+汇总在 `verification.json`；这些数据被 Git 忽略，只存本机，物理轨迹保存在远端对应回合。
+
+模型边界检查发现“搬运后开灯”曾出现说明拒绝、动作列表却只保留搬运的矛盾输出。
+新增 `supported` 与 `unsupported_requirements` 的结构化要求，明确未完整支持时拒绝整份计划；
+修正后真实模型 8/8 案例符合预期。保留修正前 JSON 与修正后回包，见 `model-boundaries-before-fix.json`、
+`model-boundaries.json`。这是本组案例结果，不证明自然语言理解永不出错。
+
+离线覆盖原命令身份、导航证明、停止交接、未知能力／参数拒绝、真实路由动作许可、重建查询、
+人工继续、模型迟到及取消。真机路由在 localhost 假执行服务验证，没有向实体导航或操控发指令。
+原接待 SOP 的请求合同回归保持一致；本次完整离线回归 632 项和 DREAM 自检 27 项通过，日志 `offline-tests.log`。原接待物理对照一次通过，不用后续成功覆盖前述通用任务失败。
+通用搬运复验的门前段原命令 `body-nav-relay2-261021183634` 误差 14.09 cm，`-r1` 为 11.45 cm，
+`-r2` 为 6.07 cm 才通过。`body-nav-table1-261021183634` 在 `office_nav_table1__carry_clearance`
+规划失败，保留停止与持物证据后由操作者继续，`-r1` 到达误差 2.92 cm。
+最后 `body-place-261021183634` 放置 PASS，原导航证明引用成功的 `-r1`。
+两次门前恢复及一次桌前恢复均由测试操作者调用原继续入口，`plan_revisions` 为空，不能写成 LLM 自主恢复。
+
+本组共 6 个独立任务回合：4 个成功、2 个失败回合保留；29 次物理命令尝试中 7 次 FAIL，22 次 PASS。
+四类请求均有成功记录，但不代表固定种子下每轮一次通过，抓取、门前到达和带物过门稳定性仍待执行侧完善。
+没有修改物理控制算法、到达阈值、抓持门限或场景来制造成功。采集结束时所有测试回合均已结束、NAV/VLA 无活动命令；
+远端两份部署文件与本地哈希一致。主服务 `config/execution.yaml`、`data/system/execution.json` 和
+`config/brain.yaml` 前后哈希一致，真实环境没有应用新路由或执行动作。正式实例需另行重载及应用配置才使用新能力。
+`manifest.json`、`physical-evidence.json`、`live-config-before.json`、`live-config-after.json` 保存版本、回合与隔离核对依据。
+
+同日提交前按用户要求复核正式生效条件：服务器工作区已是新代码，但已应用配置仍为旧通用执行不可用路由。
+`Switcher.ledgers_idle()` 返回 `任务尚未核清，不能切换环境：paused`：
+任务 `16db02793645466b82bc50f3224bc271` 的原命令为 `nav-table2-50f3224bc271`。
+只读查询 NAV 已返回 `cancelled`、`navigation_stopped=true`，大脑仍保留暂停及 `command_unknown=true`；
+不据下游停止自行结束用户暂停的任务，也不手改账本绕过切换保护。本次提交不包含正式实例重载或环境应用；
+SIMPLE 部署已生效，正式通用真机路由须待原任务处理完后再应用。
+
 
 <a id="e-p1"></a>
 

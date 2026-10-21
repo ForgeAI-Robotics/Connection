@@ -97,6 +97,7 @@ class Reception:
                                     "navigation_legs": self.navigation_legs,
                                     "navigation_only": self.navigation_only,
                                     "navigation_source": self.navigation_source,
+                                    "task_plan_version": 1 if self.navigation_source == 'table' else None,
                                     "semantic_targets": self.semantic_scene}}
 
     def status(self, role):
@@ -136,6 +137,10 @@ class Reception:
                 raise InvalidRequest("X-Contract-Version 不匹配")
             if method == "GET" and sub == "/health":
                 return self.health(role)
+            if role == 'nav' and method == 'POST' and sub == '/v1/task_plan':
+                if self.navigation_source != 'table':
+                    return self.error('UNSUPPORTED_CAPABILITY', '通用计划仅支持 table 源场景', 400)
+                return 200, self.store.prepare_plan(body)
             if method == "GET" and sub == ("/v1/status" if role == "nav" else "/v1/vla/control/status"):
                 return self.status(role)
             if method == "POST" and sub == ("/v1/navigation/goals" if role == "nav" else "/v1/vla/tasks"):

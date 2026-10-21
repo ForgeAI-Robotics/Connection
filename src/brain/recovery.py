@@ -5,13 +5,15 @@ from datetime import datetime, timezone
 from contracts.tasks import Rejected
 
 OBSERVATION_TTL_SEC = 60
-SUPPORTED_BACKENDS = {'desk', 'simple_o7', 'reception_real', 'reception_protocol',
+SUPPORTED_BACKENDS = {'desk', 'simple_o7', 'body_real', 'body_simple', 'reception_real', 'reception_protocol',
                       'reception_simple', 'reception_real_sim_manipulation', 'reception_ros_sim_manipulation'}
 
 
 def bind_policy(policy, package, backend, port, config):
     settings = (config.get('brain') or {}).get('reasoning') or {}
     mode = getattr(policy, 'recovery_mode', lambda _: 'disabled')(package)
+    if backend in {'body_real', 'body_simple'}:
+        mode = 'preserve_order'
     if settings.get('recovery_plans', True) is False or backend not in SUPPORTED_BACKENDS:
         mode = 'disabled'
     limit = settings.get('max_recovery_revisions', 2)
@@ -61,7 +63,7 @@ def refuses_retry(progress, backend=None):
     # SIMPLE keeps retryable=false on terminal commands (no automatic replay),
     # but explicitly permits a new same-episode navigation attempt when stopped
     # and recoverable. This exception is limited to the pinned simulation route.
-    simulation_retry = (backend in {'reception_simple', 'reception_ros_sim_manipulation'}
+    simulation_retry = (backend in {'body_simple', 'reception_simple', 'reception_ros_sim_manipulation'}
                         and simulation.get('retry_allowed') is True)
     return (result.get('failure_scope') == 'safety' or details.get('failure_scope') == 'safety'
             or result.get('next_command_allowed') is False or details.get('next_command_allowed') is False

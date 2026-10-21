@@ -323,10 +323,10 @@ def select_backend(config, package, *, mock=False):
         if package == 'reception':
             return 'reception_mock' if mock else route['backend']
         if name == 'execution':
-            if route['backend'] == 'simple_o7':
+            if route['backend'] in {'simple_o7', 'body_real'}:
                 if package != 'generic':
-                    raise Rejected('simple_o7 当前仅支持通用任务中的单步抓取可乐，不支持桌面整理')
-                return 'simple_o7'
+                    raise Rejected('当前身体能力支持通用导航、单罐抓放，不支持桌面整理')
+                return 'body_simple' if route['backend'] == 'simple_o7' else 'body_real'
             return 'desk' if route['backend'] == 'desk' else 'slaver:' + route['backend']
     if package == "look":
         return "camera"
@@ -364,9 +364,22 @@ def protocol_endpoints(backend='reception_protocol'):
     return dict(endpoints)
 
 
+def body_simple_endpoints():
+    from shared.execution_profile import applied_profile
+    route = (applied_profile() or {}).get('routes', {}).get('execution', {})
+    if route.get('backend') != 'simple_o7' or route.get('mode') != 'simulation' or not route.get('available'):
+        raise Rejected('通用 SIMPLE 身体能力必须显式选择仿真执行环境')
+    root = route['url'].rstrip('/')
+    return {'dream': root + '/reception/nav', 'vla': root + '/reception/vla'}
+
+
 def target_identity(config, backend):
     from shared.execution_profile import applied_profile
     profile = applied_profile()
+    if backend == 'body_simple':
+        return {'backend': backend, **body_simple_endpoints()}
+    if backend == 'body_real':
+        return {'backend': backend, **target_identity(config, 'reception_real')}
     if backend == "reception_ros_sim_manipulation":
         return {"backend": backend, "dream": protocol_endpoints("reception_simple")["dream"],
                 "vla": "local:simulated-manipulation/v1"}
@@ -393,6 +406,17 @@ def target_identity(config, backend):
 
 def build_port(config, backend, *, agent=None):
     from brain.config_flags import kernel_enabled
+    if backend == 'body_real':
+        return MotionGate(BodyAdapter.from_config(config), kernel_enabled(config))
+    if backend == 'body_simple':
+        from copy import deepcopy
+        from shared.protocol_simulation import require_simulator_pair
+        from brain.adapters.simple_body import SimpleBodyAdapter
+        endpoints = body_simple_endpoints()
+        require_simulator_pair(endpoints, kind='simple_physics')
+        selected = deepcopy(config)
+        selected.setdefault('reception_real', {}).update(dream_base_url=endpoints['dream'], vla_base_url=endpoints['vla'])
+        return SimpleBodyAdapter.from_config(selected)
     if backend == "reception_ros_sim_manipulation":
         from brain.adapters.simulated_manipulation import HybridReceptionAdapter
         from shared.protocol_simulation import require_simulator_pair

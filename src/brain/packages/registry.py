@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contracts.tasks import KernelError
 from brain.packages import desk, look, reception
+from brain.skills import body_requests
 
 
 SOPS = {
@@ -69,14 +70,14 @@ class PackagePolicy:
 
     def request(self, step, task_id, command_id, last_command):
         if step.kind == "navigate":
-            body = reception.navigation_body(step, task_id, command_id)
+            body = body_requests.navigation_body(step, task_id, command_id)
         elif step.kind == "inspect":
             proof = step.navigation_step_id or "NAVIGATING_TO_TABLE2"
-            body = reception.inspection_body(task_id, command_id, last_command(proof),
+            body = body_requests.inspection_body(task_id, command_id, last_command(proof),
                                             object_id=self.object_id(step))
         elif step.kind in {"pick", "place"}:
             proof = step.navigation_step_id or ("NAVIGATING_TO_TABLE2" if step.kind == "pick" else "NAVIGATING_TO_TABLE1")
-            body = reception.manipulation_body(step, task_id, command_id, last_command(proof))
+            body = body_requests.manipulation_body(step, task_id, command_id, last_command(proof))
         elif step.body:
             body = {"command_id": command_id, "task_id": task_id,
                     "subtask": step.key, "robot_name": step.robot_name}

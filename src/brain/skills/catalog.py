@@ -20,7 +20,7 @@ class SkillEntry:
 CATALOG = (
     SkillEntry(
         "navigate",
-        "接待路段需要沿既有合同移动",
+        "通用任务或 SOP 沿已登记导航合同移动",
         "DreamClient.submit_navigation",
         "reached",
     ),

@@ -60,6 +60,10 @@ STATES = {'running': '执行中', 'verifying': '核验执行结果', 'waiting_hu
           'paused': '已暂停', 'cancelling': '等待停止确认', 'cancelled': '已取消',
           'recovery_required': '需要恢复处理', 'succeeded': '已完成', 'failed': '已失败'}
 PHASES = {
+    'BODY_NAV_TABLE2': '导航到 2 号桌', 'BODY_NAV_RELAY1': '导航到中转点 1',
+    'BODY_NAV_RELAY2': '导航到门前', 'BODY_NAV_RELAY3': '横移通过门段',
+    'BODY_NAV_TABLE1': '导航到 1 号桌', 'BODY_PICK': '抓取饮料', 'BODY_PLACE': '放置饮料',
+    'VERIFY_BODY_PICK': '确认饮料已抓稳', 'VERIFY_BODY_PLACE': '确认饮料已放好',
     'INITIALIZING': '初始化接待任务', 'FETCHING_WORLD': '读取现场信息',
     'NAVIGATING_TO_TABLE2': '导航到 2 号桌', 'DREAM_INSPECTING_TABLE2': '检查 2 号桌上的物品',
     'VLA_PICKING': '抓取饮料', 'VERIFYING_GRASP': '确认饮料已抓稳',
@@ -118,6 +122,7 @@ BACKENDS = {'reception_real': '真机接待', 'reception_protocol': '接待协�
             'reception_ros_sim_manipulation': '真实 ROS 导航项目仿真＋操控模拟',
             'reception_real_sim_manipulation': '导航真机＋操控模拟（不含真实抓放）',
             'reception_simple': 'SIMPLE 物理仿真接待',
+            'body_simple': 'SIMPLE 通用身体任务', 'body_real': '真机通用身体任务',
             'unselected': '尚未选择', 'desk': '桌面仿真'}
 SKILLS = {'local': '本地', 'navigate': '导航', 'inspect': '检查', 'pick': '抓取',
           'place': '放置', 'verify': '核验', 'describe': '观察', 'desk_check': '桌面检查',

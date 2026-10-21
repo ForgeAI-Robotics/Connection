@@ -25,9 +25,16 @@ class ProfileRoutingTests(unittest.TestCase):
 
     def test_global_real_refuses_unimplemented_modules(self):
         with patch('shared.execution_profile.applied_profile', return_value=resolve({'mode': 'real'}, {})):
-            for package in ['generic', 'desk', 'look']:
-                with self.assertRaisesRegex(Rejected, '不会回落仿真'):
+            self.assertEqual(select_backend({}, 'generic'), 'body_real')
+            for package in ['desk', 'look']:
+                with self.assertRaises(Rejected):
                     select_backend({}, package)
+
+    def test_generic_real_uses_shared_body_and_motion_gate(self):
+        with patch('brain.adapters.ports.BodyAdapter.from_config') as body:
+            port = build_port({'reception_real': {'kernel_enabled': False}}, 'body_real')
+            self.assertFalse(port.submit('test', {})['accepted'])
+            body.return_value.submit.assert_not_called()
 
     def test_disabled_reception_cannot_be_bypassed_by_demo(self):
         p = resolve({'modules': {'reception': {'mode': 'disabled'}}}, {'backends': {'desk': {'url': 'http://localhost:5008'}}})

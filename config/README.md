@@ -84,7 +84,7 @@ uv pip install --python venv/gpu -e .
 
 - `mode` 为 `simulation` 或 `real`，`simulation_backend` 固定为 `simple_o7`。
 - 三个模块的 `mode` 均为 `inherit`；接待的 `simulation_backend` 固定为 `reception_simple`，通用执行与观察为 `inherit`。
-- SIMPLE 下接待与通用抓取分别使用既有的两个后端；真机下接待为 `reception_real`。观察和通用执行的能力限制仍按实际适配返回，不自动回落其他仿真。
+- SIMPLE 下接待任务为 `reception_simple`，新通用身体任务为 `body_simple`，共用 NAV/VLA；真机下分别为 `reception_real` 和 `body_real`。旧生效快照需重新应用才更新路由，观察不可用时不回落其他仿真。
 
 以下模块覆盖及旧后端配置仍用于命令行维护，不再作为面板选项。协议模拟预设为 `examples/execution_reception_protocol.yaml`，用 `--file` 预览并应用。
 
@@ -129,7 +129,7 @@ venv/core/bin/python scripts/execution_mode.py apply --mode real --reset-overrid
 
 已应用的快照保存在 `data/system/execution.json`。业务进程启动时读取一次，修改草稿不热切换运行中的后端；需要点击应用或运行 `apply`。这份快照优先于旧的 `RECEPTION_MODE`、`ROBOT_API_BACKEND`、`ROBOT_BACKEND`、`ROBOT_API_URL` 和独立导航覆盖。后端基础地址仍在 `config/robot_api.yaml`；修改地址后重新应用。`data/system` 中的文件由程序维护，不手动改写或删除。
 
-**能力边界：**应用真机接待会打开 `kernel_enabled`。派发仍要过下游闸门（导航通道就绪）。切回仿真、协议模拟或停用接待会关闭许可。通用执行与观察尚无接好的完整真机适配，选择真机时显示不可用并拒绝对应任务。Desk 不提供画面；选择 Desk 作为观察后端时会明确不可用，不自动寻找另一环境的相机。各模块的实际选择可在管理面板及 `:8888` 任务网页查看。
+**能力边界：**应用真机接待或真机通用身体执行会打开共用 `kernel_enabled`。派发仍要过下游闸门（导航通道就绪）。两者均切回仿真或停用时才关闭许可。通用身体任务已共用真机 NAV/VLA，支持登记正向路线及单罐抓放；任意物体／地点与桌面整理尚未接入。真机观察仍不可用。Desk 不提供画面；选择 Desk 作为观察后端时会明确不可用，不自动寻找另一环境的相机。各模块的实际选择可在管理面板及 `:8888` 任务网页查看。
 
 一键离线测试仍使用 `venv/core/bin/python scripts/run_tests.py`。测试脚本隔离现场生效配置及切换互斥文件，不受当前全局／模块环境影响，也不改现场生效版本。
 

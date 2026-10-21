@@ -213,6 +213,7 @@ class BrainEndToEndTests(unittest.TestCase):
         url = f'http://127.0.0.1:{self.server.server_address[1]}'
         profile = resolve(PROFILE, {'backends': {'simple_o7': {'url': url}}})
         profile['revision'] = 'simple-test'
+        self.profile = profile
         patcher = patch('shared.execution_profile.applied_profile', return_value=profile)
         patcher.start(); self.addCleanup(patcher.stop)
         self.config = {'brain': {'capture_timeline': False, 'reasoning': {'recovery_advice': False}},
@@ -224,7 +225,8 @@ class BrainEndToEndTests(unittest.TestCase):
         from brain.app import create_service
         from brain.application import BrainApplication
         from brain.api.app import create_app as brain_app
-        service = create_service(self.config, model=lambda _: (_ for _ in ()).throw(AssertionError('no LLM')))
+        service = create_service(self.config, model=getattr(self, 'model', None) or
+                                 (lambda _: (_ for _ in ()).throw(AssertionError('no LLM'))))
         application = BrainApplication(service).start()
         self.addCleanup(application.close)
         self.client = brain_app(application).test_client()
@@ -325,6 +327,93 @@ class BrainEndToEndTests(unittest.TestCase):
                 attempt = record['steps'][step.step_id]['attempts'][0]
                 proof = record['steps'][step.navigation_step_id]['attempts'][0]['command_id']
                 self.assertEqual(attempt['request']['body']['navigation_proof']['dream_command_id'], proof)
+
+    def use_generic(self, actions):
+        self.use_office_route()
+        root = self.profile['routes']['reception']['endpoints']['dream'].removesuffix('/reception/nav')
+        self.profile['routes']['execution'] = dict(mode='simulation', backend='simple_o7', available=True, url=root)
+        self.config['brain']['reasoning']['semantic_selection'] = False
+        self.model = lambda _: json.dumps({'supported': True, 'unsupported_requirements': [],
+                                          'actions': actions, 'reasoning_explanation': 'test planner'})
+
+    def test_generic_single_navigation_finishes_episode(self):
+        self.use_generic([{'skill': 'navigate', 'target': 'table2'}])
+        service, status = self.run_task('generic-nav', '去二号桌')
+        self.assertEqual(status['state'], 'succeeded', status)
+        self.assertEqual(FakeEpisode.segments, ['nav_table2'])
+        self.assertEqual(self.store.sessions()[-1]['state'], 'completed')
+        self.assertTrue(self.store.sessions()[-1]['navigation_only'])
+        self.assertEqual(service.runtime.snapshot()['execution_backend'], 'body_simple')
+
+    def test_generic_transfer_uses_common_proofs_and_verification(self):
+        self.use_generic([{'skill': 'pick', 'object': 'cola_can_1'},
+                          {'skill': 'place', 'object': 'cola_can_1', 'target': 'table_1'}])
+        service, status = self.run_task('generic-transfer', '把可乐搬到一号桌')
+        self.assertEqual(status['state'], 'succeeded', status)
+        self.assertEqual(FakeEpisode.segments, ['nav_table2', 'pick', 'nav_relay1', 'nav_relay2', 'nav_relay3', 'nav_table1', 'place'])
+        record = service.runtime.snapshot()
+        self.assertEqual(record['object_location'], 'table_1')
+        self.assertEqual(record['recovery_policy']['mode'], 'preserve_order')
+        place = record['steps']['BODY_PLACE']['attempts'][0]
+        nav_id = record['steps']['BODY_NAV_TABLE1']['attempts'][0]['command_id']
+        self.assertEqual(place['request']['body']['navigation_proof']['dream_command_id'], nav_id)
+
+    def test_real_generic_route_uses_same_wire_offline_and_no_slaver(self):
+        self.use_generic([{'skill': 'pick', 'object': 'cola_can_1'},
+                          {'skill': 'place', 'object': 'cola_can_1', 'target': 'table_1'}])
+        self.profile['routes']['execution'] = dict(mode='real', backend='body_real', available=True, url='')
+        endpoints = self.profile['routes']['reception']['endpoints']
+        self.config['reception_real'].update(kernel_enabled=True, dream_base_url=endpoints['dream'], vla_base_url=endpoints['vla'])
+        # These are localhost fake physics endpoints, never real robot addresses.
+        service, status = self.run_task('real-wire-offline', '把可乐搬到一号桌')
+        self.assertEqual(status['state'], 'succeeded', status)
+        self.assertEqual(service.runtime.snapshot()['execution_backend'], 'body_real')
+        self.assertEqual(service.transports, [])
+
+    def test_generic_failed_navigation_retries_original_step_only_after_continue(self):
+        self.use_generic([{'skill': 'pick', 'object': 'cola_can_1'}])
+        FakeEpisode.miss_once = 'nav_table2'
+        service, status = self.run_task('generic-retry', '去二号桌抓取可乐')
+        self.assertEqual(status['state'], 'recovery_required', status)
+        record = service.runtime.snapshot()
+        original = record['steps']['BODY_NAV_TABLE2']['attempts'][0]['command_id']
+        self.assertEqual(FakeEpisode.segments, ['nav_table2'])
+        self.assertEqual(self.store.command('nav', original)['state'], 'failed')
+        from brain.app import create_service
+        restored = create_service(self.config, model=self.model).attach()
+        attempt = restored.snapshot()['steps']['BODY_NAV_TABLE2']['attempts'][0]
+        self.assertEqual(restored.port.query(original, attempt['request'])['terminal'], 'failed')
+        self.assertEqual(FakeEpisode.segments, ['nav_table2'])
+        response = self.client.post('/api/task_continue', json={'task_id': 'generic-retry'})
+        self.assertEqual(response.status_code, 200, response.json)
+        status = self.wait()
+        self.assertEqual(status['state'], 'succeeded', status)
+        self.assertEqual(FakeEpisode.segments, ['nav_table2', 'nav_table2', 'pick'])
+        self.assertEqual(self.store.command('nav', original)['state'], 'failed')
+
+    def test_cancel_during_generic_model_call_never_dispatches_late_plan(self):
+        self.use_generic([{'skill': 'navigate', 'target': 'table2'}])
+        entered, release = threading.Event(), threading.Event()
+        def model(_):
+            entered.set()
+            release.wait(5)
+            return json.dumps({'supported': True, 'unsupported_requirements': [],
+                               'actions': [{'skill': 'navigate', 'target': 'table2'}]})
+        from brain.app import create_service
+        from brain.application import BrainApplication
+        from brain.api.app import create_app
+        service = create_service(self.config, model=model)
+        application = BrainApplication(service).start()
+        self.addCleanup(application.close)
+        client = create_app(application).test_client()
+        self.assertEqual(client.post('/publish_task', json={'task': '去二号桌', 'task_id': 'late-body'}).status_code, 200)
+        self.assertTrue(entered.wait(3))
+        self.assertEqual(client.post('/api/task_cancel', json={'task_id': 'late-body'}).status_code, 200)
+        release.set()
+        self.assertTrue(service.runtime.planning_done.wait(5))
+        self.assertEqual(service.runtime.snapshot()['state'], 'cancelled')
+        self.assertEqual(FakeEpisode.segments, [])
+        self.assertEqual(self.store.sessions(), [])
 
     def test_office_navigation_only_has_five_segments_and_no_manipulation(self):
         self.use_office_route(navigation_only=True)

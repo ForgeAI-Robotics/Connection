@@ -12,6 +12,15 @@ class PlanningService:
 
     def plan(self, runtime, options):
         package = runtime.package_name
+        if package == 'generic' and runtime.record['execution_backend'] in {'body_real', 'body_simple'}:
+            from brain.skills.body_plan import plan
+            snapshot = runtime.record['selection']['body_capabilities']
+            text = runtime.record['task_desc']
+            result = plan(self.planner, text, snapshot, rules=runtime.record.get('release_rules') or (),
+                          experiences=self.experiences.load(text))
+            if runtime.record['execution_backend'] == 'body_simple':
+                runtime.port.prepare_plan(runtime.record['task_id'], result.steps, snapshot)
+            return result
         if package == "reception":
             if runtime.record["execution_backend"] == "reception_mock":
                 from brain.packages.reception_mock import plan

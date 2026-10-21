@@ -3,7 +3,7 @@
   const choices = [...document.querySelectorAll('input[name="exec-mode"]')];
   const labels = {simulation: 'SIMPLE 仿真', real: '真机'};
   const modules = {reception: '接待', execution: '通用执行', observation: '现场观察 / 网页画面'};
-  const backends = {reception_real: '真机', reception_simple: 'SIMPLE 仿真', simple_o7: 'SIMPLE 仿真'};
+  const backends = {reception_real: '真机', body_real: '真机身体技能', reception_simple: 'SIMPLE 仿真', simple_o7: 'SIMPLE 仿真'};
   let state = null;
   let dirty = false;
   let submitting = false;

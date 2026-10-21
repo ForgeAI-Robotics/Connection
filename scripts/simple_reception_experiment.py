@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run 「开始接待」 through the existing brain against the SIMPLE physical reception episode.
+"""Run SOP or generic body tasks through the brain against SIMPLE physical episodes.
 
 Uses an isolated ledger and a process-local reception_simple profile, so the live
 brain service, its ledger, the applied environment and the real-motion permit are untouched.
@@ -36,7 +36,7 @@ def main():
     from shared.execution_profile import resolve
     profile = resolve({"mode": "simulation", "modules": {
         "reception": {"mode": "simulation", "simulation_backend": "reception_simple"},
-        "execution": {"mode": "disabled"}, "observation": {"mode": "disabled"}}},
+        "execution": {"mode": "simulation", "simulation_backend": "simple_o7"}, "observation": {"mode": "disabled"}}},
         {"backends": {"simple_o7": {"url": args.url}}})
     if args.action == "health":
         from shared.protocol_simulation import require_simulator_pair
@@ -92,10 +92,15 @@ def main():
     from brain.storage.tasks import load_existing
     record = load_existing(ledger) or {}
     commands = {}
-    for step, segment in STEP_SEGMENTS.items():
+    specs = record.get('phase_specs') or []
+    physical = {s['step_id']: ('nav_' + s['key'] if s['kind'] == 'navigate' else s['kind'])
+                for s in specs if s['kind'] in {'navigate', 'pick', 'place'}}
+    for step, segment in (physical or STEP_SEGMENTS).items():
         attempts = ((record.get("steps") or {}).get(step) or {}).get("attempts") or []
         if attempts:
-            verify = "VERIFYING_GRASP" if segment == "pick" else "VERIFYING_PLACE" if segment == "place" else None
+            index = next((i for i, s in enumerate(specs) if s['step_id'] == step), -1)
+            following = specs[index + 1] if 0 <= index < len(specs) - 1 else {}
+            verify = following.get('step_id') if following.get('kind') == 'verify' else None
             done = (record["steps"].get(verify) or {}).get("status") == "done" if verify else \
                 (record["steps"].get(step) or {}).get("status") == "done"
             commands[segment] = {"command_id": attempts[-1]["command_id"], "step": step,

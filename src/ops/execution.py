@@ -37,9 +37,11 @@ def read_yaml(path):
 _KERNEL_TOKEN = r'(?:true|false|True|False|yes|no|Yes|No|on|off|~|null)'
 
 
-def reception_motion_permitted(profile):
-    route = (profile.get('routes') or {}).get('reception') or {}
-    return route.get('available') is True and route.get('backend') == 'reception_real'
+def body_motion_permitted(profile):
+    routes = profile.get('routes') or {}
+    return any(route.get('available') is True and route.get('backend') == backend
+               for route, backend in ((routes.get('reception') or {}, 'reception_real'),
+                                      (routes.get('execution') or {}, 'body_real')))
 
 
 def render_kernel_enabled(text, enabled):
@@ -200,7 +202,9 @@ class Switcher:
         desired = list(dict.fromkeys(original + ['master']))
         routes = profile['routes']
         execution = routes['execution']
-        if execution['available'] and execution['backend'] not in {'desk', 'simple_o7'} and 'slaver' not in desired:
+        if execution['available'] and execution['backend'] == 'body_real':
+            desired = [name for name in desired if name != 'slaver']
+        if execution['available'] and execution['backend'] not in {'desk', 'simple_o7', 'body_real'} and 'slaver' not in desired:
             desired.append('slaver')
         if 'slaver' in desired and not services.running('redis'):
             raise ValueError('Slaver 路径需要先启动 Redis；环境切换不重启或清空 Redis')
@@ -273,7 +277,7 @@ class Switcher:
         real = before.get('reception_real') or {}
         if not isinstance(real, dict):
             raise ValueError('config/brain.yaml 的 reception_real 必须是映射')
-        enabled = reception_motion_permitted(profile)
+        enabled = body_motion_permitted(profile)
         if (real.get('kernel_enabled') is True) == enabled:
             return None
         updated = render_kernel_enabled(original, enabled)

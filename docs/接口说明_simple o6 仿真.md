@@ -2,21 +2,33 @@
 
 更新日期：2026-10-21。范围为 Connection 与 SIMPLE 独立物理执行服务的接入、配置、调用和核验。当前代码与配置保留 `simple_o7` 名称；实际 O6 物体为校准汤罐。接口已按本仓库实现核对，历史实跑结果见末节，不表示本次重新启动或验收远端服务。
 
-## 1. 两条执行链路
+## 1. 共用身体技能与旧单步接口
 
-| 项目 | 通用单步抓取 | 固定单罐接待 |
+新建通用身体任务和“开始接待”共用 `fq/reception-lan/v1` 的 NAV/VLA 接口，实际 O6 场景中的
+`cola_can_1` 映射为校准汤罐。两者复用同一 Runtime、BodyAdapter、Verifier 和物理 worker。
+
+| 项目 | 通用身体任务 | 固定单罐接待 |
 | --- | --- | --- |
-| 配置模块 / 后端 | `execution` / `simple_o7` | `reception` / `reception_simple` |
-| 大脑适配 | `SimpleO7Adapter`，Planner 生成单步计划 | `BodyAdapter` + `DreamClient` / `VlaClient`，固定接待 SOP |
-| HTTP 合同 | `connection/simple-o7/v1`，`/v1/*` | `fq/reception-lan/v1`，`/reception/nav/*` 与 `/reception/vla/*` |
-| 当前能力 | `pick_hold_can`：抓取、抬升、稳定持有 | 导航到 table2 → pick → relay2 → relay3 横移 → table1 → place |
-| 物理控制 | O6 原生抓取、CuRobo、AMO、手臂力矩 PD | O6 + SONIC v1.1 的连续 MuJoCo 回合 |
-| 状态连续性 | 单动作实验，保留末态文件，不支持后续导航和放置 | 同一任务各段共用内存中的物理世界，命令之间仿真时钟暂停 |
-| 对象 | `can` 对应 `graspnet1b:2` | 合同 `cola_can_1` 映射为同一校准汤罐，并非可乐模型 |
+| 配置模块 / 任务后端 | `execution` 配置 `simple_o7` / `body_simple` | `reception` / `reception_simple` |
+| 计划来源 | LLM 选择登记技能，程序补齐前置和核验 | 版本化 SOP 快照 |
+| HTTP 路径 | `/reception/nav/*`、`/reception/vla/*`，派发前声明本任务段序 | 相同 NAV/VLA 命令接口，按既有 SOP 模式 |
+| 当前能力 | 仅导航正向前缀、导航后抓取、完整单罐搬运 | 登记路线的完整接待 |
+| 状态连续性 | 一个任务一个连续物理回合，末段完成后关闭 | 同一任务各段共用物理世界 |
 
-“通用执行只支持抓取”不限制接待后端的六段流程。两条链路都复用大脑 Runtime 与 Verifier，没有“仿真即通过”分支。接待服务严格校验段序，不支持跳过抓取后直接搬运，也不能把大脑的仅导航 SOP 默认视为本仿真已支持的路径。
+通用计划声明使用 `POST /reception/nav/v1/task_plan`：
+`{"task_id":"...","instance_id":"健康接口中的实例ID","segments":["nav_table2"]}`。
+健康响应 `simulation.task_plan_version=1` 表示已部署支持。请求只登记计划，不启动物理进程，不预留动作资源；
+首个 NAV 命令才创建回合。相同任务的相同计划可重复确认，不同内容、实例不符或已执行后补写计划会被拒绝。
+登记计划固定到现有 SQLite 元数据，不建立第二套大脑任务状态。
 
-服务不调用 GR00T 5555，不把静态文件端口当执行接口。旧 O7 场景仍可保留历史命令查询，其失败与 O6 结果分开；当前两条 O6 链路均未接入实时相机或现场描述。
+当前 office_v2 的合法段序为完整路线 `nav_table2,pick,nav_relay1,nav_relay2,nav_relay3,nav_table1,place`
+或纯导航路线的非空前缀。例如只导航、导航后抓取都可明确结束，无需伪装完成后续接待；
+不接受跳过抓取却保留持物导航的错误依赖。完整接待仍按原配置校验路线与导航模式。
+通用任务不支持 fridge 源场景、回头、任意目标或跨任务继续持物；详细业务边界见[大脑接口](接口说明_大脑%20Brain.md)。
+
+旧 `connection/simple-o7/v1` 的 `/v1/*` 单步抓取接口和 `SimpleO7Adapter` 保留用于旧账本恢复与隔离实验，
+不再是已应用 SIMPLE 环境中新通用任务的默认执行路径。下文第 3 节描述该旧接口，不能将其限制当作新身体技能的限制。
+服务不调用 GR00T 5555；当前物理链路均未接入实时相机或现场描述。
 
 ## 2. 部署与代码归属
 
@@ -24,7 +36,8 @@
 
 | 代码 | 职责 |
 | --- | --- |
-| `src/brain/adapters/simple_o7.py` | 通用抓取的能力约束、调用、查询与证据转换 |
+| `src/brain/adapters/simple_o7.py` | 旧单步抓取的调用、查询与证据转换 |
+| `src/brain/skills/body_plan.py`、`src/brain/adapters/simple_body.py` | 通用身体能力编译与非动作的仿真计划声明 |
 | `src/brain/adapters/ports.py`、`src/shared/execution_profile.py` | 后端选择、身份保存、接待端点前缀 |
 | `src/ops/simple_remote.py` | 远端健康、日志、独立容器管理 |
 | `simulation/backends/simple_o7/service/server.py`、`store.py`、`worker.py`、`o6.py` | 服务入口、单步抓取账本及物理证据 |
@@ -38,7 +51,7 @@
 
 单步账本为 `runtime/commands.sqlite3`，输出为 `runtime/episodes/<episode_id>/`；接待账本为 `runtime/reception.sqlite3`，输出为 `runtime/reception_episodes/<task_id>-<suffix>/`。`docker logs --tail 100 connection-simple-o7` 查看服务日志，物理阶段与轨迹看对应回合目录。
 
-## 3. 通用抓取接口与核验
+## 3. 旧单步抓取接口与核验
 
 以下 `/v1/*` 接口除 `/health` 外要求 `Authorization: Bearer <SIMPLE_O7_TOKEN>`。
 
@@ -176,9 +189,9 @@ modules:
     simulation_backend: reception_simple
 ```
 
-在面板「运行环境」选择「SIMPLE 仿真」并点击「应用」，同时选用上述接待和通用执行路由；正式网页发布「开始接待」。上述独立模块配置仍可经命令行预览、应用。已应用配置决定执行端点，不能只编辑 YAML 就认为当前任务已切换；环境应用检查在途任务及健康，失败须查看原始原因。各动作和任务控制语义见[大脑接口](接口说明_大脑%20Brain.md)，容器启停与配置切换是两件事。SIMPLE 不额外依赖 Slaver / Redis。
+在面板「运行环境」选择「SIMPLE 仿真」并点击「应用」，同时选用上述接待和通用执行路由；正式网页发布「开始接待」。新通用任务要求部署上述任务计划声明能力；旧服务在物理动作开始前拒绝。上述独立模块配置仍可经命令行预览、应用。已应用配置决定执行端点，不能只编辑 YAML 就认为当前任务已切换；环境应用检查在途任务及健康，失败须查看原始原因。各动作和任务控制语义见[大脑接口](接口说明_大脑%20Brain.md)，容器启停与配置切换是两件事。SIMPLE 不额外依赖 Slaver / Redis。
 
-通用抓取也可使用隔离账本，不切换主服务：
+旧单步抓取实验也可使用隔离账本，不切换主服务：
 
 ```bash
 venv/core/bin/python scripts/simple_o7_experiment.py health

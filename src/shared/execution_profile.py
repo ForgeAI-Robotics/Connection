@@ -63,6 +63,8 @@ def resolve(value, robot_config):
                 route['endpoints'] = dict(PROTOCOL_URLS)
             elif route['backend'] == 'reception_simple':
                 route['endpoints'] = simple_reception_endpoints(robot_config)
+        elif mode == 'real' and name == 'execution':
+            route.update(backend='body_real')
         elif mode == 'real':
             route.update(backend='unavailable', available=False,
                          reason=f'{name} 尚无已接入的完整真机适配；不会回落仿真')

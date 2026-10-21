@@ -70,7 +70,8 @@ class ExecutionSwitchTests(unittest.TestCase):
 
     def test_real_never_falls_back_to_simulation(self):
         routes = resolve({'mode': 'real'}, ROBOT)['routes']
-        self.assertFalse(routes['execution']['available'])
+        self.assertTrue(routes['execution']['available'])
+        self.assertEqual(routes['execution']['backend'], 'body_real')
         self.assertFalse(routes['observation']['available'])
         self.assertEqual(routes['execution']['mode'], 'real')
         self.assertTrue(routes['reception']['available'])
@@ -182,7 +183,7 @@ class ExecutionSwitchTests(unittest.TestCase):
         self.assertNotIn('dream', started)
         self.assertNotIn('vla', started)
 
-    def test_non_real_reception_closes_motion_permit(self):
+    def test_no_real_body_route_closes_motion_permit(self):
         self.switcher.apply({'mode': 'simulation', 'modules': {'reception': {'mode': 'real'}}})
         self.assertIs(
             yaml.safe_load((self.root / 'config/brain.yaml').read_text())['reception_real']['kernel_enabled'], True)
@@ -191,13 +192,22 @@ class ExecutionSwitchTests(unittest.TestCase):
                 {'mode': 'simulation', 'modules': {'reception': {'simulation_backend': 'reception_protocol'},
                                                    'execution': {'mode': 'disabled'},
                                                    'observation': {'mode': 'disabled'}}},
-                {'mode': 'real', 'modules': {'reception': {'mode': 'disabled'}}},
-                {'mode': 'real', 'modules': {'reception': {'mode': 'simulation', 'simulation_backend': 'reception_mock'}}}):
+                {'mode': 'real', 'modules': {'reception': {'mode': 'disabled'}, 'execution': {'mode': 'disabled'}}},
+                {'mode': 'real', 'modules': {'reception': {'mode': 'simulation', 'simulation_backend': 'reception_mock'},
+                                            'execution': {'mode': 'disabled'}}}):
             self.switcher.apply({'mode': 'real'})
             self.switcher.apply(config)
             self.assertIs(
                 yaml.safe_load((self.root / 'config/brain.yaml').read_text())['reception_real']['kernel_enabled'],
                 False)
+
+    def test_generic_real_without_reception_uses_shared_permit(self):
+        self.switcher.apply({'mode': 'real', 'modules': {'reception': {'mode': 'disabled'}}})
+        self.assertTrue(self.switcher.status()['real_motion_enabled'])
+        started = [name for action, name in self.services.calls if action == 'start']
+        self.assertNotIn('slaver', started)
+        self.assertNotIn('dream', started)
+        self.assertNotIn('vla', started)
 
     def test_failed_apply_restores_motion_permit(self):
         self.switcher.apply({'mode': 'real'})

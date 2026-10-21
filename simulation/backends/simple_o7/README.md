@@ -26,6 +26,13 @@ prepare → reachability → CuRobo → SONIC pipeline. O7's default Coke scene 
 that historical result does not describe the O6 task. The two object identities are distinct.
 Neither generic-command variant provides a persistent multi-step world, navigation, release/place, live cameras, or GR00T inference. The separate reception route below provides a continuous physical episode.
 
+New generic body tasks (2026-10-21) use the same NAV/VLA routes below as reception.
+`POST /reception/nav/v1/task_plan` pins an immutable task/instance-bound segment prefix without starting physics.
+The office table-source scene supports navigation-only prefixes or full-route prefixes (including pick/place).
+The first original navigation command starts the existing worker; the declared last segment completes the episode.
+See [the interface documentation](../../../docs/接口说明_simple%20o6%20仿真.md) for supported plans and failure boundaries.
+The legacy `/v1/commands` path described above remains for existing records and isolated experiments.
+
 ## Single-can reception episode (`/reception/nav`, `/reception/vla`)
 
 Since 2026-10-08 the same facade also serves Connection's `fq/reception-lan/v1` NAV and VLA
