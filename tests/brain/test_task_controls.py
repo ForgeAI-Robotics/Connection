@@ -9,6 +9,61 @@ from tests.brain.test_kernel_reception import FakeBody, _runtime
 
 
 class OfflineCancelTests(unittest.TestCase):
+    def cancelled_unknown(self, root):
+        runtime, port = self.failed_runtime(root)
+        with runtime._exclusive():
+            runtime._reload_locked()
+            runtime.record.update(command_unknown=True, stopped_confirmed=False, resources_cleared=False)
+            runtime._save('test_unknown_before_cancel')
+        runtime.request_cancel()
+        command = runtime.record['task_cancellation']['abandoned_command_id']
+        result = {'command_id': command, 'terminal': 'cancelled', 'stopped': True,
+                  'resources_released': True, 'evidence': {'identity_ok': True, 'time_ok': True}}
+        port.query = Mock(return_value=result)
+        return runtime, port, result
+
+    def test_environment_query_confirms_stop_without_changing_cancellation_or_attempt(self):
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port, result = self.cancelled_unknown(root)
+            before = runtime.snapshot()
+            self.assertTrue(runtime.reconcile_cancelled_resources()['confirmed'])
+            after = runtime.snapshot()
+            self.assertEqual(after['state'], 'cancelled')
+            self.assertTrue(after['resources_cleared'])
+            self.assertEqual(after['steps'], before['steps'])
+            self.assertEqual(after['task_cancellation'], before['task_cancellation'])
+            self.assertEqual(after['cancelled_resource_checks'][0]['result'], result)
+            self.assertTrue(runtime.reconcile_cancelled_resources()['no_op'])
+            port.query.assert_called_once()
+            port.cancel.assert_not_called()
+            self.assertEqual(len(port.submits), 1)
+
+    def test_cancelled_resource_query_rejects_unclear_or_mismatched_evidence(self):
+        from contracts.tasks import Rejected
+        for change in ({'terminal': ''}, {'terminal': 'running'}, {'command_id': 'foreign'},
+                       {'stopped': False}, {'resources_released': False}, {'timed_out': True},
+                       {'evidence': {'identity_ok': False, 'time_ok': True}}, {'evidence': {}}):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as root:
+                runtime, port, result = self.cancelled_unknown(root)
+                port.query.return_value = dict(result, **change)
+                before = runtime.snapshot()
+                with self.assertRaises(Rejected):
+                    runtime.reconcile_cancelled_resources()
+                self.assertEqual(runtime.snapshot(), before)
+
+    def test_late_cancelled_resource_query_cannot_write_to_new_task(self):
+        from contracts.tasks import Rejected
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port, result = self.cancelled_unknown(root)
+            def late(*_):
+                runtime.open_task('new-task', task_desc='new')
+                return result
+            port.query.side_effect = late
+            with self.assertRaises(Rejected):
+                runtime.reconcile_cancelled_resources()
+            self.assertEqual(runtime.snapshot()['task_id'], 'new-task')
+            self.assertNotIn('cancelled_resource_checks', runtime.snapshot())
+
     def test_service_cancel_never_constructs_executor_and_allows_new_task(self):
         from brain.app import create_service
         with tempfile.TemporaryDirectory() as root:

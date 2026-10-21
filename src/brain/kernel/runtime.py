@@ -764,6 +764,40 @@ class TaskRuntime:
             self.request_cancel()
         return self.state
 
+    def reconcile_cancelled_resources(self):
+        """Read the abandoned command before environment application, never resume it."""
+        with self._exclusive():
+            self._reload_locked()
+            if self.state != 'cancelled':
+                raise Rejected('只有已取消任务可以核查归档命令')
+            if self.record.get('resources_cleared') is True:
+                return {'confirmed': True, 'no_op': True}
+            command_id = (self.record.get('task_cancellation') or {}).get('abandoned_command_id')
+            attempts = [a for bucket in (self.record.get('steps') or {}).values()
+                        for a in bucket.get('attempts') or [] if a.get('command_id') == command_id]
+            if not command_id or len(attempts) != 1 or not attempts[0].get('request'):
+                raise Rejected('已取消任务缺少可核对的原命令，不能确认资源释放')
+            attempt = deepcopy(attempts[0])
+            revision = self.record['revision']
+        result = self.port.query(command_id, attempt['request'])
+        evidence = result.get('evidence') or {} if isinstance(result, dict) else {}
+        if (not isinstance(result, dict) or result.get('command_id') != command_id
+                or result.get('timed_out') or result.get('terminal') not in {'succeeded', 'failed', 'cancelled'}
+                or result.get('stopped') is not True or result.get('resources_released') is not True
+                or not isinstance(evidence, dict) or evidence.get('identity_ok') is not True
+                or evidence.get('time_ok') is not True):
+            raise Rejected('已取消任务的原命令停止或资源释放仍未确认，拒绝切换环境')
+        with self._exclusive():
+            self._reload_locked()
+            if self.state != 'cancelled' or self.record['revision'] != revision:
+                raise Rejected('核查期间任务已变化，未采用迟到回执')
+            self.record.setdefault('cancelled_resource_checks', []).append({
+                'command_id': command_id, 'attempt_id': attempt['attempt_id'],
+                'checked_at': datetime.now().astimezone().isoformat(), 'result': deepcopy(result)})
+            self.record.update(stopped_confirmed=True, resources_cleared=True)
+            self._save('cancelled_resources_confirmed')
+        return {'confirmed': True, 'query_only': True, 'command_id': command_id}
+
     def resolve_cancel(self, *, command_terminal: bool, stopped: bool, resources_released: bool):
         # Remote facts do not decide whether an abandoned task is cancelled.
         del command_terminal, stopped, resources_released

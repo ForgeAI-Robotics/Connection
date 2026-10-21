@@ -105,7 +105,7 @@ LLM 提出 `observe_scene` 建议，未确认派发；其文字不是物理根�
 任务 `16db02793645466b82bc50f3224bc271` 的原命令为 `nav-table2-50f3224bc271`。
 只读查询 NAV 已返回 `cancelled`、`navigation_stopped=true`，大脑仍保留暂停及 `command_unknown=true`；
 不据下游停止自行结束用户暂停的任务，也不手改账本绕过切换保护。本次提交不包含正式实例重载或环境应用；
-SIMPLE 部署已生效，正式通用真机路由须待原任务处理完后再应用。
+SIMPLE 当时已生效，正式路由尚待原任务处理。随后用户取消原任务，补齐取消后的资源核查并成功应用正式配置，见[更新复验](多端联调_大脑任务与恢复.md#cancelled-environment-reconcile)。
 
 
 <a id="e-p1"></a>

@@ -175,7 +175,21 @@ class Switcher:
                 record = json.loads(path.read_text())
                 if not isinstance(record, dict):
                     raise ValueError(f'无法核对任务账本：{path}')
+                if record.get('state') == 'cancelled' and record.get('resources_cleared') is False:
+                    self._reconcile_cancelled_resources()
+                    record = json.loads(path.read_text())
                 assert_idle(record)
+
+    def _reconcile_cancelled_resources(self):
+        # Runtime remains the sole writer. Use the original backend and check its
+        # pinned address before querying; no cancel, retry or motion is submitted.
+        from shared.config import load_config
+        from shared.networks import apply_to_brain_config
+        from brain.service import BrainService
+        from brain.adapters.ports import build_port
+        config = apply_to_brain_config(load_config(self.root / 'config/brain.yaml'))
+        service = BrainService(config, None, lambda backend: build_port(config, backend))
+        return service.attach().reconcile_cancelled_resources()
 
     def apply(self, config):
         profile = self.preview(config)  # Validate before touching services or files.
@@ -266,7 +280,7 @@ class Switcher:
             raise RuntimeError(f'切换失败：{exc}；' + (f'回退未完成：{rollback_error}，已阻止新任务' if rollback_error else '已恢复原运行配置')) from exc
 
     def _sync_motion_permit(self, profile):
-        """Open the real-motion permit exactly when reception is the real route."""
+        """Open the shared permit when a selected body route uses the real robot."""
         path = self.root / 'config' / 'brain.yaml'
         if not path.exists():
             raise ValueError('缺少 config/brain.yaml，不能同步真机动作许可')

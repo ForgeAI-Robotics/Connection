@@ -155,6 +155,20 @@ class ExecutionSwitchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             assert_idle({'state': 'cancelled', 'resources_cleared': False})
 
+    def test_cancelled_resource_reconciliation_precedes_environment_apply(self):
+        path = self.root / 'data/tasks/current_task.json'
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({'state': 'cancelled', 'resources_cleared': False}))
+        with patch.object(self.switcher, '_reconcile_cancelled_resources', side_effect=ValueError('unknown')):
+            with self.assertRaisesRegex(ValueError, 'unknown'):
+                self.switcher.apply({'mode': 'real'})
+        self.assertFalse(self.services.calls)
+        def confirmed():
+            path.write_text(json.dumps({'state': 'cancelled', 'resources_cleared': True}))
+        with patch.object(self.switcher, '_reconcile_cancelled_resources', side_effect=confirmed) as query:
+            self.switcher.apply({'mode': 'real'})
+            query.assert_called_once()
+
     def test_failed_rollback_blocks_new_tasks(self):
         self.switcher.apply({'mode': 'simulation'})
         self.services.fail = 'unhealthy'
