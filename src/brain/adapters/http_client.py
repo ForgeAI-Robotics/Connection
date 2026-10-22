@@ -31,9 +31,9 @@ class HttpClient:
             return value
         return urllib.parse.urljoin(self.base_url + "/", value.lstrip("/"))
 
-    def request_bytes(self, method, path, payload=None, *, timeout_sec=None):
+    def request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None):
         data = None
-        headers = {}
+        headers = dict(headers or {})
         if self.contract_version:
             headers["X-Contract-Version"] = self.contract_version
         if payload is not None:
@@ -69,10 +69,12 @@ class HttpClient:
                 f"HTTP连接状态不确定 {self.url(path)}: {exc}") from exc
 
     def request_json(
-        self, method, path, payload=None, *, accepted_statuses=(200,), timeout_sec=None
+        self, method, path, payload=None, *, accepted_statuses=(200,), timeout_sec=None, headers=None
     ):
-        raw, status, headers = self.request_bytes(
-            method, path, payload, timeout_sec=timeout_sec)
+        options = {'timeout_sec': timeout_sec}
+        if headers is not None:
+            options['headers'] = headers
+        raw, status, headers = self.request_bytes(method, path, payload, **options)
         if status not in set(accepted_statuses):
             raise HttpContractError(
                 f"HTTP状态不符合契约: {status}",

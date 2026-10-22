@@ -21,6 +21,10 @@ class StepSpec:
     # Resolved workflow inputs travel with the task, including across restarts.
     navigation: dict = field(default_factory=dict)
     navigation_step_id: str = ""
+    requires_vla_clearance: bool = False
+    display_name: str = ""
+    target_name: str = ""
+    required_holding: str = ""
 
     @property
     def body(self) -> bool:

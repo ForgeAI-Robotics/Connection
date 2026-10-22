@@ -9,24 +9,30 @@ VALIDATION_REFUSALS = frozenset({
     "INVALID_MOTION_MODE", "NAVIGATION_PROOF_INVALID",
     "MOTOR_HEALTH_NOT_READY", "SAFETY_NOT_READY", "VLA_ACTION_PORT_OWNED",
     "NAVIGATION_STILL_ACTIVE", "NAVIGATION_STATUS_UNVERIFIABLE",
+    "STOP_NOT_CONFIRMED",
 })
 
 
 def submission_refusal(status_code, payload, *, command_id, task_id):
     # Admission checks reject before creation. A same-ID conflict, a bare 404
     # or a transport/server error does not prove that this identity never ran.
-    if status_code not in {400, 403, 409, 422} or not isinstance(payload, dict):
+    if status_code not in {400, 403, 409, 422, 501} or not isinstance(payload, dict):
         return None
     error = payload.get("error")
     if payload.get("success") is not False or not isinstance(error, dict):
         return None
     details = error.get("details")
     details = details if isinstance(details, dict) else {}
+    unavailable = (error.get('code') == 'CAPABILITY_UNAVAILABLE'
+                   and details.get('action_started') is False
+                   and details.get('action_state_uncertain') is False)
+    if status_code == 501 and not unavailable:
+        return None
     busy_other_command = (error.get("code") in {"NAVIGATION_BUSY", "VLA_BUSY"}
                           and isinstance(details.get("active_command_id"), str)
                           and bool(details["active_command_id"])
                           and details["active_command_id"] != command_id)
-    if error.get("code") not in VALIDATION_REFUSALS and not busy_other_command:
+    if error.get("code") not in VALIDATION_REFUSALS and not busy_other_command and not unavailable:
         return None
     for item in (payload, details):
         if any(item.get(key) not in (None, "", value)

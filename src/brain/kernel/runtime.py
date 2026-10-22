@@ -26,7 +26,8 @@ from contracts.steps import step_spec_dict, steps_from_specs
 from contracts.submission import submission_refusal, refusal_observation
 from brain.kernel.runner import Runner
 from brain.kernel.verifier import Verifier
-from shared.task_text import failure_text
+from shared.task_text import failure_text, phase_labels, scope_manipulation_advice
+from contracts.vla import NATIVE_OPERATIONS
 
 
 _TRANSITIONS = {
@@ -47,6 +48,8 @@ _TRANSITIONS = {
     ("running", "unknown"): "recovery_required",
     ("running", "gate"): "waiting_human",
     ("waiting_human", "human_continue"): "running",
+    ("waiting_human", "pause_ack"): "paused",
+    ("waiting_human", "pause_nack"): "recovery_required",
     ("running", "pause_ack"): "paused",
     ("running", "pause_nack"): "recovery_required",
     ("verifying", "pause_ack"): "paused",
@@ -105,7 +108,7 @@ def _blank_record():
 def status_from_record(record) -> dict:
     state = (record or {}).get("state")
     terminal = state in TERMINAL_STATES
-    advice = deepcopy((record or {}).get("recovery_advice"))
+    advice = scope_manipulation_advice(deepcopy((record or {}).get("recovery_advice")), record)
     if advice:
         advice["applicable"] = advice.get("record_revision") == (record or {}).get("revision")
         if advice.get('action') == 'revise_plan':
@@ -135,7 +138,7 @@ def status_from_record(record) -> dict:
             failure_history.append({"step_id": spec["step_id"], "command_id": old.get("command_id"),
                                     "attempt_id": old.get("attempt_id"), "code": code,
                                     "kind": "rejected" if rejection else "unknown" if old.get("verdict") == "UNKNOWN" else "cancelled" if old_progress.get("terminal") == "cancelled" else "execution_failed",
-                                    "message": message, "display_message": failure_text(message, code)})
+                                    "message": message, "display_message": failure_text(message, code, record=record, details=error.get('details'))})
         latest = attempts[-1] if attempts else {}
         verdict = latest.get("verdict")
         evidence = (latest.get("progress") or {}).get("evidence") or {}
@@ -143,9 +146,10 @@ def status_from_record(record) -> dict:
         manual_skip = marker == "manual_skipped"
         simulated = ((record or {}).get("execution_backend") in {"reception_real_sim_manipulation",
                                                                 "reception_ros_sim_manipulation"}
-                     and spec.get("kind") in {"pick", "place", "verify"})
+                     and spec.get("kind") in {"pick", "place", "open_fridge", "grasp_cola", "verify"})
         done = verdict == "PASS" or marker in {"done", "skipped", "manual_skipped"}
         tasks.append({"order": order, "robot_name": spec.get("robot_name") or "FQrobot",
+                      "display_name": spec.get('display_name') or '',
                       "subtask": spec.get("key") or spec["step_id"], "done": done,
                       "step_id": spec["step_id"], "skipped": manual_skip, "simulated": simulated,
                       "status": "skipped" if manual_skip else "success" if done else "failure" if verdict == "FAIL" else "unknown" if verdict == "UNKNOWN" else "pending",
@@ -175,7 +179,8 @@ def status_from_record(record) -> dict:
         elif progress.get("error"):
             failure = {"kind": "unknown", "message": progress["error"], "not_started": False}
     if failure:
-        failure["display_message"] = failure_text(failure.get("message"), failure.get("code"))
+        failure["display_message"] = failure_text(failure.get("message"), failure.get("code"), record=record,
+                                                 details=remote_error.get('details') if isinstance(remote_error, dict) else None)
     latest = attempts[-1] if attempts else {}
     command_stage = "prepared"
     if latest.get("submitted"):
@@ -222,6 +227,7 @@ def status_from_record(record) -> dict:
         "execution_active": state == "running",
         "source": "kernel",
         "subtask_list": tasks,
+        "phase_labels": phase_labels(record),
         "completed": sum(item["done"] for item in tasks),
         "total": len(tasks),
         "task_type": (record or {}).get("package"),
@@ -239,6 +245,9 @@ def status_from_record(record) -> dict:
         "plan_revisions": deepcopy((record or {}).get("plan_revisions", [])),
         "advice_confirmations": deepcopy((record or {}).get("advice_confirmations", [])),
         "handoff_observation": deepcopy((record or {}).get("handoff_observation")),
+        "vla_confirmation": deepcopy((record or {}).get('vla_confirmation'))
+            if (record or {}).get('open_command_id') == ((record or {}).get('vla_confirmation') or {}).get('command_id')
+            and not terminal else None,
     }
 
 
@@ -666,7 +675,10 @@ class TaskRuntime:
             self._reload_locked()
             if expected_step_id and (self._current_step() is None or self._current_step().step_id != expected_step_id):
                 raise Rejected("当前环节已变化，未停止其他环节")
-            if self.state not in {"running", "verifying"}:
+            native_wait = (self.state == 'waiting_human' and self._current_step()
+                           and self._current_step().kind in NATIVE_OPERATIONS
+                           and self.record.get('open_command_id'))
+            if self.state not in {"running", "verifying"} and not native_wait:
                 raise IllegalTransition("只有运行或核验中可以暂停")
             if self.record.get("control_request") == "cancel":
                 raise IllegalTransition("取消已开始，不能再暂停")
@@ -896,6 +908,78 @@ class TaskRuntime:
                 self._save("resume_original_confirmed")
         return result
 
+    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization=''):
+        """Control only the original VLA command; queries never drive or retry a step."""
+        if action not in {'query', 'pause', 'finish'}:
+            raise Rejected('未知 VLA 效果核验操作')
+        if action == 'finish' and (not isinstance(authorization, str) or not authorization.startswith('Bearer ')
+                                   or not authorization[7:].strip()):
+            raise Rejected('完成确认需要授权核验方的 Bearer 凭据')
+        with self._exclusive():
+            self._reload_locked()
+            step = self._current_step()
+            if (self.record.get('task_id') != task_id or not command_id
+                    or self.record.get('open_command_id') != command_id
+                    or not step or step.kind not in NATIVE_OPERATIONS
+                    or self.state not in {'waiting_human', 'recovery_required'}
+                    or self.record.get('control_request') or self.record.get('dispatch_closed')):
+                raise Rejected('当前任务、命令或控制状态不允许效果核验')
+            attempt = self._latest(step.step_id)
+            if not attempt or attempt['command_id'] != command_id:
+                raise Rejected('VLA 命令与尝试不匹配')
+            request = deepcopy(attempt['request'])
+            contract = self._contract(step, attempt['attempt_id'], command_id, request)
+            controls = attempt.setdefault('effect_controls', {})
+            sent_action = action
+            if action != 'query':
+                prior = controls.get(action)
+                if prior and prior.get('evidence') != evidence:
+                    raise Rejected('原命令已记录不同效果证据，禁止覆盖')
+                if prior:
+                    sent_action = 'query'  # Lost replies/restarts never replay a mutation.
+                else:
+                    controls[action] = {'evidence': deepcopy(evidence), 'status': 'requested'}
+                    self._save('vla_effect_intent')
+            revision = self.record.get('revision')
+        try:
+            viewed = self.port.effect_control(sent_action, command_id, request,
+                                              evidence=evidence, authorization=authorization)
+            progress = self.runner._progress(contract, viewed)
+        except Exception as exc:
+            # Keep the durable intent if a POST may have been received. Explicit validation
+            # rejections may be corrected by a new human request; never retry automatically.
+            from brain.adapters.http_client import HttpContractError
+            definite = isinstance(exc, ValueError) or (
+                isinstance(exc, HttpContractError) and exc.status_code in {400, 403, 409, 501})
+            with self._exclusive():
+                self._reload_locked()
+                if self.record.get('revision') == revision and self.record.get('open_command_id') == command_id:
+                    if sent_action != 'query' and definite:
+                        previous = self._latest(step.step_id)['effect_controls'].pop(action)
+                        self._latest(step.step_id).setdefault('effect_rejections', []).append(
+                            dict(previous, action=action, status='rejected'))
+                    self._save('vla_effect_rejected' if definite else 'vla_effect_uncertain')
+            raise Rejected('VLA 核验请求未确认，请查询原命令；' + str(exc)) from exc
+        with self._exclusive():
+            self._reload_locked()
+            if (self.record.get('revision') != revision or self.record.get('open_command_id') != command_id
+                    or self.record.get('control_request') or self.state in TERMINAL_STATES):
+                raise Rejected('任务状态已变化，未应用迟到的 VLA 回包')
+            if progress.evidence.get('identity_ok') is not True:
+                raise Rejected('VLA 核验回包身份不符；保留原命令等待核清')
+            self._stamp_attempt(step, progress, finished=bool(progress.terminal))
+            raw = viewed.get('raw') or {}
+            self.record['vla_confirmation'] = {
+                'command_id': command_id, 'operation': step.kind, 'state': raw.get('state'),
+                'pause_requested': raw.get('pause_requested') is True,
+                'verification_ready_at': raw.get('verification_ready_at'),
+                'finish_requested': raw.get('finish_requested') is True,
+            }
+            self._save('vla_effect_observed')
+            return {'accepted': True, 'query_only': sent_action == 'query', 'task_id': task_id,
+                    'command_id': command_id, 'state': self.state,
+                    'vla_confirmation': deepcopy(self.record['vla_confirmation'])}
+
     def continue_current(self):
         """Human continue: verify completion or authorize one new attempt of this step."""
         with self._exclusive():
@@ -924,6 +1008,21 @@ class TaskRuntime:
             snapshot = deepcopy(self.record)
             request = deepcopy(attempt['request']) if attempt else None
         if state == 'waiting_human':
+            if step and step.kind in NATIVE_OPERATIONS and command_id:
+                self.vla_effect(snapshot['task_id'], command_id, 'query')
+                with self._exclusive():
+                    self._reload_locked()
+                    if (self.state != state or self.record.get('open_command_id') != command_id
+                            or self.record.get('control_request')):
+                        raise Rejected('任务控制已变化，未推进迟到的 VLA 结果')
+                    progress = ProgressEvent.from_dict(self._latest(step.step_id)['progress'])
+                    if not progress.terminal or progress.evidence.get('identity_ok') is not True:
+                        raise Rejected('VLA 尚未返回原命令终态；请先暂停、核验并确认效果，或查询原命令')
+                    self.record['command_unknown'] = False
+                    self.apply('human_continue')
+                    self.record['blocked_reason'] = ''
+                    self._consume_submit(step, progress)
+                return {'original_command': command_id, 'verification_pending': True}
             self.human_continue()
             return {'resumed': True}
         if not command_id:
@@ -1581,6 +1680,13 @@ class TaskRuntime:
     def _prepare_submit(self, step):
         if self.record.get("dispatch_closed"):
             raise Rejected("新派发已关闭")
+        if step.required_holding and self.record.get('holding') != step.required_holding:
+            raise Rejected('后续运送需要已核验的持物记录；人工跳过抓取不能代替')
+        if step.kind == 'grasp_cola' and not any(
+                previous.kind == 'open_fridge' and previous.target_area == step.target_area
+                and (self._latest(previous.step_id) or {}).get('verdict') == 'PASS'
+                for previous in self.phases[:self._index(step.step_id)]):
+            raise Rejected('抓可乐必须有本任务同一目标的开门通过证据；人工跳过不能代替')
         physical = self.policy.physical(step.kind)
         attempt = self._latest(step.step_id)
         if attempt is None or attempt.get("submitted"):
@@ -1622,6 +1728,15 @@ class TaskRuntime:
         self._stamp_attempt(step, progress, finished=bool(progress.terminal))
         if (progress.evidence or {}).get("submission_rejected"):
             self._record_submission_rejection(step, progress)
+            return
+        confirmation = (progress.evidence or {}).get('vla_confirmation')
+        if (step.kind in NATIVE_OPERATIONS and confirmation and not progress.timed_out
+                and progress.evidence.get('identity_ok') is True):
+            self.record.update(vla_confirmation=deepcopy(confirmation), command_unknown=True,
+                               resources_cleared=False, blocked_reason='vla_effect_confirmation',
+                               breakpoint_phase=step.step_id)
+            self.apply('gate')
+            self._save('vla_effect_waiting')
             return
         if progress.timed_out or not progress.terminal:
             attempt = self._latest(step.step_id)

@@ -75,7 +75,7 @@
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
                 <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
-                <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="完整接待流程：真实导航，抓取和放置由本地模拟端返回，不执行真实抓放" onclick="startReception('开始接待（导航真机＋操控模拟）')">🧭 开始接待（导航真机＋操控模拟）</button>
+                <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="与左侧同一接待流程：真实导航，开冰箱和抓可乐使用本地模拟，不执行真实操控" onclick="startReception('开始接待（导航真机＋操控模拟）')">🧭 开始接待（导航真机＋操控模拟）</button>
                 <button id="task-skip" disabled class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
                 <button id="task-pause" disabled class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
                 <button id="task-continue" disabled class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
@@ -94,7 +94,7 @@
             const raw = value == null ? '' : (typeof value === 'string' ? value : JSON.stringify(value));
             return TASK_LABELS.reasons[raw] ? TASK_LABELS.reasons[raw] + '（' + raw + '）' : raw;
         }
-        function taskPhase(value) { return TASK_LABELS.phases[value] || value || ''; }
+        function taskPhase(value) { return displayedTask?.phase_labels?.[value] || TASK_LABELS.phases[value] || value || ''; }
         function showTaskResponse(data, heading) {
             lastTaskResponse = data;
             document.getElementById('copy-task-response').style.display = 'inline-block';
@@ -201,6 +201,29 @@
             updateTaskButtons(); updateTaskFreshness();
         }
         setInterval(updateTaskFreshness, 1000);
+        async function vlaEffectControl(action) {
+            const current = displayedTask;
+            if (!current?.task_id || !current.vla_confirmation?.command_id || taskControlPending) return;
+            const identity = {task_id: current.task_id, command_id: current.vla_confirmation.command_id};
+            taskControlPending = true;
+            try {
+                const response = await fetch('/api/task_vla/' + action, {
+                    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(identity)});
+                const result = await response.json();
+                if (displayedTask?.task_id !== identity.task_id) return;
+                document.getElementById('task-command-feedback').textContent = result.accepted
+                    ? (action === 'pause' ? '暂停请求已处理，请查询确认实际暂停状态。' : '原命令状态已查询，请刷新任务状态。')
+                    : (result.error || '请求未确认，请查询原命令');
+            } catch (error) {
+                if (displayedTask?.task_id === identity.task_id)
+                    document.getElementById('task-command-feedback').textContent = '请求结果未知，请查询原命令。';
+            } finally {
+                taskControlPending = false;
+                updateTaskButtons();
+                await refreshTaskStatus();
+            }
+        }
+
         function updateTaskButtons() {
             const state = displayedTask?.state;
             const active = !!displayedTask?.task_id && !displayedTask.terminal;
@@ -209,14 +232,15 @@
                 start: ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion,
                 'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion,
                 skip: ready && active && !!displayedTask?.can_skip,
-                pause: ready && active && ['running', 'verifying'].includes(state),
+                pause: ready && active && (['running', 'verifying'].includes(state)
+                    || (state === 'waiting_human' && !!displayedTask?.vla_confirmation)),
                 continue: ready && active && !!displayedTask?.can_resume && !pendingTaskControl,
                 cancel: ready && active
             };
             for (const [name, allowed] of Object.entries(enabled)) {
                 const button = document.getElementById('task-' + name);
                 button.disabled = !allowed;
-                const descriptions = {start: '开始完整接待流程', 'start-nav': '导航真机执行，抓放使用本地模拟',
+                const descriptions = {start: '执行当前环境登记的接待 Skill', 'start-nav': '同一接待流程；导航真实，开门和抓可乐为模拟',
                     pause: '暂停整轮流程，并请求停止当前动作', continue: '继续当前环节；未完成则重新下发一次指令',
                     skip: '放弃当前环节并进入下一步，不记为成功', cancel: '废弃整轮大脑任务；不向导航发送停止指令'};
                 button.title = allowed ? descriptions[name] : (!taskStatusKnown ? '正在确认任务状态' : taskControlPending ? '控制请求处理中' : '当前任务状态不支持此操作');
@@ -496,6 +520,19 @@
             html += `<div style="font-size:12px;color:#94a3b8;overflow-wrap:anywhere">
                 任务 ID：${taskText(data.task_id)} · 任务环境：${taskText((TASK_LABELS.backends || {})[data.execution_backend] || data.execution_backend || '尚未选择')}</div>`;
 
+            const vla = data.vla_confirmation;
+            if (vla && !data.pause_requested) {
+                const labels = {running:'策略运行中，请在现场确认适当时机后请求暂停',
+                    waiting_result_confirmation:'策略已暂停，等待授权核验方提交暂停后的效果证据',
+                    stopping_policy:'效果已提交，正在确认策略停止', restoring_navigation:'正在归还导航通路',
+                    succeeded:'VLA 已返回成功；点击继续，由大脑核验原结果',
+                    failed:'VLA 已返回失败，请核清现场', cancelled:'VLA 命令已取消，请核清现场'};
+                html += '<div class="task-command-feedback">' + taskText(labels[vla.state] || '等待核对 VLA 原命令')
+                    + '<br>策略暂停不是姿态冻结或急停。效果证据由现场人员或视觉核验模块提供。'
+                    + (vla.state === 'running' && !vla.pause_requested
+                        ? '<button type="button" onclick="vlaEffectControl(\'pause\')">暂停策略以核验</button>' : '')
+                    + '<button type="button" onclick="vlaEffectControl(\'query\')">查询操控原命令</button></div>';
+            }
             const command = data.current_command;
             if (command?.command_id) {
                 const stages = {prepared:'新命令已准备，尚未下发', submitted:'下发已登记，等待执行回执',
@@ -547,7 +584,7 @@
                 }
                 html += `<div class="subtask-item ${cls}">
                     <div class="check" style="${checkStyle}">${checkIcon}</div>
-                    <span class="subtask-text">${taskText(TASK_LABELS.phases[t.step_id] || TASK_LABELS.phases[t.subtask] || t.subtask)}${t.simulated ? '（模拟）' : ''}${insertedTag}${blockedTag}</span>
+                    <span class="subtask-text">${taskText(t.display_name || data.phase_labels?.[t.step_id] || TASK_LABELS.phases[t.step_id] || TASK_LABELS.phases[t.subtask] || t.subtask)}${t.simulated ? '（模拟）' : ''}${insertedTag}${blockedTag}</span>
                     <span class="subtask-robot">${taskText(t.robot_name)}</span>
                 </div>`;
             }
@@ -623,7 +660,7 @@
                     html += line('处理理由', advice.summary + '\n' + advice.reason);
                 }
                 if (advice.action === 'revise_plan' && Array.isArray(advice.plan?.step_order)) {
-                    const steps = Object.fromEntries((data.subtask_list || []).map(s => [s.step_id, s.subtask]));
+                    const steps = Object.fromEntries((data.subtask_list || []).map(s => [s.step_id, s.display_name || s.subtask]));
                     html += '<ol>' + advice.plan.step_order.map(id => '<li>'
                         + taskText(steps[id] && steps[id] !== id ? steps[id] : taskPhase(id)) + '</li>').join('') + '</ol>';
                     html += line('依据', '本次读取的现场证据 ' + advice.plan.observation_id);

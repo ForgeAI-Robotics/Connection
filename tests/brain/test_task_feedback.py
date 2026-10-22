@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from pathlib import Path
 import subprocess
 import unittest
@@ -9,6 +10,61 @@ from brain.kernel.runtime import status_from_record
 
 
 class TaskFeedbackTests(unittest.TestCase):
+    def test_yaw_timeout_metrics_belong_to_each_attempt_and_keep_raw_evidence(self):
+        def attempt(command, distance, yaw):
+            return {'command_id': command, 'verdict': 'FAIL', 'progress': {
+                'terminal': 'failed', 'evidence': {'downstream': {'error': {
+                    'code': 'NAVIGATION_TERMINAL_UNREACHABLE', 'message': 'arrival_yaw_timeout',
+                    'details': {'terminal': {'goal_distance': distance, 'final_yaw_error': yaw}}}}}}}
+        record = {'task_id': 't', 'state': 'recovery_required', 'phase_specs': [{'step_id': 'NAV'}],
+                  'steps': {'NAV': {'attempts': [attempt('old', .059, .9327394),
+                                               attempt('new', .0793387, -.2611729)]}}}
+        original = deepcopy(record)
+        status = status_from_record(record)
+        current = status['failure_detail']['display_message']
+        for text in ['最终朝向调整超时', '距目标 7.9 cm', '最终朝向误差 15.0°', 'arrival_yaw_timeout']:
+            self.assertIn(text, current)
+        historical = status['failure_history'][0]['display_message']
+        self.assertIn('距目标 5.9 cm', historical)
+        self.assertIn('最终朝向误差 53.4°', historical)
+        report = reception_report(status)['summary_text']
+        self.assertIn(current, report)
+        self.assertIn(historical, report)
+        self.assertEqual(record, original)
+
+    def test_saved_simulation_advice_is_scoped_without_changing_record_or_permission(self):
+        record = {'task_id': 't', 'revision': 2, 'state': 'recovery_required',
+                  'execution_backend': 'reception_real_sim_manipulation',
+                  'recovery_advice': {'action': 'continue', 'summary': '已确认持有 cola_can_1',
+                                      'reason': '抓取已完成', 'record_revision': 2}}
+        original = deepcopy(record)
+        advice = status_from_record(record)['recovery_advice']
+        for key in ['summary', 'reason']:
+            self.assertTrue(advice[key].startswith('模拟操控说明：'))
+        self.assertEqual(advice['action'], 'continue')
+        self.assertTrue(advice['applicable'])
+        self.assertEqual(record, original)
+        from shared.task_text import scope_manipulation_advice
+        self.assertEqual(scope_manipulation_advice(advice, record), advice)
+        record['execution_backend'] = 'reception_real'
+        self.assertEqual(status_from_record(record)['recovery_advice']['summary'], '已确认持有 cola_can_1')
+
+    def test_browser_phase_name_uses_current_task_metadata(self):
+        page = Path('src/entries/web/templates/index.html').read_text()
+        functions = next(line.strip() for line in page.splitlines() if 'function taskPhase(' in line)
+        script = """const assert=require('assert');
+const TASK_LABELS={phases:{NAVIGATING_TO_TABLE2:'导航到 2 号桌'}};
+let displayedTask={phase_labels:{NAVIGATING_TO_TABLE2:'导航到冰箱前'}};
+""" + functions + """
+assert.equal(taskPhase('NAVIGATING_TO_TABLE2'),'导航到冰箱前');
+displayedTask={phase_labels:{NAVIGATING_TO_TABLE2:'<冰箱&前>'}};
+assert.equal(taskPhase('NAVIGATING_TO_TABLE2'),'<冰箱&前>');
+displayedTask={};
+assert.equal(taskPhase('NAVIGATING_TO_TABLE2'),'导航到 2 号桌');
+assert.equal(taskPhase('unregistered-step'),'unregistered-step');
+"""
+        subprocess.run(['node','-e',script],check=True,capture_output=True,text=True)
+
     def test_status_proxy_has_short_deadline_and_no_cache(self):
         from entries.web.app import create_app
         client = Mock()

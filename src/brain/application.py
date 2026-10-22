@@ -210,6 +210,11 @@ class BrainApplication:
         # Ordinary owner work keeps I/O cooperative: pause/cancel can preempt a query.
         return self.owner.call(self.service.confirm_advice, task_id, advice_id, expected_revision)
 
+    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization=''):
+        self.start()
+        return self.owner.call(self.service.vla_effect, task_id, command_id, action,
+                               evidence=evidence, authorization=authorization, control=True)
+
     def health(self):
         return {'ready': self._started and not self._closing,
                 'state': 'stopping' if self._closing else 'healthy' if self._started else 'created',
@@ -221,7 +226,8 @@ class BrainApplication:
         if not (load_existing(runtime_dir(self.config)) or {}).get('task_id'):
             return
         runtime = self.service.attach()
-        if runtime.state == 'running':
+        if (runtime.state == 'running' or (runtime.state == 'waiting_human'
+                and runtime.public_status().get('vla_confirmation'))):
             runtime.request_pause()
         elif runtime.state == 'verifying':
             runtime.fail_closed('process_shutdown')

@@ -1,7 +1,7 @@
 # 接口说明：大脑 Brain
 
 初版日期：2026-08-27  
-大脑实现核对日期：2026-10-14
+大脑实现核对日期：2026-10-22（本次核对新 VLA 接入；其他章节保留各自证据日期）
 契约版本：`fq/reception-lan/v1`  
 适用范围：共用大脑任务 API、任务控制与状态、单罐接待及仅导航流程、DREAM/VLA 调用与核验。
 
@@ -17,6 +17,7 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | `GET /api/task_status` | 只读返回当前任务、步骤、尝试、失败与控制状态；字段见第 1.3 节 |
 | `GET /api/sops` | 返回已登记业务包的 SOP 标识、版本、范围和明确触发词（`packages`），以及只能由明确触发词选中的 SOP 变体（`variants`，如仅导航接待）；不是候选经验文件 |
 | `POST /api/task_pause`、`task_continue`、`task_cancel` | 分别暂停流程、继续当前环节、仅取消大脑任务；请求与回执见第 1.2 节 |
+| `POST /api/task_vla/pause`、`query`、`finish` | 操作当前新 VLA 原命令；必须绑定 `task_id/command_id`，finish 另需真实证据与核验凭据；查询不推进流程，见[操控接口](接口说明_操控VLA.md#暂停效果确认与大脑继续) |
 | `POST /api/task_skip` | 必填 `task_id`、`step_id`；跳过当前未完成动作，执行中先请求停止，核对停止与资源后推进；保留人工跳过记录，不伪造成功 |
 | `POST /api/task_preflight` | 当前默认实现仅返回提示，不实际检查三端就绪；见第 8.1 节 |
 | `GET /health`、`/api/execution_profile` | 进程工作器状态与已应用配置版本 |
@@ -40,16 +41,18 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 
 ### 1.1 共用任务选择与异常建议
 
-大脑先持久化任务再调用 LLM，任务选择与规划等待期间仍可取消。明确的“开始接待”等登记触发词直接选择当前配置的 `reception.single_can` 版本；其它表述由模型按登记范围选择业务包。模型只能选择包，不能向接待 SOP 注入动作、坐标或跳步。通用任务继续通过 Planner 读取实际能力与场景生成步骤。
+大脑先持久化任务再调用 LLM，任务选择与规划等待期间仍可取消。明确的“开始接待”等登记触发词直接选择当前环境登记的接待版本（当前真机为 `reception.fridge_pick`）；其它表述由模型按登记范围选择业务包。模型只能选择包，不能向接待 SOP 注入动作、坐标或跳步。通用任务继续通过 Planner 读取实际能力与场景生成步骤。
 
 普通抓取、放置、导航请求不因未匹配接待 SOP 而拒绝；没有要求接待的普通动作交给通用 Planner 校验能力与场景。
 接待的数量、物体、桌子和路线限制适用于接待请求，不扩展为全部任务的限制。
 
-真机及 SIMPLE 新建通用任务现在使用与 SOP 相同的导航、抓取、放置技能。`body_real` 直连原 DREAM / VLA，
+真机旧抓放后端及 SIMPLE 新建通用任务使用与 SOP 相同的导航、抓取、放置技能。`body_real` 直连原 DREAM / VLA，
 `body_simple` 使用同一合同的物理仿真端点；不经过 Slaver。旧任务继续按账本原后端查询和恢复。
 模型输出完整支持标记 `supported`、未支持要求 `unsupported_requirements` 及 `navigate(target)`、`pick(object)`、`place(object,target)`；缺少标记、未完整支持或含未知技能时拒绝。程序以任务绑定的
 `selection.body_capabilities` 快照解析点位、超时、导航证明、持物前提、交接与核验，拒绝坐标注入和未知参数。
-当前能力目录复用已登记 Skill 的点位和操控合同，尚不等于任意地点、任意物体的执行能力。
+旧抓放能力目录复用已登记 Skill 的点位和操控合同，尚不等于任意地点、任意物体的执行能力。
+
+2026-10-22：真机新任务读取 VLA 能力，快照保存在 `selection.vla_capabilities`。支持 native 动作时，通用操控规划使用 `selection.native_vla` 中登记的 `open_fridge/grasp_cola` 与作业路线；纯导航保留原路线。真机“开始接待”使用同一 Skill 中显式登记的开门／抓可乐分支；右侧真机导航＋操控模拟共用同一分支；旧物理仿真及 ROS 导航仿真变体保留原抓放步骤。不支持的动作会在任何步骤派发前拒绝。下面的抓放示例只适用于旧抓放后端／SIMPLE；新 native 的配置、证据与能力边界统一见[新动作接入](接口说明_操控VLA.md#新动作接入2026-10-22)。
 
 | 普通任务示例 | 编译后的动作 |
 | --- | --- |
@@ -127,6 +130,10 @@ Slaver 诊断遇到空回答、模型失败或无合法状态时返回 unknown�
 
 基础建议包括等待、人工协助、取消，以及当前状态允许的查询原命令或继续；绑定恢复策略的新任务还可选择只读刷新现场和受限剩余计划调整，见第 1.1.3 节。LLM 不直接调用控制接口；模型异常或格式非法时保存规则回退建议。建议基于的账本版本变化后 `applicable=false`，迟到结果不能覆盖新状态。默认任务网页显示失败原因和历史尝试；开启下述建议确认功能后，另外展示模型建议，明确区分事实和模型解释。API 保留 `recovery_advice`。
 
+操控模拟混合后端的异常分析上下文明确携带 `manipulation_simulated=true`，要求模型把开门、持物、抓取和放置
+写成模拟状态。新建议、规则回退及已有建议的状态展示均在 `summary`、`reason` 前标明模拟操控范围，
+不把模拟持物当成真实效果；普通状态读取仅修饰返回文本，不改历史账本、建议动作或确认权限。
+
 ### 1.1.1 接待 Skill 定义与任务快照
 
 2026-10-12 起，现有单罐接待从 Python 固定步骤表抽取为
@@ -148,13 +155,24 @@ SOP 版本为字符串 `2`；Skill 格式版本与 LAN 请求协议版本是不�
 | `sop` | 业务 ID、字符串版本、说明、范围与明确触发词 |
 | `parameters` | `object_id` 和整数 `quantity`；现合同限一罐指定物体 |
 | `points` | 命名导航点：目标 ID、路段、段序、`goal_xyt` 和运动模式 |
+| `points.<点键>.display_name` | 可选现场名称，例如 `冰箱前`；不改变点键、target_id 或坐标，也不发送给 NAV |
 | `steps` | 有序动作列表：`id`、`action`、`command_prefix`、正数 `timeout_sec` |
+| `steps[].display_name` | 可选完整步骤显示名，优先于由点位名称推导的导航／检查标题 |
+| `steps[].verification_display_name` | 抓放步骤的可选核验标题，写入生成的核验节点 |
+| `real_workflow` | 可选真机接待分支，含独立 `sop` 元数据和 `steps`；先导航、open_fridge、grasp_cola，再依次执行其余登记导航点，引用同一份 points |
 | `steps[].point` | 导航动作引用 `points` 中的点名 |
 | `steps[].after_navigation` | 观察或抓放引用最近的导航步骤 ID，作为原命令凭证来源 |
 | `steps[].optional` | 仅观察支持；可选检查仍受 `dream_inspection_enabled` 控制 |
 | `steps[].verification_id` | 抓放之后的核验节点 ID；不提供时自动生成 |
 
 编译器生成初始化、核验节点和跨导航／操控交接，抓放要求物体证据，放置要求安全收尾。
+
+2026-10-22：点位与步骤显示名称由 Skill 配置，限制为 1～120 字符的非空单行文本。导航默认组合为“导航到＋点位名称”，横移使用“横移到”，检查使用“检查＋点位名称＋的物品”；显式步骤标题优先。当前 v2 将 `points.table2.display_name` 定为“冰箱前”（用户确认该真机点位就是冰箱前），`target_id=table_2`、步骤 ID、命令前缀和坐标均保留。中文显示不再从这些旧 ID 推断现场物体。
+
+名称编译到 `phase_specs[].display_name/target_name` 并随任务持久化，状态接口返回 `subtask_list[].display_name` 和 `phase_labels`。网页步骤、失败环节、跳过提示、总结与进程日志优先读取该任务的名称；导航顺序错误也使用任务中的点位名，原始错误仍保留。通用身体规划继承同一 Skill 名称，模型仍输出点键，不得用中文名称替换协议 ID。NAV 报文、SIMPLE 路线声明与比对只使用 `skill.navigation_points` 中的执行字段，不携带显示元数据。
+
+已有任务保持原快照：缺少显示字段时兼容旧中文表，不读取当前 YAML 去改写历史。仅修改配置不会改变正在显示的旧任务名称，新任务才绑定新名称；新后端代码仍需正常重载后生效。
+
 定义不能关闭这些条件。未知动作、重复 ID／前缀／YAML 键、错误引用、无效超时、缺失抓放或
 非有限坐标、不支持的运动模式、物体或路段顺序，均在创建动作端口前拒绝。
 schema 1 额外检查原四段精确坐标；schema 2 允许修改坐标和增减导航点，段序必须从 1 连续编号，
@@ -166,6 +184,8 @@ schema 1 额外检查原四段精确坐标；schema 2 允许修改坐标和增�
 ```bash
 venv/core/bin/python scripts/reception_skill.py
 venv/core/bin/python scripts/reception_skill.py --config config/brain.yaml
+# 当前真机接待分支；仅离线展开，不连接机器人
+venv/core/bin/python scripts/reception_skill.py --config config/brain.yaml --real
 venv/core/bin/python scripts/reception_skill.py --file src/brain/packages/definitions/reception_single_can_v2.yaml --nav-only
 venv/core/bin/python scripts/reception_skill.py --file /path/to/reception_skill.yaml
 ```
@@ -337,7 +357,9 @@ Runtime 在保存建议、确认及应用时检查；当前方案引用的证据
 | `POST /api/task_skip` | 人工放弃当前未完成动作，推进下一动作 | 执行中先请求停止；原命令停止、资源和身份核对通过后才推进。保留失败与跳过记录，不生成虚假成功 |
 | `POST /api/task_cancel` | 废弃本轮大脑任务，关闭后续派发并结束本地等待 | 不构造执行器，不调用导航或操控的取消接口，不等待远端回执；返回 `scope=task_only`。不声明机器人已停止 |
 
-暂停的实现是结束当前下游命令、保留大脑流程；继续可能使用新命令重新执行未完成步骤，不要求导航具备同一命令的暂停／恢复状态。
+暂停的实现是结束当前下游命令、保留大脑流程；继续可能使用新命令重新执行未完成步骤，不要求导航具备同一命令的暂停／恢复状态。新 VLA 在 `waiting_human` 等待效果核验时，普通暂停同样取消原命令；专用 `/api/task_vla/pause` 才是保留命令的策略暂停。该等待阶段“继续”只查询原命令，未收到身份匹配的终态就拒绝推进，不生成新尝试。
+
+新动作的 `vla_confirmation` 包含 `command_id`、`operation`、VLA `state`、`pause_requested`、`verification_ready_at`、`finish_requested`，用于网页区分仍在执行、已暂停待核验、正在停止／归还、已到终态。它是 Runtime 保存的下游观察，不是另一套任务状态。请求受理、效果证据提交与大脑任务通过分别展示；普通状态轮询不主动查询或重发动作。
 
 请求规则：
 
@@ -398,6 +420,11 @@ POST /api/task_cancel
 | `completed`、`total` | 进度节点计数，包含准备／核验节点；不等于实际动作数。成功数量需排除跳过 |
 | `all_done` | 仅任务 `succeeded` 为 true；不表示历史上从未失败 |
 | `task_cancellation` | 本地取消范围、时间、原命令和当时远端已知状态；不新增物理停止事实 |
+
+`arrival_yaw_timeout` 的中文说明为“最终朝向调整超时”。当前失败、历史失败与可复制总结按各自尝试的
+原始 `error.details.terminal` 展示 `goal_distance`（米转厘米）与 `final_yaw_error`（弧度转角度幅值），
+明确标为导航终端回包值。缺失或无效数值不显示，不用其它尝试补齐；原错误码和英文原文保留。
+距离很近不等于已满足位置到达条件，展示数值不改变 Verifier 判定。
 | `blocks_new_motion` | 大脑任务是否阻止新任务准入，不代替下游安全检查 |
 
 中文说明与英文错误原文、错误码一起保留。任务后来成功时仍保留历史失败与人工重试；失败历史不能覆盖最终成功，也不能被最终成功抹除。
@@ -528,7 +555,20 @@ AND result.navigation_stopped == true
 
 ### 8.1 流程与请求身份
 
-完整接待使用所选 Skill 的 `reception.single_can`；新版 v2：
+2026-10-22 起，当前 v2 Skill 的 `real_workflow` 为真机“开始接待”登记 `reception.fridge_pick` v2：
+
+```text
+初始化 → 读取现场 → 导航到冰箱前
+→ open_fridge → 暂停、授权效果确认、继续核验
+→ grasp_cola → 暂停、授权效果确认、继续核验
+→ 中转点 1 → 中转点 2 → 横移到中转点 3 → 1 号桌 → 结束（仍持有可乐）
+```
+
+首点直接引用 `points.table2`，保持 `target_id=table_2` 及现有真机坐标。开门与抓取引用同一个原 NAV command_id，开门与抓取之间没有第二次导航；抓取核验后保留中转点 1、2、3 和 1 号桌的原路线。不执行关门和放置。每个动作仍由 VLA 核查原导航证明及当前交接条件；原证明不再有效时拒绝，不能伪造到位或自动重走。开门 PASS 才能抓取，人工跳过不能代替。运送步骤要求 Runtime 已核验持物，派发前也检查 VLA 的当前持物与恢复状态；跳过抓取不能解锁运送。到达 1 号桌后仍检查停止、通路归还和持物记录，成功不代表已放到桌面。持物记录保留为 `cola_can_1`。旧 v1 三动作任务保留原快照，不自动增加导航段。
+
+新任务将 `workflow_variant=real`、独立 SOP 身份及包含真机分支的完整定义绑定进 `selection`。真机环境的目录／模型选择按此范围判断；要求额外关门或放到桌面的接待不能截断为取物／运送成功。VLA 两个动作必须明确可用，旧能力接口缺失不能将本分支回退成 pick/place。当前真机分支不依赖通用任务的 `native_vla` 额外点位配置。
+
+仅导航、ROS 导航仿真＋操控模拟、SIMPLE／旧协议模拟继续使用根 `steps`，其 `reception.single_can` v2 流程为：
 
 ```text
 初始化 → 读取现场 → table2 导航 → 可选 inspection
@@ -538,27 +578,15 @@ AND result.navigation_stopped == true
 
 明确触发词“开始接待（仅导航）”选择同版本的 `reception.single_can.nav_only`，包含两个准备节点及定义中的全部导航，不派发抓取、放置、inspection，也不执行跨导航／操控交接。v1 为四段、v2 为五段；完成只证明仅导航流程完成。
 
-2026-10-14 新增明确触发词“开始接待（导航真机＋操控模拟）”，选择同版本的
-`reception.single_can.sim_manipulation`；网页原仅导航快捷按钮改为该模式。
-旧仅导航触发词仍保留，普通“开始接待”的真实抓放行为不变。新模式仅在真机接待环境允许创建，
-绑定 `execution_backend=reception_real_sim_manipulation` 与原导航地址、本地操控模拟版本。
-执行完整导航、抓取、抓取核验、放置和放置核验步骤，不含可选相机 inspection。
+2026-10-22：右侧明确触发词“开始接待（导航真机＋操控模拟）”已同步当前真机 Skill，登记为 `reception.fridge_pick.sim_manipulation` v2，绑定 `workflow_variant=real_sim_manipulation`、`execution_backend=reception_real_sim_manipulation`。它与左侧生成相同的步骤、名称、五个导航点及顺序，仅由执行适配器把操控切到本地模拟；不单独维护另一份路线。不关门、不放置，到 1 号桌后虚拟持物记录仍是可乐。
 
-导航仍受 `kernel_enabled` 和导航原有准入、到达、停止核验约束。操控沿原请求、提交、结果轮询、
-Verifier 和人工恢复链路，由本地模拟端默认约 1 秒后返回模拟成功，无 VLA HTTP 或真实抓放。
-模拟操控接受前查询所引用的导航原命令，检查任务、目标、身份、完成时间及到达、停止回执。
-步骤衔接检查原命令停止及导航通路空闲，不进行实体控制权切换，
-交接记录标明 `simulated=true`、`physical_control_transfer=false`。
+导航仍是真机，受 `kernel_enabled` 和 NAV 原有准入、到达、停止核验约束。开门／抓可乐由现有本地模拟客户端在默认约 1 秒后返回模拟终态，Runtime 自动核验推进，不等待真实效果确认，也不接收真实 VLA 核验凭据。模拟提交前仍查询原 NAV 命令的任务、目标、身份、完成时间及到达／停止事实；导航失败或忙碌不能伪造成功。此模式不连接 VLA HTTP、不要求真实 VLA 在线、不进行实体控制权租约交接；真实模式的相关检查保持不变。
 
-操控原始回执标明 `simulated=true`、`result.physical_execution=false`、
-`result.evidence_level=simulated_object`；它表示模拟域的物体结果，不是传感器物体证据。
-任务状态中抓放及对应核验节点带 `simulated=true`，网页显示“（模拟）”，任务环境及完成提示均标明混合模式。
-该任务内的持物、落点状态也是模拟流程事实，不能用于声称真实抓放完成。
-导航失败、命令未知仍阻断后续动作；人工跳过仍单独记录，不算成功。
+开门、抓可乐及两个核验节点均显示“（模拟）”。原始回执为 `simulated=true`、`physical_execution=false`、`evidence_level=simulated_object`，不伪造 operator_observation 或 visual_verifier 的实物证据。只有混合适配器允许这些新动作的模拟效果通过；真实适配器拒绝把同一回包当实物成功。操控模拟模式的暂停、继续和取消沿用现有任务控制语义。
 
-本地模拟端只缓存命令回执，不另建任务账本。重启时从 Runtime 已保存且身份、时间、停止核验有效的
-模拟终态回执恢复查询；未落账回执丢失时保持 UNKNOWN，不凭原请求补造成功，也不自动重发。
-代码变更须由相应大脑、网页运行实例加载后生效；离线验证不代表已部署或已完成真机混合流程验收。
+运送使用本任务已通过核验的虚拟持物及本地模拟状态，虚拟持物丢失仍阻断后续导航。模拟状态从已保存的原终态回执恢复，不另建任务账本；回执丢失保持 UNKNOWN，不凭原请求补造成功或重发。完整流程及恢复、历史失败与手工跳过的规则与真实分支一致，任务完成只表示混合联调通过。
+
+2026-10-14 登记的旧 `reception.single_can.sim_manipulation` 抓放流程继续供旧任务快照及没有 real_workflow 的旧 Skill 使用，不转换已有任务。修改后的分支只对新建任务生效。
 
 隔离 ROS 仿真另使用明确触发词“开始接待（导航仿真＋操控模拟）”与
 `reception.single_can.ros_sim_manipulation`，绑定 `execution_backend=reception_ros_sim_manipulation`。
@@ -609,6 +637,12 @@ XY／yaw 的比较容差为 1e-5 米／弧度，yaw 按周期比较；此容差�
 
 普通交接先核对来源命令身份、时间、成功终态、停止及资源释放，再读取导航 `/v1/status` 与操控 `/v1/vla/control/status`。要求两侧无活动命令、操控策略未运行、导航通路已归还。
 
+交接受阻的原因分别记录：回执身份或时间不合格为 `source_receipt_invalid`，停止未确认为
+`source_stop_unconfirmed`，资源归还未确认为 `source_resources_unreleased`。回执有效且停止、资源归还
+已确认时，失败／取消分别为 `source_failed`／`source_cancelled`，尚无成功终态为
+`source_success_unconfirmed`；不能把动作失败表述为停止未确认。真实执行与操控模拟混合模式使用同一分类，
+原始来源回包仍保留，交接成功条件不变。
+
 - 下游不提供 `control_receipt` 时，满足上述条件可按 `transport_ready_without_receipt` 放行。
 - 下游提供该字段时，必须通过任务、原命令、目标控制器和时效核验；无效凭证不等于缺省凭证。
 - 从来源命令步骤到交接目标之间包含人工跳过时，大脑记录 `manual_skip` 并补齐该次交接，不再重复查询交接。跳过操作自身仍核对停止和资源。
@@ -641,11 +675,16 @@ XY／yaw 的比较容差为 1e-5 米／弧度，yaw 按周期比较；此容差�
 
 当前不承诺下游跨重启一定保留历史命令。继续原任务时，原命令不可查仍保持 `recovery_required`；用户另行取消任务不依赖该查询。控制交接与效果证据见第 8 节，不能套用旧规划中的“取消必须确认下游停止”规则。
 
+人工“继续”核查原命令结果、停止和资源释放；新导航是否满足当前定位、安全门及 Token 条件，由导航端
+在提交时裁决，大脑按准入回包记录接受、拒绝或未知，不另行裁决导航恢复许可。
+这与第 1.1.3 节受限恢复方案的确认约束是不同入口。
+
 ## 9.2 提交拒绝与不确定事务
 
 导航提交前先持久化原 `command_id`，不因异常自动换号重发：
 
 - 只有 HTTP 400／403／409／422 且错误结构、身份和错误码符合 `src/contracts/submission.py` 的识别规则，才视为明确提交拒绝，记录 `failure_detail.kind=rejected`、`not_started=true`。忙碌错误还需明确占用者是其他命令。
+- `STOP_NOT_CONFIRMED` 属于提交准入拒绝：导航未收到新鲜停止反馈，未受理本次新目标。符合上述拒绝合同才记录为未开始；这不证明此前动作已经停止。已保存为 UNKNOWN 的同类原始拒绝回包可由现有拒绝核对流程重新分类，保留 `original_unknown_progress`，不自动继续或重发。
 - 任意 HTTP 400 不能一概视为未执行；HTTP 500、裸 404、同 ID 冲突或不符合拒绝合同的回包，也不能证明动作未执行。适配器保留结果未知。
 - 人工跳过明确拒绝且未执行的步骤时，复用与当前任务、尝试、命令绑定的原始拒绝回执，不查询未创建的下游命令。若此前还有实际提交的命令，仍查询其停止和资源释放；拒绝当前命令不证明其它动作已停止。跳过抓取／放置同时标记关联效果核验为人工跳过，保留全部失败尝试，不写为成功。
 - 导航 POST 连接断开或超时时，客户端有界查询原命令；查到则继续跟踪，查不到进入恢复处理，不自动重新 POST。

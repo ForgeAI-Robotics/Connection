@@ -52,6 +52,22 @@ def _identifier(value):
     return value
 
 
+def _display_name(value, key='display_name'):
+    if key not in value:
+        return ''
+    name = value[key]
+    if (not isinstance(name, str) or not name.strip() or len(name) > 120
+            or any(ord(c) < 32 or ord(c) == 127 for c in name)):
+        raise Rejected(key + ' 必须为 1～120 字符的单行显示名称')
+    return name.strip()
+
+
+def navigation_fields(point):
+    """Presentation metadata must never enter a NAV request or route comparison."""
+    return {key: deepcopy(point[key]) for key in
+            ('target_id', 'route_phase', 'leg_index', 'goal_xyt', 'motion_mode')}
+
+
 def definition_hash(definition):
     raw = json.dumps(definition, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(raw.encode()).hexdigest()
@@ -61,15 +77,29 @@ def definition_hash(definition):
 class ReceptionSkill:
     definition: dict
     steps: tuple
+    real_steps: tuple = ()
 
     @property
     def sop(self):
         return deepcopy(self.definition["sop"])
 
+    @property
+    def real_sop(self):
+        definition = self.definition.get('real_workflow')
+        return dict(deepcopy(definition['sop']), triggers=deepcopy(self.sop['triggers'])) if definition else None
+
     def snapshot(self):
         return {"sha256": definition_hash(self.definition), "definition": deepcopy(self.definition)}
 
-    def phases(self, *, nav_only=False):
+    @property
+    def navigation_points(self):
+        return {key: navigation_fields(point) for key, point in self.definition['points'].items()}
+
+    def phases(self, *, nav_only=False, real=False):
+        if real:
+            if nav_only or not self.real_steps:
+                raise Rejected('当前 Skill 没有匹配的真机接待流程')
+            return deepcopy(self.real_steps)
         steps = deepcopy(self.steps)
         if nav_only:
             return tuple(replace(step, handoff_before="") for step in steps if step.kind in {"local", "navigate"})
@@ -100,7 +130,7 @@ def validate_backend(skill, backend):
     """The legacy timed simulator only supports the original four legs."""
     if backend != "reception_protocol":
         return
-    for point in skill.definition["points"].values():
+    for point in skill.navigation_points.values():
         body = dict(contract_version=CONTRACT_VERSION, task_id="validate", command_id="validate",
                     frame_id="map", require_final_orientation=True, **deepcopy(point))
         try:
@@ -131,7 +161,7 @@ def _validate_route_point(point):
 
 def compile_skill(definition):
     """Resolve all references and derive mandatory checks before any dispatch."""
-    _keys(definition, ("schema_version", "contract_version", "sop", "parameters", "points", "steps"))
+    _keys(definition, ("schema_version", "contract_version", "sop", "parameters", "points", "steps"), ('real_workflow',))
     schema = definition["schema_version"]
     if type(schema) is not int or schema not in (1, 2):
         raise Rejected("不支持的接待 Skill schema_version")
@@ -159,13 +189,14 @@ def compile_skill(definition):
         raise Rejected("接待 Skill 需要 1～64 个动作步骤")
     for key, point in points.items():
         _identifier(key)
-        _keys(point, ("target_id", "route_phase", "leg_index", "goal_xyt", "motion_mode"))
+        _keys(point, ("target_id", "route_phase", "leg_index", "goal_xyt", "motion_mode"), ('display_name',))
+        _display_name(point)
         _identifier(point["target_id"])
         _validate_route_point(point)
         # Schema 1 is the archived, exact four-leg contract. Schema 2 uses
         # operator-defined points; remote admission still owns route approval.
         body = dict(contract_version=CONTRACT_VERSION, task_id="validate", command_id="validate",
-                    frame_id="map", require_final_orientation=True, **deepcopy(point))
+                    frame_id="map", require_final_orientation=True, **navigation_fields(point))
         try:
             if schema == 1:
                 validate_request("nav", body)
@@ -181,7 +212,9 @@ def compile_skill(definition):
     picks = places = 0
     for action in actions:
         _keys(action, ("id", "action", "command_prefix", "timeout_sec"),
-              ("point", "after_navigation", "optional", "verification_id"))
+              ("point", "after_navigation", "optional", "verification_id", 'display_name', 'verification_display_name'))
+        display_name = _display_name(action)
+        verification_name = _display_name(action, 'verification_display_name')
         step_id = _identifier(action["id"])
         prefix = _identifier(action["command_prefix"])
         kind = action["action"]
@@ -198,7 +231,10 @@ def compile_skill(definition):
             raise Rejected("只有观察节点可以声明布尔 optional")
         if kind not in {"pick", "place"} and "verification_id" in action:
             raise Rejected("只有抓放节点可以声明 verification_id")
-        fields = dict(step_id=step_id, kind=kind, prefix=prefix, deadline_sec=timeout, object_id=obj)
+        if kind not in {'pick', 'place'} and 'verification_display_name' in action:
+            raise Rejected('只有抓放节点可以声明 verification_display_name')
+        fields = dict(step_id=step_id, kind=kind, prefix=prefix, deadline_sec=timeout, object_id=obj,
+                      display_name=display_name)
         if kind == "navigate":
             point_key = action.get("point")
             if not isinstance(point_key, str) or point_key not in points or "after_navigation" in action:
@@ -208,7 +244,10 @@ def compile_skill(definition):
                     latest_nav is None or latest_nav[1]["target_id"] != "door_1"
                     or latest_nav[1]["route_phase"] != "door_approach"):
                 raise Rejected("横移出门前必须先导航到 door_approach")
-            fields.update(key=point_key, navigation=deepcopy(point), evidence="reached",
+            target_name = _display_name(point)
+            title = ('横移到' if point['motion_mode'] == 'lateral_path_aligned' else '导航到') + target_name
+            fields.update(key=point_key, navigation=navigation_fields(point), evidence="reached",
+                          target_name=target_name, display_name=display_name or (title if target_name else ''),
                           requires_gate=latest_nav is None,
                           handoff_before="to_nav" if previous_action in {"pick", "place"} else "")
             latest_nav = (step_id, point)
@@ -219,10 +258,13 @@ def compile_skill(definition):
                 raise Rejected("观察和抓放必须引用最近的导航步骤 after_navigation")
             fields["navigation_step_id"] = latest_nav[0]
             target = latest_nav[1]["target_id"]
+            fields['target_name'] = _display_name(latest_nav[1])
             if kind == "inspect":
                 if latest_nav[1]["leg_index"] != 1:
                     raise Rejected("当前检查合同只支持取物桌导航后的检查")
                 fields.update(evidence="inspected", optional=action.get("optional", False))
+                if not display_name and fields['target_name']:
+                    fields['display_name'] = '检查' + fields['target_name'] + '的物品'
             else:
                 if (kind == "pick" and holding) or (kind == "place" and not holding):
                     raise Rejected("抓放顺序与持物前置条件不符")
@@ -245,7 +287,7 @@ def compile_skill(definition):
             if verify_id in ids:
                 raise Rejected("接待 Skill 核验步骤 ID 重复")
             ids.add(verify_id)
-            steps.append(StepSpec(verify_id, "verify", evidence=fields["evidence"]))
+            steps.append(StepSpec(verify_id, "verify", evidence=fields["evidence"], display_name=verification_name))
         if kind != "inspect":
             previous_action = kind
     expected_order = [1, 2, 3, 4] if schema == 1 else list(range(1, len(points) + 1))
@@ -255,4 +297,89 @@ def compile_skill(definition):
         raise Rejected("接待 Skill 包含未被流程引用的导航点")
     if picks != 1 or places != 1 or holding or actions[-1]["action"] != "place":
         raise Rejected("单罐接待必须包含一次抓取、一次放置，并以放置完成")
-    return ReceptionSkill(deepcopy(definition), tuple(steps))
+    real_steps = _compile_real_workflow(definition, steps) if 'real_workflow' in definition else ()
+    return ReceptionSkill(deepcopy(definition), tuple(steps), tuple(real_steps))
+
+
+def _compile_real_workflow(definition, base_steps):
+    """Open/grasp at one stance, then retain the configured delivery route."""
+    from contracts.vla import validate_request as validate_native_request
+    workflow = definition['real_workflow']
+    _keys(workflow, ('sop', 'steps'))
+    sop = workflow['sop']
+    _keys(sop, ('id', 'version', 'description', 'constraints'))
+    _identifier(sop['id'])
+    if sop['id'] in {definition['sop']['id'] + suffix for suffix in
+                    ('', '.nav_only', '.sim_manipulation', '.ros_sim_manipulation')}:
+        raise Rejected('真机流程必须使用独立 SOP 身份')
+    for key in ('version', 'description', 'constraints'):
+        if not isinstance(sop[key], str) or not sop[key].strip():
+            raise Rejected('真机 SOP 版本与范围不能为空')
+    actions = workflow['steps']
+    if (not isinstance(actions, list) or len(actions) < 3
+            or any(not isinstance(a, dict) for a in actions)
+            or [a.get('action') for a in actions[:3]] != ['navigate', 'open_fridge', 'grasp_cola']
+            or any(a.get('action') != 'navigate' for a in actions[3:])):
+        raise Rejected('真机接待先导航、开门、抓取，随后按登记路线运送；不插入关门或放置')
+    route = [s.key for s in base_steps if s.kind == 'navigate']
+    # v1 was already persisted by the earlier truncated implementation. Only
+    # those historical snapshots may end at grasp; v2 retains the full route.
+    legacy_short = sop['version'] == '1' and len(actions) == 3
+    expected_route = route[:1] if legacy_short else route
+    if [a.get('point') for a in actions if a['action'] == 'navigate'] != expected_route:
+        raise Rejected('真机接待必须保留 Skill 的全部导航点及原顺序')
+    steps = [deepcopy(s) for s in base_steps if s.kind == 'local']
+    ids, prefixes = {s.step_id for s in steps}, set()
+    navigation = None
+    for index, action in enumerate(actions):
+        kind = action['action']
+        required = ('id', 'action', 'command_prefix', 'timeout_sec') + (
+            ('point',) if kind == 'navigate' else ('object_id', 'after_navigation'))
+        _keys(action, required, ('display_name',) if kind == 'navigate' else
+              ('display_name', 'verification_id', 'verification_display_name'))
+        step_id, prefix = _identifier(action['id']), _identifier(action['command_prefix'])
+        if step_id in ids or prefix in prefixes:
+            raise Rejected('真机流程步骤身份或命令前缀重复')
+        ids.add(step_id); prefixes.add(prefix)
+        timeout = action['timeout_sec']
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise Rejected('真机流程 timeout_sec 必须为有限正数')
+        title = _display_name(action)
+        if kind == 'navigate':
+            key = action['point']
+            if not isinstance(key, str):
+                raise Rejected('真机流程必须引用登记 point')
+            template = next((s for s in base_steps if s.kind == 'navigate' and s.key == key), None)
+            if template is None:
+                raise Rejected('真机流程必须引用已登记导航点')
+            nav_step = replace(template, step_id=step_id, prefix=prefix, deadline_sec=timeout,
+                               display_name=title or template.display_name, requires_gate=index == 0,
+                               handoff_before='to_nav' if index == 3 else '', requires_vla_clearance=True,
+                               required_holding=definition['parameters']['object_id'] if index > 2 else '',
+                               requires_safe_idle=index == len(actions) - 1)
+            if index == 0:
+                navigation = nav_step
+            steps.append(nav_step)
+            continue
+        if action['after_navigation'] != navigation.step_id:
+            raise Rejected('开门与抓取必须引用同一个原导航步骤，不重新导航')
+        obj = _identifier(action['object_id'])
+        if kind == 'grasp_cola' and obj != definition['parameters']['object_id']:
+            raise Rejected('真机抓取物体与 Skill 参数不一致')
+        target = navigation.navigation['target_id']
+        validate_native_request(dict(contract_version=CONTRACT_VERSION, task_id='validate', command_id='validate',
+            operation=kind, object_id=obj, target_area=target,
+            navigation_proof=dict(dream_command_id='validate', target_id=target, state='succeeded')))
+        effect = 'door_open' if kind == 'open_fridge' else 'object_held'
+        steps.append(StepSpec(step_id, kind, prefix=prefix, deadline_sec=timeout, object_id=obj,
+            target_area=target, target_name=navigation.target_name, display_name=title,
+            navigation_step_id=navigation.step_id, evidence=effect, handoff_before='to_vla',
+            requires_object_evidence=True, requires_safe_idle=True,
+            writes='in_gripper' if kind == 'grasp_cola' else ''))
+        verify_id = _identifier(action.get('verification_id', 'VERIFY_' + step_id))
+        if verify_id in ids:
+            raise Rejected('真机核验步骤身份重复')
+        ids.add(verify_id)
+        steps.append(StepSpec(verify_id, 'verify', evidence=effect,
+                              display_name=_display_name(action, 'verification_display_name')))
+    return steps

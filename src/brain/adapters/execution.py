@@ -11,6 +11,7 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 
 from contracts.tasks import CONTRACT_VERSION
+from contracts.vla import NATIVE_OPERATIONS, MANIPULATION_OPERATIONS, validate_evidence
 from contracts.submission import submission_refusal
 from brain.kernel.memory import DEFAULT_EVENT_TTL_SEC
 from brain.skills.catalog import by_id
@@ -45,6 +46,25 @@ class BodyAdapter:
             if callable(abandon):
                 abandon()
 
+    def capabilities(self):
+        return self.vla.capabilities()
+
+    def effect_control(self, action, command_id, request, *, evidence=None, authorization=''):
+        body = request['body']
+        raw = self.vla.task(command_id)
+        if not _identity_ok(command_id, raw, request, raw.get('result') or {}):
+            raise ValueError('VLA 原命令身份不匹配')
+        if action == 'pause':
+            raw = self.vla.pause(body['task_id'], command_id)
+        elif action == 'finish':
+            if raw.get('state') != 'waiting_result_confirmation':
+                raise ValueError('须等待策略暂停确认后才能提交效果证据')
+            validate_evidence(body['operation'], body['object_id'], evidence, raw.get('verification_ready_at'))
+            raw = self.vla.finish(body['task_id'], command_id, evidence, authorization)
+        elif action != 'query':
+            raise ValueError('未知 VLA 核验操作')
+        return interpret_observation(command_id, raw, request)
+
     @classmethod
     def from_config(cls, config):
         from brain.adapters.dream_client import DreamClient
@@ -74,6 +94,25 @@ class BodyAdapter:
         del step_id, kind
         return {"available": False, "confirmed": False, "reason": "unavailable"}
 
+    @staticmethod
+    def _source_handoff_blocker(source):
+        """Describe the unmet prerequisite without conflating failure with motion."""
+        evidence = source.get("evidence") or {}
+        if evidence.get("identity_ok") is not True or evidence.get("time_ok") is not True:
+            return "source_receipt_invalid"
+        if source.get("stopped") is not True:
+            return "source_stop_unconfirmed"
+        if source.get("resources_released") is not True:
+            return "source_resources_unreleased"
+        terminal = source.get("terminal")
+        if terminal == "failed":
+            return "source_failed"
+        if terminal == "cancelled":
+            return "source_cancelled"
+        if terminal != "succeeded":
+            return "source_success_unconfirmed"
+        return None
+
     def handoff_with_context(self, context):
         """Read the deployed status APIs. Transport readiness is not controller takeover."""
         answer = {"available": False, "confirmed": False, "kind": context["kind"],
@@ -84,11 +123,9 @@ class BodyAdapter:
             return answer
         source = self.query(command_id, request)
         answer["source"] = source
-        evidence = source.get("evidence") or {}
-        if (evidence.get("identity_ok") is not True or evidence.get("time_ok") is not True
-                or source.get("terminal") != "succeeded" or source.get("stopped") is not True
-                or source.get("resources_released") is not True):
-            answer["reason"] = "source_stop_unconfirmed"
+        reason = self._source_handoff_blocker(source)
+        if reason:
+            answer["reason"] = reason
             return answer
         try:
             nav, vla = self.dream.status(), self.vla.control_status()
@@ -102,6 +139,11 @@ class BodyAdapter:
         vla_idle = ("active_command_id" in vla and vla["active_command_id"] in (None, "")
                     and vla.get("policy_running") is False
                     and (vla.get("action_port") or {}).get("navigation_port_ready") is True)
+        if request.get('skill') in NATIVE_OPERATIONS or request.get('requires_vla_clearance'):
+            vla_idle = (vla_idle and vla.get('recovery_required') is False
+                        and vla.get('policy_state_uncertain') is False
+                        and vla.get('navigation_handoff_ready') is True
+                        and (not request.get('required_holding') or vla.get('holding') == request['required_holding']))
         answer["transport_ready"] = nav_idle and vla_idle
         answer["reason"] = "transport_not_ready"
         if answer["transport_ready"]:
@@ -123,12 +165,39 @@ class BodyAdapter:
     def submit(self, command_id, request):
         body = request["body"]
         skill = request.get("skill")
+        def refuse(message):
+            return HttpContractError(message, status_code=409, payload={
+                'success': False, 'error': {'code': 'SAFETY_NOT_READY', 'message': message,
+                    'details': {'task_id': body['task_id'], 'command_id': command_id,
+                                'action_started': False, 'action_state_uncertain': False,
+                                'source': 'brain_pre_dispatch_check'}}})
         try:
             if skill == "navigate":
+                if request.get('requires_vla_clearance'):
+                    status = self.vla.control_status()
+                    if (status.get('recovery_required') is not False
+                            or status.get('policy_state_uncertain') is not False
+                            or status.get('policy_running') is not False
+                            or 'active_command_id' not in status or status['active_command_id'] not in ('', None)
+                            or status.get('navigation_handoff_ready') is not True
+                            or (request.get('required_holding') and status.get('holding') != request['required_holding'])
+                            or (status.get('action_port') or {}).get('navigation_port_ready') is not True):
+                        raise refuse('VLA 原动作或现场尚未核清，不能继续导航')
                 raw = self.dream.submit_navigation(body)
             elif skill == "inspect":
                 raw = self.dream.submit_inspection(body)
-            elif skill in {"pick", "place"}:
+            elif skill in MANIPULATION_OPERATIONS:
+                if skill in NATIVE_OPERATIONS:
+                    from contracts.vla import validate_request
+                    validate_request(body)
+                    caps = self.capabilities() or {}
+                    status = self.vla.control_status()
+                    if (caps.get('real_action_enabled') is not True
+                            or (caps.get('operations', {}).get(skill) or {}).get('configured') is not True
+                            or status.get('navigation_handoff_ready') is not True
+                            or status.get('recovery_required') is not False
+                            or status.get('policy_state_uncertain') is not False):
+                        raise refuse('VLA 能力、导航交接或恢复状态不允许新动作')
                 raw = self.vla.submit_task(body)
             else:
                 raise RuntimeError(f"未知技能: {skill}")
@@ -178,6 +247,7 @@ class BodyAdapter:
                     command_id,
                     timeout_sec=deadline,
                     poll_interval_sec=float(request.get("poll_interval_sec") or 1.0),
+                    **({'stop_states': {'running', 'waiting_result_confirmation'}} if skill in NATIVE_OPERATIONS else {}),
                 )
         except HttpContractError as exc:
             return _unconfirmed(command_id, str(exc), raw=exc.payload)
@@ -270,10 +340,13 @@ def _identity_ok(command_id, raw, request, result) -> bool:
         expected_object = body.get("target_object_id")
         if expected_object and echoed not in (None, expected_object):
             return False
-    elif skill in {"pick", "place"}:
+    elif skill in MANIPULATION_OPERATIONS:
         if raw.get("operation") != body.get("operation"):
             return False
-        if result.get("object_id") != body.get("object_id"):
+        if skill in NATIVE_OPERATIONS and raw.get('target_area') != body.get('target_area'):
+            return False
+        # Native nonterminal records carry the object at the top level.
+        if (result.get('object_id') or (raw.get('object_id') if skill in NATIVE_OPERATIONS else None)) != body.get("object_id"):
             return False
     return True
 
@@ -283,20 +356,40 @@ def _stop_flags(skill, result) -> tuple:
     if skill in {"navigate", "inspect"}:
         stopped = result.get("navigation_stopped") is True
         return stopped, stopped
-    if skill in {"pick", "place"}:
+    if skill in MANIPULATION_OPERATIONS:
         publisher = result.get("policy_stopped") is True
         resources = result.get("navigation_port_ready") is True
         return publisher and resources, resources and publisher
     return False, False
 
 
-def _effect_supported(skill, result, body) -> bool:
+def _effect_supported(skill, result, body, *, simulated=False) -> bool:
     if skill == "navigate":
         return result.get("success") is True and result.get("reached") is True
     if skill == "inspect":
         return result.get("success") is True
     object_id = body.get("object_id")
     evidence = result.get("evidence") if isinstance(result.get("evidence"), dict) else {}
+    if skill in NATIVE_OPERATIONS:
+        if simulated:
+            if result.get('success') is not True:
+                return False
+            if skill == 'open_fridge':
+                return (result.get('door_open') is True and result.get('door_closed') is False
+                        and result.get('door_stable_open') is True and result.get('hands_clear_of_door') is True)
+            return (result.get('object_grasped') is True and result.get('holding') == object_id
+                    and result.get('clear_of_fridge') is True)
+        try:
+            validate_evidence(skill, object_id, evidence, body.get('_verification_ready_at'))
+        except ValueError:
+            return False
+        if (result.get('success') is not True or result.get('effect_verified_by') != evidence['source']
+                or result.get('evidence_level') != evidence['source']
+                or result.get('autonomous_effect_verification') is not False):
+            return False
+        if skill == 'open_fridge':
+            return result.get('door_open') is True and result.get('door_closed') is False
+        return result.get('object_grasped') is True and result.get('holding') == object_id
     if skill == "pick":
         return (
             result.get("success") is True
@@ -340,7 +433,7 @@ def _started(raw, result):
     return None
 
 
-def interpret_observation(command_id, raw, request) -> dict:
+def interpret_observation(command_id, raw, request, *, allow_simulated=False) -> dict:
     """Turn one downstream payload into evidence. A foreign or incomplete payload stays unconfirmed."""
     if not isinstance(raw, dict):
         return {
@@ -386,25 +479,47 @@ def interpret_observation(command_id, raw, request) -> dict:
     level = str(result.get("evidence_level") or result.get("evidence_grade") or "")
     hand_only = level == "hand_state_only"
     stopped, resources = _stop_flags(skill, result)
-    effect = _effect_supported(skill, result, body)
+    simulated = (allow_simulated and raw.get('simulated') is True and result.get('simulated') is True
+                 and result.get('physical_execution') is False and level == 'simulated_object')
+    effect = _effect_supported(skill, result, dict(body, _verification_ready_at=raw.get('verification_ready_at')),
+                               simulated=simulated)
+    if skill in NATIVE_OPERATIONS and (raw.get('simulated') is True or result.get('simulated') is True) and not simulated:
+        effect = False
     supports = bool(effect and stopped and not hand_only and state == "succeeded")
     if hand_only:
         grade = "hand_state_only"
-    elif supports and skill in {"pick", "place"}:
+    elif supports and skill in MANIPULATION_OPERATIONS:
         grade = "object"
     else:
         grade = level
+    time_ok = _timestamp_has_timezone(raw.get('completed_at'))
+    if skill in NATIVE_OPERATIONS and state == 'succeeded' and not simulated:
+        try:
+            observed = datetime.fromisoformat(result['evidence']['observed_at'].replace('Z', '+00:00'))
+            completed = datetime.fromisoformat(raw['completed_at'].replace('Z', '+00:00'))
+            time_ok = time_ok and observed <= completed
+        except (KeyError, TypeError, ValueError):
+            time_ok = False
     evidence = {
         "supports": supports,
         "contradicts": _contradicts(skill, result),
         "identity_ok": True,
-        "time_ok": _timestamp_has_timezone(raw.get("completed_at")),
+        "time_ok": time_ok,
         "grade": grade,
         "identity": command_id,
         "reported_success": state == "succeeded" and result.get("success") is True,
-        "effect_verified": supports and _timestamp_has_timezone(raw.get("completed_at")),
+        "effect_verified": supports and time_ok,
         "reported_evidence_level": level,
     }
+    if simulated:
+        evidence.update(simulated=True, physical_execution=False)
+    if skill in NATIVE_OPERATIONS and not terminal and not allow_simulated:
+        evidence['vla_confirmation'] = {
+            'command_id': command_id, 'operation': skill, 'state': state,
+            'pause_requested': raw.get('pause_requested') is True,
+            'verification_ready_at': raw.get('verification_ready_at'),
+            'finish_requested': raw.get('finish_requested') is True,
+        }
     entry = by_id(str(skill or ""))
     if supports and entry is not None:
         evidence["effect"] = entry.verifies

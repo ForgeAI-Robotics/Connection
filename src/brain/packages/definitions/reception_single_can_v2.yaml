@@ -7,38 +7,43 @@ contract_version: fq/reception-lan/v1
 sop:
   id: reception.single_can
   version: "2"
-  description: "单罐接待：table_2 抓取 cola_can_1，经 relay1、relay2、relay3 到 table_1 放置。"
-  constraints: "固定一罐、固定物体与桌子；不包含开灯、人数补货、改路线或额外动作。"
+  description: "单罐接待：冰箱前（table_2）抓取 cola_can_1，经 relay1、relay2、relay3 到 table_1 放置。"
+  constraints: "固定一罐、固定物体与登记作业点；不包含开灯、人数补货、改路线或额外动作。"
   triggers: [开始接待, 启动接待, 执行接待, 开始单罐接待]
 parameters:
   object_id: cola_can_1
   quantity: 1
 points:
   table2:
+    display_name: 冰箱前
     target_id: table_2
     route_phase: ""
     leg_index: 1
     goal_xyt: [-3.658864, 4.024073, -2.963158]
     motion_mode: forward_path
   relay1:
+    display_name: 中转点 1
     target_id: relay_1
     route_phase: relay1_approach
     leg_index: 2
     goal_xyt: [-2.248818, -0.541162, -1.664662]
     motion_mode: forward_path
   relay2:
+    display_name: 中转点 2
     target_id: door_1
     route_phase: door_approach
     leg_index: 3
     goal_xyt: [-2.423402, -6.008235, 0.119759]
     motion_mode: forward_path
   relay3:
+    display_name: 中转点 3
     target_id: door_1
     route_phase: door_lateral_exit
     leg_index: 4
     goal_xyt: [-2.168660, -7.378595, 0.159763]
     motion_mode: lateral_path_aligned
   table1:
+    display_name: 1 号桌
     target_id: table_1
     route_phase: table1_approach
     leg_index: 5
@@ -58,6 +63,8 @@ steps:
     optional: true
   - id: VLA_PICKING
     action: pick
+    display_name: 抓取饮料
+    verification_display_name: 确认饮料已抓稳
     after_navigation: NAVIGATING_TO_TABLE2
     command_prefix: vla-pick
     timeout_sec: 600
@@ -84,7 +91,62 @@ steps:
     timeout_sec: 900
   - id: VLA_PLACING
     action: place
+    display_name: 放置饮料
+    verification_display_name: 确认饮料已放好
     after_navigation: NAVIGATING_TO_TABLE1
     command_prefix: vla-place
     timeout_sec: 1800
     verification_id: VERIFYING_PLACE
+
+# 真机“开始接待”使用本分支；旧 steps 供原仿真及显式混合联调使用。
+# 复用同一份 points；开门与抓取之间不导航，抓取核验后保留原运送路线。
+real_workflow:
+  sop:
+    id: reception.fridge_pick
+    version: "2"
+    description: "真机接待：导航到冰箱前，开门并原地抓取可乐；核验后经中转点 1、2、3 运送到 1 号桌。"
+    constraints: "单罐 cola_can_1；保留全部登记导航路线，关冰箱和放置暂不派发；到桌后仍持物。两次操控需暂停后的授权效果确认。"
+  steps:
+    - id: NAVIGATING_TO_FRIDGE
+      action: navigate
+      point: table2
+      command_prefix: nav-fridge
+      timeout_sec: 900
+    - id: VLA_OPEN_FRIDGE
+      action: open_fridge
+      object_id: fridge_1
+      after_navigation: NAVIGATING_TO_FRIDGE
+      command_prefix: vla-open-fridge
+      timeout_sec: 600
+      display_name: 开冰箱
+      verification_id: VERIFYING_FRIDGE_OPEN
+      verification_display_name: 确认冰箱已打开且双手离开门
+    - id: VLA_GRASP_COLA
+      action: grasp_cola
+      object_id: cola_can_1
+      after_navigation: NAVIGATING_TO_FRIDGE
+      command_prefix: vla-grasp-cola
+      timeout_sec: 600
+      display_name: 抓取可乐
+      verification_id: VERIFYING_COLA_GRASP
+      verification_display_name: 确认可乐已抓稳并离开冰箱接触区
+    - id: NAVIGATING_TO_RELAY1
+      action: navigate
+      point: relay1
+      command_prefix: nav-relay1
+      timeout_sec: 900
+    - id: NAVIGATING_TO_RELAY2
+      action: navigate
+      point: relay2
+      command_prefix: nav-relay2
+      timeout_sec: 900
+    - id: LATERAL_TO_RELAY3
+      action: navigate
+      point: relay3
+      command_prefix: nav-relay3
+      timeout_sec: 300
+    - id: NAVIGATING_TO_TABLE1
+      action: navigate
+      point: table1
+      command_prefix: nav-table1
+      timeout_sec: 900

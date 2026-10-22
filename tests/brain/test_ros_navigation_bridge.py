@@ -38,7 +38,7 @@ class NavigationBridgeTests(unittest.TestCase):
 
     def test_five_leg_health_matches_skill_and_only_coordinates_are_mapped(self):
         skill = load_skill(path='src/brain/packages/definitions/reception_single_can_v2.yaml')
-        contract = skill.definition['points']
+        contract = skill.navigation_points
         goals = {str(i): [float(i), 11.8, 1.57] for i in range(1, 6)}
         bridge = Bridge({'instance_id': 'five-leg-test', 'brain_contract': contract,
                          'office_goals': goals})

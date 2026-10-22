@@ -22,6 +22,26 @@ def route(package="reception", scope=True):
     return json.dumps({"package": package, "scope_match": scope, "reason": "匹配单罐任务"})
 
 
+class SimulationAdviceTests(unittest.TestCase):
+    def test_model_and_fallback_keep_simulation_scope_without_changing_allowed_actions(self):
+        for backend in ('reception_real_sim_manipulation', 'reception_ros_sim_manipulation'):
+            record = {'task_id': 'mixed', 'revision': 1, 'state': 'recovery_required',
+                      'execution_backend': backend, 'holding': 'cola_can_1'}
+            original = deepcopy(record)
+            context = recovery_context(record)
+            self.assertTrue(context['manipulation_simulated'])
+            def model(messages):
+                self.assertIn('不得声称已真实抓取或真实持物', messages[0]['content'])
+                return json.dumps({'action': 'request_help', 'summary': '已持有可乐', 'reason': '抓取已通过'})
+            for settings in ({}, {'brain': {'reasoning': {'recovery_advice': False}}}):
+                with self.subTest(backend=backend, settings=settings):
+                    advice = TaskReasoner(model, settings).advise(context)
+                    self.assertEqual(advice['action'], 'request_help')
+                    for key in ('summary', 'reason'):
+                        self.assertTrue(advice[key].startswith('模拟操控说明：'))
+            self.assertEqual(record, original)
+
+
 class ReasoningIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -283,7 +303,7 @@ class EvidenceAndHandoffTests(unittest.TestCase):
         raw["task_id"] = "foreign"
         result = adapter.handoff_with_context(context)
         self.assertFalse(result["confirmed"])
-        self.assertEqual(result["reason"], "source_stop_unconfirmed")
+        self.assertEqual(result["reason"], "source_receipt_invalid")
 
     def test_model_outage_gives_actionable_advice_without_fake_facts(self):
         def unavailable(_):

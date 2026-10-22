@@ -73,6 +73,12 @@ class MotionGate:
             return {"accepted": False, "error": self.gate_reason}
         return self.port.submit(command_id, request)
 
+    def capabilities(self):
+        if not self.enabled:
+            return None
+        discover = getattr(self.port, 'capabilities', None)
+        return discover() if callable(discover) else None
+
     def __getattr__(self, name):
         # Queries and requests to stop an original command remain available.
         return getattr(self.port, name)

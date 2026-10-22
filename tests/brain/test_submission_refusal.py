@@ -15,6 +15,10 @@ REFUSAL = {"success": False, "error": {"code": "INVALID_LEG_ORDER",
     "message": "relay2/door_approach must succeed before relay3 lateral crossing",
     "retryable": False, "details": {}}}
 
+STOP_REFUSAL = {"success": False, "error": {"code": "STOP_NOT_CONFIRMED",
+    "message": "fresh stopped Token feedback was not observed; new target not admitted",
+    "retryable": False, "details": {}}}
+
 
 def adapter(error):
     dream = Mock()
@@ -24,6 +28,55 @@ def adapter(error):
 
 
 class SubmissionRefusalTests(unittest.TestCase):
+    def test_stop_refusal_is_not_unknown_and_only_manual_continue_resubmits(self):
+        port = adapter(HttpContractError('HTTP 409', status_code=409, payload=STOP_REFUSAL))
+        with tempfile.TemporaryDirectory() as root:
+            runtime = _runtime(root, port)
+            runtime.drive()
+            status = runtime.public_status()
+            self.assertEqual(status['failure_detail']['kind'], 'rejected')
+            self.assertEqual(status['failure_detail']['code'], 'STOP_NOT_CONFIRMED')
+            self.assertTrue(status['failure_detail']['not_started'])
+            self.assertFalse(runtime.record['command_unknown'])
+            self.assertIsNone(runtime.record['open_command_id'])
+            original = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0])
+            runtime = TaskRuntime(runtime.store, port, config=runtime.config)
+            runtime.drive()
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            result = runtime.continue_current()
+            self.assertTrue(result['retry_prepared'])
+            self.assertNotEqual(result['command_id'], result['previous_command_id'])
+            runtime.drive()
+            self.assertEqual(port.dream.submit_navigation.call_count, 2)
+            self.assertEqual(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0], original)
+            self.assertEqual(runtime.state, 'recovery_required')
+            port.dream.command.assert_not_called()
+            port.dream.wait_command.assert_not_called()
+
+    def test_stop_refusal_does_not_override_ambiguous_status_or_identity(self):
+        from contracts.submission import submission_refusal
+        for status, raw in [(500, STOP_REFUSAL), (404, STOP_REFUSAL),
+                            (409, dict(STOP_REFUSAL, command_id='foreign')),
+                            (409, dict(STOP_REFUSAL, task_id='foreign')),
+                            (409, dict(STOP_REFUSAL, accepted=True)),
+                            (409, dict(STOP_REFUSAL, started=True))]:
+            with self.subTest(status=status, raw=raw):
+                self.assertIsNone(submission_refusal(status, raw, command_id='cmd', task_id='task'))
+
+    def test_saved_stop_refusal_can_be_reconciled_without_erasing_unknown_evidence(self):
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.legacy(root, payload=STOP_REFUSAL)
+            old = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]['progress'])
+            self.assertTrue(runtime.reconcile_submission_rejection())
+            self.assertFalse(runtime.reconcile_submission_rejection())
+            attempt = runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]
+            self.assertEqual(attempt['original_unknown_progress'], old)
+            self.assertEqual(attempt['outcome'], 'rejected')
+            self.assertEqual(runtime.state, 'recovery_required')
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            port.dream.command.assert_not_called()
+            port.dream.cancel.assert_not_called()
+
     def test_skip_first_refused_command_uses_original_refusal_without_remote_query(self):
         port = adapter(HttpContractError('HTTP 409', status_code=409, payload=REFUSAL))
         with tempfile.TemporaryDirectory() as root:

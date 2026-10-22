@@ -3,13 +3,63 @@
 初版日期：2026-08-27  
 远端现场记录基线：2026-09-20；大脑调用规则核对：2026-10-09
 契约版本：`fq/reception-lan/v1`  
-适用范围：接收大脑显式 pick/place 任务，返回真实终态；照片判真启用时订阅唯一 RealSense 相机服务并提供动作后图片。
+适用范围：大脑到 VLA 的任务、原命令查询与核验。2026-10-22 起支持新 native `open_fridge/grasp_cola`；旧 `pick/place` 合同保留给原后端。
 
-> 本文维护操控 VLA 对外合同。大脑调用和核验以新增的 2026-10-09 核准说明及大脑接口文档为准；下方原现场记录保留当时的远端能力，后续报文示例包含完整目标合同。本次不把历史远端能力重新认定为当前已验收能力。
+> 新 native 动作以本页“新动作接入”及大脑接口为准；2026-10-09 及更早章节描述旧抓放链路。源码接入、运行实例更新和真机验收分别确认。
+
+## 新动作接入（2026-10-22）
+
+Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路径，以及原命令的 `/pause`、`/finish`。本次按同级 `sonic_wbc/g1_brain_vla_bridge` 的代码与《大脑调用接口》《导航交接接口》核对。新能力用于 `body_real` 通用身体任务，以及用户明确指定的真机接待分支；真机“开始接待”先导航、开门、原地抓可乐并核验，再沿原中转路线运送到 1 号桌；暂不关门或放置，具体配置见[大脑接待流程](接口说明_大脑%20Brain.md#81-流程与请求身份)。
+
+| 能力 | 接入规则 |
+| --- | --- |
+| `open_fridge` | 登记作业路线与冰箱 ID 后可规划；完成要求门打开且稳定、双手脱离接触区 |
+| `grasp_cola` | 本任务同一目标的开门步骤必须核验 PASS；抓取要求目标在手中且已离开冰箱接触区 |
+| `close_fridge`、旧 `pick/place` | 当前 native 配置不支持；整份计划在首个导航派发前检查，不以改名替代 |
+| 原后端 | 能力接口明确 404 时保留旧抓放兼容；网络错误、非法能力回包不当作旧后端 |
+
+`configured=true` 只表示执行器已配置。动作仍检查 `real_action_enabled`、`navigation_handoff_ready`、`recovery_required=false` 和 `policy_state_uncertain=false`；VLA 自身继续核查导航原命令、硬件与租约。新任务中的导航也检查 VLA 已停、无活动命令、导航通路就绪及无恢复要求，避免失败／取消后直接导航。仅导航接待变体不依赖 VLA 能力发现；真机许可关闭保持原门控行为。
+
+### 作业点与规划配置
+
+真机“开始接待”的配置在所选 Skill 的 `real_workflow`，直接引用其 `points.table2`；用户已确认这就是冰箱前真机站位，名字与 ID 的沿用不代表另一个物理点。本分支两动作共享原导航证明，中间不导航，坐标只维护在 Skill 一处。
+
+下面的 `reception_real.native_vla` 是通用身体任务的独立动作目录，不是本次接待的必填项；公开模板默认 `points: {}`、`operations: {}`。未登记的通用动作仍拒绝。地址由现有网络／环境配置解析。
+
+- `points.<点键>`：包含 `target_id`、`route_phase`、正整数 `leg_index`、三个有限数的 `goal_xyt`、`motion_mode`（`forward_path` 或 `lateral_path_aligned`）；发出 NAV 请求时固定 `frame_id=map`、要求最终朝向。
+- `operations.open_fridge` / `operations.grasp_cola`：包含 `object_id`、按顺序引用点键的非空 `route`、正数 `timeout_sec`。目标与物体 ID 使用 1–128 位 ASCII 机器标识，首字符为字母或数字，其余允许 `_.:-`。
+- 通用动作目录中的每个动作执行自己的登记导航路线；抓取前重新取得该路线的真实 NAV 命令证明。两动作路线终点的 `target_id` 必须相同，各自起始位姿仍须适合对应示教。此配置不替 NAV 登记点位。
+- 能力、配置和编译步骤绑定进任务快照，恢复旧任务不重读新配置。人工跳过开门不能生成开门 PASS，也不能解锁后续抓取。
+
+登记后的动作绑定形式为 `open_fridge: {object_id: fridge_1, route: [fridge_open_start], timeout_sec: 600}`、`grasp_cola: {object_id: cola_can_1, route: [fridge_grasp_start], timeout_sec: 600}`；这些仅示意 ID 与字段，两个起点的导航参数须现场填写。普通“取冰箱里的可乐”可规划必要的开门＋抓取；当前不支持混入额外运送／放置要求，纯导航继续沿原登记路线规划。
+
+### 暂停、效果确认与大脑继续
+
+1. 大脑保留原 `task_id/command_id` 提交动作，等待 `running` 或 `waiting_result_confirmation` 后在 Runtime 进入 `waiting_human`，状态带 `vla_confirmation`；此时动作可能仍运行。
+2. 现场判断适当时机后，通过大脑 `POST /api/task_vla/pause` 请求策略暂停，body 为 `{"task_id":"原任务ID","command_id":"原命令ID"}`。网页提供“暂停策略以核验”。请求受理不等于已经暂停。
+3. `POST /api/task_vla/query` 使用相同身份，只查询并记账。等到 `waiting_result_confirmation` 和 `verification_ready_at` 后，由真实现场人员或视觉核验模块采集证据。网页查询按钮调用此接口；普通任务状态轮询只读取账本。
+4. 授权核验方调用 `POST /api/task_vla/finish`，Header 为 `Authorization: Bearer <VLA verifier credential>`，body 为原身份加 `evidence`。凭据仅用于当前请求，不存配置、账本或普通任务日志；网页转发保留该 Header。也可由 VLA 原有 `confirm_effect.py` 直接确认，再让大脑查询原命令。
+5. 查询观察 VLA 经 `stopping_policy`、`restoring_navigation` 到终态。查询或 finish 回包不会自动推进下一步；点击已有“继续”，Runtime 再查原命令、核验效果与停止／归还证据后推进。终态未到时“继续”拒绝重发。
+
+效果证据字段：
+
+| 字段 | 要求 |
+| --- | --- |
+| `source` | `operator_observation` 或 `visual_verifier` |
+| `reference` | 可追溯观察记录／图像记录 ID，不能编造 |
+| `observed_at` | 带时区，处于 `verification_ready_at` 之后至当前时间之间；终态证据时间不得晚于 `completed_at` |
+| 开门 | `door_open=true`、`door_stable_open=true`、`hands_clear_of_door=true` |
+| 抓可乐 | `object_grasped=true`、`holding` 等于请求物体 ID、`clear_of_fridge=true` |
+
+终态还必须满足原任务／命令／operation／目标／物体身份、完成时间、`success=true`、`policy_stopped=true`、`navigation_port_ready=true`；`effect_verified_by/evidence_level` 必须与原证据来源一致，`autonomous_effect_verification=false`。当前没有自动开门／抓稳的视觉判定接线，Planner 不能代写确认。
+
+新 `/pause` 只暂停策略推进，不是姿态冻结或急停。原大脑“暂停任务”仍走取消下游命令并核查停止；“取消任务”仍仅结束大脑编排。重复暂停／finish、丢失回包或重启后，已记录的核验意图只查询原命令，不自动重发 POST；明确的参数／权限拒绝允许修正后再次人工提交。不同证据不能覆盖已记录的确认。
+
+`recovery_required` 或未知策略状态保持阻断。VLA `/v1/vla/operator-state` 留给现场授权维护，本次不接入自动恢复按钮，不修改原失败账本。NAV 的 `fq/vla-handoff/v1` 租约交接由 VLA 调用，Connection 不接管共享 relay；NAV 未实现时不能执行新动作。当前在线部署与真机范围见[新接口验证](多端联调_操控与抓取.md#新-vla-接口离线接入验证)。
 
 ## 大脑调用与核验规则（2026-10-09）
 
-本节已按当前大脑代码核准；后面的远端实现记录属于原标注日期的现场基线，本次没有重新验收 VLA 服务、策略、相机或全部状态。地址按当前网络与生效配置解析，旧网段示例不作为当前连接地址。
+本节保留旧 pick/place 后端的大脑规则；新 native 动作以文首接入说明为准。后面的远端实现记录属于原标注日期的现场基线，不代表当前 VLA 服务、策略、相机或全部状态已重新验收。地址按当前网络与生效配置解析，旧网段示例不作为当前连接地址。
 
 | 场景 | 当前大脑行为 |
 | --- | --- |

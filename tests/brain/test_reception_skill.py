@@ -1,5 +1,6 @@
 """Declarative flow checks, snapshot isolation, and Runtime compatibility."""
 from copy import deepcopy
+from dataclasses import replace
 import json
 from pathlib import Path
 import tempfile
@@ -84,6 +85,70 @@ class ReceptionDefinitionTests(unittest.TestCase):
             with self.assertRaises(Rejected):
                 load_skill(path=path)
 
+    def test_display_names_change_presentation_but_never_wire_contract(self):
+        original = compile_skill(self.definition)
+        changed = deepcopy(self.definition)
+        changed['points']['table2']['display_name'] = '冰箱前'
+        changed['steps'][2]['display_name'] = '取出饮料'
+        changed['steps'][2]['verification_display_name'] = '检查持物效果'
+        named = compile_skill(changed)
+        self.assertEqual(named.navigation_points, original.navigation_points)
+        validate_backend(named, 'reception_protocol')
+        self.assertEqual(named.steps[2].display_name, '导航到冰箱前')
+        self.assertEqual(named.steps[3].display_name, '检查冰箱前的物品')
+        self.assertEqual(named.steps[4].display_name, '取出饮料')
+        self.assertEqual(named.steps[5].display_name, '检查持物效果')
+        policy = PackagePolicy()
+        for before, after in zip(original.steps, named.steps):
+            self.assertEqual(policy.request(before, 'task', 'cmd', lambda _: 'original-nav'),
+                             policy.request(after, 'task', 'cmd', lambda _: 'original-nav'))
+        snapshot = named.snapshot()
+        changed['points']['table2']['display_name'] = '另一个位置'
+        self.assertEqual(from_snapshot(snapshot).steps[2].display_name, '导航到冰箱前')
+        explicit = deepcopy(named.definition)
+        explicit['steps'][0]['display_name'] = '到达冰箱作业位'
+        self.assertEqual(compile_skill(explicit).steps[2].display_name, '到达冰箱作业位')
+
+    def test_invalid_display_metadata_is_rejected(self):
+        for name in ('', '  ', False, {}, 'x' * 121, '冰箱\n伪造日志'):
+            for section in ('point', 'step', 'verification'):
+                d = deepcopy(self.definition)
+                if section == 'point': d['points']['table2']['display_name'] = name
+                elif section == 'step': d['steps'][0]['display_name'] = name
+                else: d['steps'][2]['verification_display_name'] = name
+                with self.subTest(name=name, section=section), self.assertRaises(Rejected):
+                    compile_skill(d)
+
+    def test_configured_names_flow_to_status_logs_report_and_generic_plan(self):
+        from brain.kernel.runtime import status_from_record
+        from brain.skills.body_plan import compile_plan
+        from brain.observability.events import emit
+        from brain.api.reporting import reception_report
+        from shared.task_text import failure_text, format_process_event, task_context
+        skill = load_skill(path=BASELINE_PATH.with_name('reception_single_can_v2.yaml'))
+        plan = compile_plan(dict(supported=True, unsupported_requirements=[],
+            actions=[{'skill':'navigate', 'target':'table2'}]), skill.snapshot())
+        self.assertEqual(plan.steps[0].display_name, '导航到冰箱前')
+        self.assertNotIn('display_name', plan.steps[0].navigation)
+        raw = 'table2 navigation must succeed under the same task_id before table1'
+        record = {'task_id':'named', 'state':'recovery_required', 'phase':'NAVIGATING_TO_TABLE2',
+                  'phase_specs':[step_spec_dict(s) for s in skill.steps], 'steps':{}}
+        status = status_from_record(record)
+        self.assertEqual(status['subtask_list'][2]['display_name'], '导航到冰箱前')
+        self.assertEqual(task_context(status), '导航到冰箱前')
+        self.assertIn('冰箱前', failure_text(raw, record=record))
+        self.assertIn('2 号桌', failure_text(raw))
+        with patch('brain.observability.events.journal_emit') as journal:
+            emit('submit_intent', record)
+        self.assertIn('导航到冰箱前', format_process_event(dict(kind='TASK', **journal.call_args.kwargs)))
+        status['failure_history'] = [{'step_id':'NAVIGATING_TO_TABLE2', 'command_id':'cmd', 'message':raw}]
+        self.assertIn('导航到冰箱前', reception_report(status)['summary_text'])
+        # An old frozen task must not pick up names from today's YAML.
+        for spec in record['phase_specs']:
+            spec.pop('display_name'); spec.pop('target_name')
+        old = status_from_record(record)
+        self.assertEqual(task_context(old), '导航到 2 号桌')
+
     def test_snapshot_integrity_and_step_roundtrip(self):
         skill = compile_skill(self.definition)
         snapshot = skill.snapshot()
@@ -114,7 +179,7 @@ class ReceptionDefinitionTests(unittest.TestCase):
         for kind in ("pick", "place"):
             old = next(s for s in load_skill().steps if s.kind == kind)
             new = next(s for s in skill.steps if s.kind == kind)
-            self.assertEqual(new, old)
+            self.assertEqual(replace(new, display_name='', target_name=''), old)
             self.assertEqual(policy.request(old, "task", "cmd", lambda _: "proof"),
                              policy.request(new, "task", "cmd", lambda _: "proof"))
         self.assertEqual(len(skill.phases(nav_only=True)), 7)
@@ -238,6 +303,9 @@ class ReceptionDefinitionIntegrationTests(unittest.TestCase):
 
     def use_new_route(self):
         self.definition = load_skill(path=BASELINE_PATH.with_name("reception_single_can_v2.yaml")).definition
+        # This fixture exercises the pre-existing v2 pick/place workflow, not the
+        # separately registered fridge-only real workflow covered below.
+        self.definition.pop('real_workflow', None)
         self.write()
 
     def test_five_leg_reception_and_navigation_only_execute_without_model(self):

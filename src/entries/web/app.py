@@ -6,6 +6,7 @@ from shared.networks import entry_url
 
 
 ROUTES = {
+    '/api/task_vla/query': ['POST'], '/api/task_vla/pause': ['POST'], '/api/task_vla/finish': ['POST'],
     '/publish_task': ['POST'],
     '/api/publish_task': ['POST'], '/api/task_intent': ['POST'],
     '/api/task_preflight': ['POST'], '/api/task_status': ['GET'],
@@ -50,6 +51,8 @@ def create_app(brain_url=None, *, client=None, ops_client=None):
                    'X-FQ-Via': 'web'}
         if request.headers.get('X-FQ-Operator'):
             headers['X-FQ-Operator'] = request.headers['X-FQ-Operator']
+        if request.path == '/api/task_vla/finish' and request.headers.get('Authorization'):
+            headers['Authorization'] = request.headers['Authorization']
         kwargs = {'headers': headers, 'params': request.args}
         if request.path == '/api/task_status':
             kwargs['timeout'] = 5

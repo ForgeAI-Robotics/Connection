@@ -5,6 +5,7 @@ from __future__ import annotations
 from contracts.tasks import KernelError
 from brain.packages import desk, look, reception
 from brain.skills import body_requests
+from contracts.vla import MANIPULATION_OPERATIONS
 
 
 SOPS = {
@@ -17,7 +18,7 @@ VARIANTS = {"reception": (reception.NAV_ONLY_SOP, reception.SIM_MANIPULATION_SOP
                           reception.ROS_SIM_MANIPULATION_SOP)}
 
 
-def reception_catalog(config):
+def reception_catalog(config, *, mock=False):
     """One validated definition supplies both selection metadata and planning."""
     from brain.packages.reception_skill import load_skill
     skill = load_skill(config)
@@ -26,9 +27,24 @@ def reception_catalog(config):
                    description="仅导航联调：执行当前接待 Skill 的全部导航步骤，不派发抓取与放置。")
     hybrid = dict(reception.SIM_MANIPULATION_SOP, id=skill.sop["id"] + ".sim_manipulation",
                   version=skill.sop["version"])
+    if skill.real_steps:
+        hybrid.update(id=skill.real_sop['id'] + '.sim_manipulation', version=skill.real_sop['version'],
+                      description='导航真机＋操控模拟：与真机接待同一流程，开冰箱和抓可乐使用本地模拟回执。',
+                      constraints='严格沿用同版本真机接待的步骤和路线；操控及其核验由本地自动模拟，'
+                                  '不调用真实 VLA、不需要真实效果确认凭据，也不代表真实物体效果。')
     ros_hybrid = dict(reception.ROS_SIM_MANIPULATION_SOP, id=skill.sop["id"] + ".ros_sim_manipulation",
                       version=skill.sop["version"])
-    return dict(SOPS, reception=skill.sop), {"reception": (variant, hybrid, ros_hybrid)}, skill
+    primary = skill.sop
+    if skill.real_steps and not mock:
+        from brain.adapters.ports import select_backend
+        from contracts.tasks import Rejected
+        try:
+            real = select_backend(config, 'reception') == 'reception_real'
+        except Rejected:
+            real = False
+        if real:
+            primary = skill.real_sop
+    return dict(SOPS, reception=primary), {"reception": (variant, hybrid, ros_hybrid)}, skill
 
 
 def match_name(task) -> str:
@@ -75,7 +91,7 @@ class PackagePolicy:
             proof = step.navigation_step_id or "NAVIGATING_TO_TABLE2"
             body = body_requests.inspection_body(task_id, command_id, last_command(proof),
                                             object_id=self.object_id(step))
-        elif step.kind in {"pick", "place"}:
+        elif step.kind in MANIPULATION_OPERATIONS:
             proof = step.navigation_step_id or ("NAVIGATING_TO_TABLE2" if step.kind == "pick" else "NAVIGATING_TO_TABLE1")
             body = body_requests.manipulation_body(step, task_id, command_id, last_command(proof))
         elif step.body:
@@ -83,8 +99,13 @@ class PackagePolicy:
                     "subtask": step.key, "robot_name": step.robot_name}
         else:
             body = {"command_id": command_id, "task_id": task_id}
-        return {"skill": step.kind, "task_id": task_id, "step_id": step.step_id,
-                "deadline_sec": step.deadline_sec, "body": body}
+        envelope = {"skill": step.kind, "task_id": task_id, "step_id": step.step_id,
+                    "deadline_sec": step.deadline_sec, "body": body}
+        if step.requires_vla_clearance:
+            envelope['requires_vla_clearance'] = True
+        if step.required_holding:
+            envelope['required_holding'] = step.required_holding
+        return envelope
 
     def effects(self, step, *, final):
         if not final and step.writes == "in_gripper":

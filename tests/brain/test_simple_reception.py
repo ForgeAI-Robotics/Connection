@@ -304,7 +304,7 @@ class BrainEndToEndTests(unittest.TestCase):
         (self.root / 'scene.xml').write_text('<mujoco/>')
         self.bridge.reception = Reception({**old.config, 'reception_scene': 'office_v2',
             'reception_navigation_only': navigation_only,
-            'reception_office_assets': str(self.root), 'reception_navigation_legs': skill.definition['points']},
+            'reception_office_assets': str(self.root), 'reception_navigation_legs': skill.navigation_points},
             launcher=old.launcher)
         self.store = self.bridge.reception.store
         self.store.alive = old.store.alive

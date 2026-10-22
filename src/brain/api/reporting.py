@@ -1,5 +1,5 @@
 """Deterministic summaries of Runtime status; no new task state or diagnosis."""
-from shared.task_text import PHASES, BACKENDS, STATES
+from shared.task_text import phase_text, BACKENDS, STATES
 
 
 def reception_report(status):
@@ -24,14 +24,14 @@ def reception_report(status):
     kinds = {'rejected': '提交被拒绝', 'cancelled': '命令取消', 'execution_failed': '执行失败',
              'unknown': '执行结果未知'}
     for f in failures:
-        lines.append(f"{PHASES.get(f.get('step_id'), f.get('step_id'))}：{kinds.get(f.get('kind'), '失败记录')}；命令 {f.get('command_id')}")
-        lines.append(f"失败原文：{f.get('message') or f.get('code') or '未提供'}")
+        lines.append(f"{phase_text(f.get('step_id'), status)}：{kinds.get(f.get('kind'), '失败记录')}；命令 {f.get('command_id')}")
+        lines.append(f"失败说明：{f.get('display_message') or f.get('message') or f.get('code') or '未提供'}")
     for item in unresolved:
         lines.append('未确认事项：' + item['reason'] + ('；命令 ' + item['command_id'] if item.get('command_id') else ''))
     return {'task_id': status.get('task_id'), 'verdict': state == 'succeeded', 'state': state,
             'execution_backend': status.get('execution_backend'), 'attempt_summary': counts,
             'failure_history': failures, 'unresolved': unresolved,
-            'checks': [{'name': item['subtask'], 'pass': item['status'] == 'success', 'detail': item['result']}
+            'checks': [{'name': item.get('display_name') or item['subtask'], 'pass': item['status'] == 'success', 'detail': item['result']}
                        for item in status.get('subtask_list', [])],
             'advice': status.get('blocked_reason') or '', 'spoken': state,
             'summary_text': '\n'.join(lines)}

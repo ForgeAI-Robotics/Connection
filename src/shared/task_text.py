@@ -1,5 +1,6 @@
 """Deterministic Chinese presentation; never changes task state or permissions."""
 import json
+import math
 import re
 from datetime import datetime
 
@@ -78,11 +79,13 @@ REASONS = {
     'NAVIGATION_LOCALIZATION_LOST': '导航定位校验未通过',
     'MOTOR_HEALTH_NOT_READY': '电机保护或降温确认中，指令未受理',
     'SAFETY_NOT_READY': '导航执行条件未就绪，指令未受理',
+    'STOP_NOT_CONFIRMED': '导航未收到新鲜的停止反馈，本次新指令未受理；原动作停止情况仍需核对',
     'submission_rejected': '指令被拒绝，未开始执行',
     'INVALID_LEG_ORDER': '导航步骤顺序不满足要求，具体前置步骤见原始错误',
     'NAVIGATION_NO_PATH': '导航无法规划可通行路径',
     'NAVIGATION_NO_PROGRESS': '导航持续无进展',
     'NAVIGATION_TERMINAL_UNREACHABLE': '导航末端未满足到达条件',
+    'arrival_yaw_timeout': '最终朝向调整超时',
     'NAVIGATION_EXECUTION_FAILED': '导航执行失败，具体原因见导航原始回包',
     'NAVIGATION_PROOF_INVALID': '缺少原导航到达并停止的有效回执，操控尚未执行；人工跳过导航不代表已经到达',
     'final_path_not_straight': '末端接近路径不满足直线要求，导航无法完成末端修正',
@@ -101,6 +104,7 @@ REASONS = {
     'real_execution_disabled': '真机动作许可未开启',
     'navigation_gate': '导航执行条件尚未满足',
     'command_unknown': '原动作指令的执行状态尚未确认',
+    'vla_effect_confirmation': '操控等待暂停及真实效果核验；完成确认后继续核验原命令',
     'handoff_blocked': '导航与操控之间的控制权交接尚未确认',
     'Task accepted': '任务已接收', 'Task was not accepted': '任务未被接受',
 }
@@ -110,7 +114,12 @@ HANDOFFS = {
     'transport_ready_without_receipt': '下游未提供控制器凭证，按通路空闲放行',
     'controller_confirmed': '控制器凭证核验通过',
     'transport_not_ready': '导航或操控仍在占用动作通路',
-    'source_stop_unconfirmed': '上一动作的停止或资源归还未确认',
+    'source_stop_unconfirmed': '上一动作的停止尚未确认',
+    'source_resources_unreleased': '上一动作的资源归还尚未确认',
+    'source_receipt_invalid': '上一动作回执的身份或时间未通过核验',
+    'source_failed': '上一动作已失败且已停止、资源已归还，不满足成功交接条件',
+    'source_cancelled': '上一动作已取消且已停止、资源已归还，不满足成功交接条件',
+    'source_success_unconfirmed': '上一动作尚无成功终态，交接未完成',
     'source_command_unavailable': '找不到上一动作的原指令',
     'control_status_unavailable': '无法读取导航或操控状态',
     'controller_receipt_invalid': '控制器凭证无效',
@@ -179,7 +188,31 @@ FAILURE_PHRASES = {
 }
 
 
-def failure_text(message, code=None):
+def phase_labels(record):
+    """Names belong to the task's frozen steps, never to today's skill file."""
+    labels = dict((record or {}).get('phase_labels') or {})
+    for step in (record or {}).get('phase_specs') or []:
+        if step.get('display_name'):
+            labels[step['step_id']] = step['display_name']
+    return labels
+
+
+def target_labels(record):
+    candidates = {}
+    for step in (record or {}).get('phase_specs') or []:
+        if step.get('target_name') and step.get('kind') == 'navigate':
+            for key in (step.get('key'), (step.get('navigation') or {}).get('target_id')):
+                if key:
+                    candidates.setdefault(key, set()).add(step['target_name'])
+    # A shared target_id (for example two door legs) may have different stance names.
+    return {key: next(iter(names)) for key, names in candidates.items() if len(names) == 1}
+
+
+def phase_text(phase, record=None):
+    return phase_labels(record).get(phase) or PHASES.get(phase, phase or '')
+
+
+def failure_text(message, code=None, *, record=None, details=None):
     """Translate recognized downstream failures without inferring a physical cause."""
     raw = str(message or code or '')
     chinese = REASONS.get(raw)
@@ -187,17 +220,50 @@ def failure_text(message, code=None):
     if order:
         targets = {'table2': '2 号桌', 'table_2': '2 号桌', 'relay2': '中转点 2',
                    'relay3': '中转点 3', 'table1': '1 号桌', 'table_1': '1 号桌'}
+        targets.update(target_labels(record))
         before, after = (targets.get(name, name) for name in order.groups())
         chinese = f'导航顺序不满足：同一任务内必须先成功到达{before}，才能前往{after}'
     if not chinese:
         chinese = next((text for phrase, text in FAILURE_PHRASES.items() if phrase in raw), None)
     chinese = chinese or REASONS.get(code) or '执行异常，详情见原始错误'
+    if raw == 'arrival_yaw_timeout':
+        terminal = details.get('terminal') if isinstance(details, dict) else None
+        metrics = []
+        for key, scale, label, unit in (
+                ('goal_distance', 100, '距目标', ' cm'),
+                ('final_yaw_error', 180 / math.pi, '最终朝向误差', '°')):
+            value = terminal.get(key) if isinstance(terminal, dict) else None
+            if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value) and (key != 'goal_distance' or value >= 0)):
+                converted = abs(value) * scale
+                if math.isfinite(converted):
+                    metrics.append(f'{label} {converted:.1f}{unit}')
+        if metrics:
+            chinese += '；导航终端回包：' + '，'.join(metrics)
     return f'{chinese}；原始错误：{raw}' + (f'（{code}）' if code and code not in raw else '')
+
+
+def manipulation_is_simulated(record):
+    return (record or {}).get('execution_backend') in {
+        'reception_real_sim_manipulation', 'reception_ros_sim_manipulation'}
+
+
+def scope_manipulation_advice(advice, record):
+    """Qualify both saved and newly generated prose without changing its action."""
+    if not advice or not manipulation_is_simulated(record):
+        return advice
+    result = dict(advice)
+    prefix = '模拟操控说明：下述开门、持物、抓取和放置仅指模拟状态，不代表真实效果。\n'
+    for key in ('summary', 'reason'):
+        text = result.get(key)
+        if isinstance(text, str) and text and not text.startswith(prefix):
+            result[key] = prefix + text
+    return result
 
 
 def task_context(record):
     phase = record.get('phase') or record.get('step_id')
-    return PHASES.get(phase, phase or '')
+    return phase_text(phase, record)
 
 
 def presentation_labels():
@@ -213,13 +279,13 @@ def format_plan(steps):
         if not isinstance(step, dict):
             continue
         step_id = str(step.get('step_id') or '')
-        name = PHASES.get(step_id, step_id or '未命名步骤')
+        name = step.get('display_name') or PHASES.get(step_id, step_id or '未命名步骤')
         detail = [step_id] if step_id else []
         kind = step.get('kind')
         if kind:
             detail.append(SKILLS.get(kind, str(kind)))
         if step.get('key'):
-            detail.append('目标 ' + str(step['key']))
+            detail.append('目标 ' + str(step.get('target_name') or step['key']))
         if step.get('target_area'):
             detail.append('区域 ' + str(step['target_area']))
         if step.get('requires_gate'):
@@ -258,7 +324,7 @@ def format_process_event(record):
         if event in {'task_opened', 'task_restored'}:
             message += '：' + str(record.get('task_desc') or '任务')
             if event == 'task_restored' and phase:
-                message += '；当前步骤：' + PHASES.get(phase, phase)
+                message += '；当前步骤：' + phase_text(phase, record)
                 if phase in PHASES:
                     message += f'（{phase}）'
         elif event == 'execution_selected':
@@ -273,19 +339,19 @@ def format_process_event(record):
             if rendered:
                 message += '：' + rendered
         elif phase:
-            message += '：' + PHASES.get(phase, phase)
+            message += '：' + phase_text(phase, record)
             if phase in PHASES:
                 message += f'（{phase}）'
         if event == 'step_manually_skipped' and record.get('next_step_id'):
             following = record['next_step_id']
-            message += '；下一步：' + PHASES.get(following, following)
+            message += '；下一步：' + phase_text(following, record)
         if event == 'handoff_observed' and record.get('handoff_reason'):
             outcome = record['handoff_reason']
             message += '；' + ('已确认' if record.get('handoff_confirmed') else '未确认')
             message += '，' + HANDOFFS.get(outcome, outcome) + f'（{outcome}）'
             skipped = record.get('skipped_steps') or []
             if skipped:
-                message += '；跨越：' + '、'.join(PHASES.get(step, step) for step in skipped)
+                message += '；跨越：' + '、'.join(phase_text(step, record) for step in skipped)
         if event == 'gate':
             tag = '等待'
         elif event == 'recovery_advised':
@@ -376,7 +442,7 @@ def format_process_event(record):
     used = {'time', 'kind', 'event', 'task_id', 'id', 'source', 'from', 'via', 'component',
             'state', 'backend', 'revision', 'environment_revision', 'release_id', 'step_id',
             'command_id', 'cmd', 'attempt_id', 'blocked_reason', 'advice_action', 'task_desc', 'step_count',
-            'diagnostic', 'recovery_advice', 'method', 'path', 'plan_steps',
+            'diagnostic', 'recovery_advice', 'method', 'path', 'plan_steps', 'phase_labels',
             'next_step_id', 'handoff_reason', 'handoff_confirmed', 'skipped_steps'}
     if kind == 'INBOUND':
         used.update({'text', 'intent', 'risk'})

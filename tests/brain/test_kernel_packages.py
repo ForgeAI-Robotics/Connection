@@ -44,6 +44,8 @@ _FROZEN_TRANSITIONS = {
     ("running", "unknown"): "recovery_required",
     ("running", "gate"): "waiting_human",
     ("waiting_human", "human_continue"): "running",
+    ("waiting_human", "pause_ack"): "paused",
+    ("waiting_human", "pause_nack"): "recovery_required",
     ("running", "pause_ack"): "paused",
     ("running", "pause_nack"): "recovery_required",
     ("verifying", "pause_ack"): "paused",
@@ -90,7 +92,7 @@ class PackageTests(unittest.TestCase):
     def test_catalog_lists_only_existing_executors(self):
         self.assertEqual(
             registered_ids(),
-            ("navigate", "inspect", "pick", "place", "describe", "desk_check"),
+            ("open_fridge", "grasp_cola", "navigate", "inspect", "pick", "place", "describe", "desk_check"),
         )
         self.assertNotIn("voice", registered_ids())
         self.assertNotIn("help", registered_ids())

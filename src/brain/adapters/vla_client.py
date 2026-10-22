@@ -44,6 +44,33 @@ class VlaClient:
         return self.http.request_json(
             "GET", "/v1/vla/control/status")[0]
 
+    def capabilities(self):
+        try:
+            value = self.http.request_json('GET', '/v1/vla/capabilities')[0]
+        except HttpContractError as exc:
+            if exc.status_code == 404:
+                return None  # Explicit compatibility with the original pick/place service.
+            raise
+        if (value.get('contract_version') != self.contract_version
+                or not isinstance(value.get('operations'), dict)
+                or type(value.get('real_action_enabled')) is not bool):
+            raise HttpContractError('VLA 能力合同无效', payload=value)
+        return value
+
+    def pause(self, task_id, command_id):
+        quoted = urllib.parse.quote(str(command_id), safe='')
+        return self.http.request_json('POST', f'/v1/vla/tasks/{quoted}/pause',
+            {'task_id': task_id}, accepted_statuses=(200, 202))[0]
+
+    def finish(self, task_id, command_id, evidence, authorization):
+        if not isinstance(authorization, str) or not authorization.startswith('Bearer ') or not authorization[7:].strip():
+            raise ValueError('完成确认需要授权核验方的 Bearer 凭据')
+        quoted = urllib.parse.quote(str(command_id), safe='')
+        # Credentials are request-local: never kept in config, task records or CallBook.
+        return self.http.request_json('POST', f'/v1/vla/tasks/{quoted}/finish',
+            {'task_id': task_id, 'evidence': evidence}, accepted_statuses=(200, 202),
+            headers={'Authorization': authorization})[0]
+
     def camera_status(self):
         return self.http.request_json("GET", "/v1/camera/status")[0]
 
@@ -136,7 +163,7 @@ class VlaClient:
 
     def wait_task(
         self, command_id, *, timeout_sec, poll_interval_sec=1.0, on_update=None,
-        uncertain_attempts=4,
+        uncertain_attempts=4, stop_states=(),
     ):
         deadline = time.monotonic() + float(timeout_sec)
         last = None
@@ -172,6 +199,8 @@ class VlaClient:
                 on_update(last)
             call.update(last)
             state = str(last.get("state") or "").lower()
+            if state in stop_states:
+                return last
             if state in TERMINAL_STATES:
                 if state != "succeeded":
                     self.calls.complete(command_id, False, payload=last)

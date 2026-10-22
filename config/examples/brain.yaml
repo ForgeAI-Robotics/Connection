@@ -81,6 +81,11 @@ reception_real:
   contract_version: fq/reception-lan/v1
   dream_base_url: ${DREAM_BASE_URL}
   vla_base_url: ${VLA_BASE_URL}
+  # 通用身体任务的额外 VLA 动作目录；真机接待使用 Skill.real_workflow 并引用同一份 points。
+  # 配置合同、暂停与授权确认 API 见 docs/接口说明_操控VLA.md。
+  native_vla:
+    points: {}
+    operations: {}
   vla_result_policy: hand_state_only
   runtime_dir: data/retired/reception
   # 共用真机动作许可。接待或通用身体执行任一选真机时打开；两者均非真机时关闭。

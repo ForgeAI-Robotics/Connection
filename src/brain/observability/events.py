@@ -8,7 +8,7 @@ def _plan_steps(record):
         if not isinstance(spec, dict) or not spec.get('step_id'):
             continue
         item = {'step_id': spec.get('step_id'), 'kind': spec.get('kind')}
-        for key in ('key', 'target_area'):
+        for key in ('key', 'target_area', 'display_name', 'target_name'):
             if spec.get(key):
                 item[key] = spec[key]
         if spec.get('requires_gate'):
@@ -33,6 +33,8 @@ def _last_passed(record, phase):
 
 
 def emit(event, record, **details):
+    from shared.task_text import phase_labels
+    details.setdefault('phase_labels', phase_labels(record))
     # Runtime saves after moving the cursor, so name the step the event is about.
     phase = record.get('phase')
     if event == 'step_manually_skipped' and record.get('manual_skips'):

@@ -16,6 +16,9 @@ class PlanningService:
             from brain.skills.body_plan import plan
             snapshot = runtime.record['selection']['body_capabilities']
             text = runtime.record['task_desc']
+            if runtime.record['selection'].get('native_vla') is not None:
+                from brain.skills.native_vla import plan as native_plan
+                return native_plan(self.planner, text, runtime.record['selection']['native_vla'], snapshot)
             result = plan(self.planner, text, snapshot, rules=runtime.record.get('release_rules') or (),
                           experiences=self.experiences.load(text))
             if runtime.record['execution_backend'] == 'body_simple':
@@ -30,6 +33,20 @@ class PlanningService:
             snapshot = selected.get("workflow")
             skill = from_snapshot(snapshot) if snapshot else load_skill(self.config)
             sop = selected.get("sop") or {}
+            if selected.get('workflow_variant') == 'real_sim_manipulation':
+                if (runtime.record['execution_backend'] != 'reception_real_sim_manipulation' or not skill.real_sop
+                        or (sop.get('id'), sop.get('version')) !=
+                           (skill.real_sop['id'] + '.sim_manipulation', skill.real_sop['version'])):
+                    raise Rejected('模拟操控分支与任务快照或执行后端不一致')
+                return Plan(skill.phases(real=True), '同一真机接待流程；导航真实，开门、抓取及操控效果核验为本地模拟。')
+            if selected.get('workflow_variant') == 'real':
+                if (runtime.record['execution_backend'] != 'reception_real' or not skill.real_sop
+                        or (sop.get('id'), sop.get('version')) != (skill.real_sop['id'], skill.real_sop['version'])):
+                    raise Rejected('真机接待流程与任务快照或执行后端不一致')
+                return Plan(skill.phases(real=True), skill.real_sop['description'])
+            if (runtime.record['execution_backend'] == 'reception_real' and skill.real_steps
+                    and sop.get('id') == skill.sop['id']):
+                raise Rejected('接待选择时的执行环境已变化，请重新选择当前真机 SOP')
             hybrid_backends = {skill.sop["id"] + ".sim_manipulation": "reception_real_sim_manipulation",
                                skill.sop["id"] + ".ros_sim_manipulation": "reception_ros_sim_manipulation"}
             if sop.get("id") in hybrid_backends:

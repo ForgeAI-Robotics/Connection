@@ -86,7 +86,7 @@ def reception_preflight(config, task, *, client_factory=DreamClient):
         # Read the existing metadata endpoint directly, never invoke a planning/goal endpoint.
         graph = client.http.request_json('GET', '/total_scene_graph_latest.json')[0]
         contract = graph.get('agent_navigation_contract')
-        blocked, warnings = compare_navigation_contract(skill.definition['points'], contract,
+        blocked, warnings = compare_navigation_contract(skill.navigation_points, contract,
                                                         skill.definition['contract_version'])
         report['blockers'].extend(blocked)
         report['warnings'].extend(warnings)

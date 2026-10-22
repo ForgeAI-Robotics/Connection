@@ -14,7 +14,7 @@ class SimpleBodyAdapter(BodyAdapter):
                 or simulation.get('task_plan_version') != 1
                 or not simulation.get('instance_id')
                 or simulation.get('instance_id') != (vla.get('simulation') or {}).get('instance_id')
-                or simulation.get('navigation_legs') != skill.definition['points']):
+                or simulation.get('navigation_legs') != skill.navigation_points):
             raise Rejected('SIMPLE 尚未接入通用身体计划，或路线／实例不匹配')
         expected = segments(steps)
         result = self.dream.http.request_json('POST', '/v1/task_plan', {

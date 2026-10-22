@@ -20,6 +20,7 @@ def plan(planner, task, snapshot, *, rules=(), experiences=''):
                'pick_area': 'table_2', 'place_area': 'table_1'}
     prompt = '''你是具身大脑的任务 Planner。只输出 JSON，不执行动作。
 根据用户要求选择已接入的语义技能，不选择接待 SOP，不添加用户未要求的抓放。
+地点的用户名称以能力目录中 display_name 为准；target 仍输出登记点键，不从 table2 等旧 ID 推断实际地点。
 允许 actions 中的项：
 {"skill":"navigate","target":"登记点的键，例如 table2 或 table1"}
 {"skill":"pick","object":"cola_can_1"}
@@ -28,7 +29,7 @@ def plan(planner, task, snapshot, *, rules=(), experiences=''):
 导航仅支持登记路线正向前缀，不能回头或重复走；抓取仅在 table_2，放置仅在 table_1。
 没有本任务已核验的抓取就不能放置。单独“放下手里的物体”当前缺跨任务持物证据，应拒绝。
 普通“抓取可乐”就是 pick，不需要增加放置；“搬到一号桌”需要 pick 后 place。
-支持中文一号桌/table_1=table1，二号桌/table_2=table2，可乐=cola_can_1。
+未配置 display_name 的旧目录兼容一号桌/table_1=table1，二号桌/table_2=table2；可乐=cola_can_1。
 必须覆盖用户全部要求，包含不支持的动作、物体、地点时整体拒绝，不可只完成支持的部分。
 输出 {"supported":true,"unsupported_requirements":[],"actions":[...],"reasoning_explanation":"说明"}。
 只要有一个要求不支持，必须 supported=false，unsupported_requirements 列出遗漏要求，actions=[]。
@@ -71,7 +72,8 @@ def compile_plan(value, snapshot):
             name = ordered[i]
             step_id = 'BODY_NAV_' + name.upper()
             steps.append(StepSpec(step_id, 'navigate', prefix='body-nav-' + name,
-                key=name, navigation=deepcopy(points[name]), evidence='reached',
+                key=name, navigation=deepcopy(templates[name].navigation), evidence='reached',
+                display_name=templates[name].display_name, target_name=templates[name].target_name,
                 deadline_sec=templates[name].deadline_sec, requires_gate=last_nav is None,
                 handoff_before='to_nav' if steps and steps[-1].kind == 'verify' else '', object_id=obj))
             last_nav = step_id
@@ -106,10 +108,13 @@ def compile_plan(value, snapshot):
         step_id = 'BODY_' + kind.upper()
         steps.append(StepSpec(step_id, kind, prefix='body-' + kind, object_id=obj,
             target_area=template.target_area, evidence=template.evidence,
+            display_name=template.display_name, target_name=template.target_name,
             handoff_before='to_vla', requires_object_evidence=True,
             requires_safe_idle=kind == 'place', writes=template.writes,
             navigation_step_id=last_nav, deadline_sec=template.deadline_sec))
-        steps.append(StepSpec('VERIFY_' + step_id, 'verify', evidence=template.evidence))
+        verification = skill.steps[skill.steps.index(template) + 1]
+        steps.append(StepSpec('VERIFY_' + step_id, 'verify', evidence=template.evidence,
+                              display_name=verification.display_name))
     if not steps:
         raise Rejected('计划无可执行动作')
     return Plan(tuple(steps), str(value.get('reasoning_explanation') or '按登记身体能力执行通用任务'))

@@ -91,6 +91,26 @@ def create_app(application, *, facade=None):
         """暂停当前 Runtime 任务。"""
         return _control('pause')
 
+    @app.post('/api/task_vla/<action>')
+    def vla_effect(action):
+        from contracts.tasks import KernelError
+        data = request.get_json(silent=True)
+        keys = {'task_id', 'command_id'} | ({'evidence'} if action == 'finish' else set())
+        if action not in {'query', 'pause', 'finish'} or not isinstance(data, dict) or set(data) != keys:
+            return jsonify({'accepted': False, 'error': 'VLA 核验参数无效'}), 400
+        try:
+            task_id = _validated_task_id(data['task_id'])
+            command_id = _validated_task_id(data['command_id'])
+            if not task_id or not command_id:
+                raise ValueError('必须指定原 task_id 与 command_id')
+            result = application.vla_effect(task_id, command_id, action,
+                evidence=data.get('evidence'), authorization=request.headers.get('Authorization', ''))
+            return jsonify(result), 200
+        except ValueError as exc:
+            return jsonify({'accepted': False, 'error': str(exc)}), 400
+        except KernelError as exc:
+            return jsonify({'accepted': False, 'error': str(exc)}), 409
+
     @app.post('/api/task_advice/confirm')
     def confirm_advice():
         from contracts.tasks import KernelError

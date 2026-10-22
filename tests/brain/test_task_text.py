@@ -7,6 +7,20 @@ from ops.brain_view import current_alert
 
 
 class TaskTextTests(unittest.TestCase):
+    def test_missing_or_invalid_yaw_metrics_do_not_invent_zero_or_crash(self):
+        from shared.task_text import failure_text
+        for terminal in [None, 'invalid', {}, {'goal_distance': -1, 'final_yaw_error': float('nan')},
+                         {'goal_distance': True, 'final_yaw_error': '0.2'},
+                         {'goal_distance': float('inf'), 'final_yaw_error': 1e308}]:
+            with self.subTest(terminal=terminal):
+                text = failure_text('arrival_yaw_timeout', details={'terminal': terminal})
+                self.assertIn('最终朝向调整超时', text)
+                self.assertNotIn('距目标', text)
+                self.assertNotIn('最终朝向误差', text)
+        text = failure_text('arrival_yaw_timeout', details={'terminal': {'goal_distance': 0}})
+        self.assertIn('距目标 0.0 cm', text)
+        self.assertNotIn('最终朝向误差', text)
+
     def test_saved_downstream_error_is_not_an_advice_generation_failure(self):
         record = {'kind': 'TASK', 'event': 'recovery_advised', 'state': 'recovery_required',
                   'recovery_advice': {'action': 'query_original'},

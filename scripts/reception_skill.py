@@ -13,17 +13,21 @@ def main():
     parser.add_argument("--file", help="YAML definition; defaults to the archived single-can v1")
     parser.add_argument("--config", help="Preview the skill selected by a brain YAML config")
     parser.add_argument("--nav-only", action="store_true", help="Preview its navigation-only variant")
+    parser.add_argument('--real', action='store_true', help='Preview its explicit real-robot workflow offline')
     args = parser.parse_args()
     if args.file and args.config:
         parser.error("--file 和 --config 不能同时使用")
+    if args.real and args.nav_only:
+        parser.error('--real 和 --nav-only 不能同时使用')
     try:
         from shared.config import load_config
         skill = load_skill(load_config(args.config) if args.config else None, path=args.file)
+        steps = skill.phases(nav_only=args.nav_only, real=args.real)
     except Rejected as exc:
         parser.exit(2, f"Skill 校验失败：{exc}\n")
-    print(json.dumps({"sop": skill.sop, "sha256": skill.snapshot()["sha256"],
+    print(json.dumps({"sop": skill.real_sop if args.real else skill.sop, "sha256": skill.snapshot()["sha256"],
                       "parameters": skill.definition["parameters"], "nav_only": args.nav_only,
-                      "steps": [step_spec_dict(step) for step in skill.phases(nav_only=args.nav_only)]},
+                      "steps": [step_spec_dict(step) for step in steps]},
                      ensure_ascii=False, indent=2))
     return 0
 

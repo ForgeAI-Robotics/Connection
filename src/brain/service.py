@@ -80,6 +80,13 @@ class BrainService:
             return Plan(())
         package = chosen["package"]
         backend = select_backend(self.config, package, mock=options.get("mock") is True)
+        if package == 'reception' and not chosen.get('workflow'):
+            from brain.packages.reception_skill import load_skill
+            skill = load_skill(self.config)
+            real_workflow = backend == 'reception_real' and bool(skill.real_steps)
+            chosen = dict(chosen, workflow=skill.snapshot(), sop=skill.real_sop if real_workflow else skill.sop)
+            if real_workflow:
+                chosen['workflow_variant'] = 'real'
         if backend in {'body_real', 'body_simple'}:
             from brain.packages.reception_skill import load_skill
             chosen = dict(chosen, body_capabilities=load_skill(self.config).snapshot())
@@ -99,7 +106,7 @@ class BrainService:
                 from brain.adapters.ports import protocol_endpoints
                 from shared.protocol_simulation import require_simulator_pair
                 require_simulator_pair(protocol_endpoints("reception_simple"), kind="simple_physics",
-                                       navigation_legs=skill.definition["points"],
+                                       navigation_legs=skill.navigation_points,
                                        navigation_only=backend == "reception_ros_sim_manipulation" or
                                        (chosen.get("sop") or {}).get("id", "").endswith(".nav_only"),
                                        scene="office_ros_8001" if backend == "reception_ros_sim_manipulation" else None)
@@ -108,9 +115,39 @@ class BrainService:
                                       "description": "既有会议补货演示，不经过导航／操控 HTTP。"})
             chosen.pop("workflow", None)
         port = self._port(backend)
+        if (backend in {'body_real', 'reception_real'}
+                and not (chosen.get('sop') or {}).get('id', '').endswith('.nav_only')):
+            discover = getattr(port, 'capabilities', None)
+            capabilities = discover() if callable(discover) else None
+            chosen = dict(chosen, vla_capabilities=deepcopy(capabilities))
+            if backend == 'body_real' and capabilities:
+                from contracts.vla import NATIVE_OPERATIONS
+                if any(((capabilities.get('operations') or {}).get(op) or {}).get('configured') is True
+                       for op in NATIVE_OPERATIONS):
+                    from brain.skills.native_vla import catalog
+                    chosen['native_vla'] = catalog(self.config, capabilities)
         if not runtime.bind_execution(chosen, backend, target_identity(self.config, backend), port):
             return Plan(())
-        return self.plan_call(runtime, options)
+        result = self.plan_call(runtime, options)
+        if backend in {'body_real', 'reception_real'}:
+            from brain.skills.native_vla import require_operations
+            if chosen.get('workflow_variant') == 'real' and chosen.get('vla_capabilities') is None:
+                from brain.config_flags import kernel_enabled
+                if kernel_enabled(self.config):
+                    raise Rejected('真机冰箱接待需要 VLA 明确声明 open_fridge/grasp_cola 能力，不能回退旧抓放')
+            require_operations(result.steps, chosen.get('vla_capabilities'))
+        return result
+
+    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization=''):
+        from shared.execution_profile import admission
+        with admission(), _ADMISSION:
+            existing = load_existing(runtime_dir(self.config)) or {}
+            if existing.get('task_id') != task_id or self._target_changed(existing):
+                raise Rejected('任务或执行地址已变化，未操作原命令')
+            if existing.get('execution_backend') not in {'body_real', 'reception_real'}:
+                raise Rejected('模拟操控不接受真实 VLA 的暂停或效果确认凭据')
+            return self.attach().vla_effect(task_id, command_id, action,
+                                           evidence=evidence, authorization=authorization)
 
     def _adopt(self, runtime):
         self.runtime = runtime
