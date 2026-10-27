@@ -22,8 +22,8 @@ class VlaRemoteTests(unittest.TestCase):
         from shared.networks import lan
         self.assertEqual(argv[-2], lan().ssh_target("control"))
         remote = argv[-1]
-        self.assertIn("./run_agent_vla_runtime.sh check", remote)
-        self.assertIn("./run_phase_aware_action_stack.sh live-dependencies", remote)
+        self.assertNotIn("run_phase_aware_action_stack.sh", remote)
+        self.assertNotIn("navigation relay", remote)
         self.assertIn("./run_agent_vla_runtime.sh start", remote)
         self.assertIn("./run_agent_vla_runtime.sh status", remote)
         self.assertIn("BRAIN_VLA_REAL_ACTION_ACK=PHYSICAL_ESTOP_READY", remote)
@@ -56,7 +56,7 @@ class VlaRemoteTests(unittest.TestCase):
         text = vla_remote.run("start", runner=runner)
         self.assertIn("AGENT_VLA_RUNTIME_STARTED", text)
         self.assertIn("AGENT_VLA_RUNTIME_STARTED", vla_remote.history())
-        self.assertIn("check → live-dependencies", vla_remote.history())
+        self.assertIn("relay 独立管理", vla_remote.history())
         files = list(Path(self.logdir.name).glob("*/vla/monitor.log"))
         self.assertEqual(1, len(files))
         self.assertIn("AGENT_VLA_RUNTIME_STARTED", files[0].read_text(encoding="utf-8"))

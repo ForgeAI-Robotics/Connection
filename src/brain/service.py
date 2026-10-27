@@ -54,6 +54,13 @@ class BrainService:
             existing = load_existing(runtime_dir(self.config)) or {}
             if existing.get("task_id") == task_id:
                 raise Rejected("task_id 已存在；续跑须使用原任务的恢复入口")
+            authority = getattr(self, 'body_control', None)
+            if authority is not None:
+                from contracts.body_control import ControlError
+                try:
+                    authority.assert_new_task_allowed()
+                except ControlError as exc:
+                    raise Rejected(str(exc)) from None
             options = options or {}
             # Own a cancellable task before any model or remote planning call.
             from brain.adapters.ports import UnselectedPort
@@ -130,6 +137,11 @@ class BrainService:
             return Plan(())
         result = self.plan_call(runtime, options)
         if backend in {'body_real', 'reception_real'}:
+            if ((self.config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is True:
+                unsupported = [s.kind for s in result.steps if s.kind not in
+                               {'local', 'verify', 'navigate', 'open_fridge', 'grasp_cola'}]
+                if unsupported:
+                    raise Rejected('联合控制尚未接入这些动作，整份计划未派发: ' + ', '.join(unsupported))
             from brain.skills.native_vla import require_operations
             if chosen.get('workflow_variant') == 'real' and chosen.get('vla_capabilities') is None:
                 from brain.config_flags import kernel_enabled

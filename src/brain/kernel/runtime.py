@@ -105,6 +105,14 @@ def _blank_record():
     }
 
 
+def _failure_receipt(raw):
+    """Copy the peer's error/result envelope, including unfamiliar nested fields."""
+    if not isinstance(raw, dict):
+        return {}
+    return {key: deepcopy(raw[key]) for key in ('command_id', 'task_id', 'state', 'error', 'result')
+            if key in raw}
+
+
 def status_from_record(record) -> dict:
     state = (record or {}).get("state")
     terminal = state in TERMINAL_STATES
@@ -133,10 +141,13 @@ def status_from_record(record) -> dict:
             rejection = (old_progress.get("evidence") or {}).get("submission_rejected") or {}
             error = raw.get("error") if isinstance(raw, dict) else None
             error = error if isinstance(error, dict) else {}
-            message = rejection.get("message") or error.get("message") or old_progress.get("error") or old.get("outcome") or "fail"
+            result = raw.get('result') if isinstance(raw, dict) else None
+            result = result if isinstance(result, dict) else {}
+            message = rejection.get("message") or error.get("message") or result.get('message') or old_progress.get("error") or old.get("outcome") or "fail"
             code = rejection.get("code") or error.get("code")
             failure_history.append({"step_id": spec["step_id"], "command_id": old.get("command_id"),
                                     "attempt_id": old.get("attempt_id"), "code": code,
+                                    "downstream": _failure_receipt(raw),
                                     "kind": "rejected" if rejection else "unknown" if old.get("verdict") == "UNKNOWN" else "cancelled" if old_progress.get("terminal") == "cancelled" else "execution_failed",
                                     "message": message, "display_message": failure_text(message, code, record=record, details=error.get('details'))})
         latest = attempts[-1] if attempts else {}
@@ -176,9 +187,15 @@ def status_from_record(record) -> dict:
             failure = {"kind": "execution_failed" if progress.get("terminal") in {"failed", "cancelled"} else "unknown",
                        "code": remote_error.get("code"),
                        "message": remote_error.get("message"), "not_started": False}
+        elif progress.get('terminal') in {'failed', 'cancelled'}:
+            result = downstream.get('result') if isinstance(downstream, dict) else None
+            result = result if isinstance(result, dict) else {}
+            failure = {'kind': 'execution_failed', 'not_started': False,
+                       'message': result.get('message') or progress.get('error') or progress['terminal']}
         elif progress.get("error"):
             failure = {"kind": "unknown", "message": progress["error"], "not_started": False}
     if failure:
+        failure['downstream'] = _failure_receipt(downstream)
         failure["display_message"] = failure_text(failure.get("message"), failure.get("code"), record=record,
                                                  details=remote_error.get('details') if isinstance(remote_error, dict) else None)
     latest = attempts[-1] if attempts else {}
@@ -974,6 +991,7 @@ class TaskRuntime:
                 'pause_requested': raw.get('pause_requested') is True,
                 'verification_ready_at': raw.get('verification_ready_at'),
                 'finish_requested': raw.get('finish_requested') is True,
+                'holding_evidence': deepcopy((raw.get('result') or {}).get('holding_evidence')),
             }
             self._save('vla_effect_observed')
             return {'accepted': True, 'query_only': sent_action == 'query', 'task_id': task_id,
@@ -1227,7 +1245,7 @@ class TaskRuntime:
                 if self.state == "verifying":
                     step = self._current_step()
                     nxt = self._next_body(step) if step else None
-                    need_safe = bool(step and step.requires_safe_idle)
+                    need_safe = bool(step and self._needs_safe_idle(step))
                     need_handoff = nxt.handoff_before if nxt else ""
                     next_id = nxt.step_id if nxt else ""
                     mode = "verify"
@@ -1359,6 +1377,9 @@ class TaskRuntime:
             self._judge(safe_idle=safe, handoff_ok=handoff_ok, next_step_id=next_id)
         return True
 
+    def _needs_safe_idle(self, step):
+        return step.requires_safe_idle or getattr(self.port, 'requires_authoritative_handoff', False) is True
+
     def _handoff(self, step_id, kind):
         contextual = getattr(self.port, "handoff_with_context", None)
         with self._exclusive():
@@ -1382,7 +1403,8 @@ class TaskRuntime:
             # released its resources. A handoff across it is filled in, not re-asked.
             skipped = {item.get("step_id") for item in snapshot.get("manual_skips") or []}
             bridged = [step.step_id for step in self.phases[source_index:boundary] if step.step_id in skipped]
-        if bridged:
+            context['manual_skips'] = bridged
+        if bridged and getattr(self.port, 'requires_authoritative_handoff', False) is not True:
             answer = {"available": True, "confirmed": True, "reason": "manual_skip",
                       "kind": kind, "task_id": context["task_id"],
                       "source_command_id": command_id, "skipped_steps": bridged}
@@ -1672,7 +1694,7 @@ class TaskRuntime:
             handoff=step.handoff_before,
             tools=(step.kind,),
             requires_object_evidence=step.requires_object_evidence,
-            requires_safe_idle=step.requires_safe_idle,
+            requires_safe_idle=self._needs_safe_idle(step),
             request=request,
             bound_rules=self._bound_rules(step.kind),
         )
@@ -1872,8 +1894,10 @@ class TaskRuntime:
         if step is None:
             return
         progress = ProgressEvent.from_dict(self.record.get("pending_progress") or {})
-        if step.requires_safe_idle:
+        if self._needs_safe_idle(step):
             progress.safe_idle = bool(safe_idle)
+            if safe_idle and getattr(self.port, 'requires_authoritative_handoff', False) is True:
+                progress.evidence['resources_released'] = True
         else:
             progress.safe_idle = True
         attempt = self._latest(step.step_id)
@@ -1946,7 +1970,7 @@ class TaskRuntime:
         for subject, value in self.policy.effects(step, final=True).items():
             self._confirm(subject, value, attempt["attempt_id"])
             self.record[subject] = value
-        if step.requires_safe_idle:
+        if self._needs_safe_idle(step):
             self.record["safe_idle"] = True
         if self.record.get("manual_skips"):
             self.apply("finish_with_skips")

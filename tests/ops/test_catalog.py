@@ -21,10 +21,13 @@ class CatalogTests(unittest.TestCase):
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "robot"],
-            ["dream", "vla"],
+            ["dream", "vla", "relay"],
         )
         robot = [item for item in items if item.layer == "robot"]
-        self.assertTrue(all(not item.controllable for item in robot))
+        self.assertTrue(all(not item.controllable for item in robot if item.id != 'relay'))
+        relay = next(item for item in robot if item.id == 'relay')
+        self.assertTrue(relay.controllable)
+        self.assertTrue(relay.confirm_stop)
         dream = next(item for item in robot if item.id == "dream")
         vla = next(item for item in robot if item.id == "vla")
         self.assertEqual(dream.remote_control, "ssh_dream")

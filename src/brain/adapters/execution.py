@@ -60,6 +60,9 @@ class BodyAdapter:
             if raw.get('state') != 'waiting_result_confirmation':
                 raise ValueError('须等待策略暂停确认后才能提交效果证据')
             validate_evidence(body['operation'], body['object_id'], evidence, raw.get('verification_ready_at'))
+            if body['operation'] == 'grasp_cola':
+                from contracts.vla import holding_expiry
+                holding_expiry(evidence)
             raw = self.vla.finish(body['task_id'], command_id, evidence, authorization)
         elif action != 'query':
             raise ValueError('未知 VLA 核验操作')
@@ -351,13 +354,20 @@ def _identity_ok(command_id, raw, request, result) -> bool:
     return True
 
 
-def _stop_flags(skill, result) -> tuple:
+def _stop_flags(skill, result, control_released=None) -> tuple:
     """Publisher stop and resource release are explicit fields, never the terminal name."""
     if skill in {"navigate", "inspect"}:
         stopped = result.get("navigation_stopped") is True
         return stopped, stopped
     if skill in MANIPULATION_OPERATIONS:
         publisher = result.get("policy_stopped") is True
+        if control_released is not None:
+            exit_state = result.get('exit_state') if isinstance(result.get('exit_state'), dict) else {}
+            published_stop = result.get('publisher_stopped', exit_state.get('publisher_stopped'))
+            if 'publisher_stopped' in result and 'publisher_stopped' in exit_state and result['publisher_stopped'] != exit_state['publisher_stopped']:
+                published_stop = False
+            publisher = publisher and published_stop is True
+            return publisher, publisher and control_released is True
         resources = result.get("navigation_port_ready") is True
         return publisher and resources, resources and publisher
     return False, False
@@ -433,7 +443,7 @@ def _started(raw, result):
     return None
 
 
-def interpret_observation(command_id, raw, request, *, allow_simulated=False) -> dict:
+def interpret_observation(command_id, raw, request, *, allow_simulated=False, control_released=None) -> dict:
     """Turn one downstream payload into evidence. A foreign or incomplete payload stays unconfirmed."""
     if not isinstance(raw, dict):
         return {
@@ -478,7 +488,7 @@ def interpret_observation(command_id, raw, request, *, allow_simulated=False) ->
     terminal = state if state in {"succeeded", "failed", "cancelled"} else ""
     level = str(result.get("evidence_level") or result.get("evidence_grade") or "")
     hand_only = level == "hand_state_only"
-    stopped, resources = _stop_flags(skill, result)
+    stopped, resources = _stop_flags(skill, result, control_released)
     simulated = (allow_simulated and raw.get('simulated') is True and result.get('simulated') is True
                  and result.get('physical_execution') is False and level == 'simulated_object')
     effect = _effect_supported(skill, result, dict(body, _verification_ready_at=raw.get('verification_ready_at')),

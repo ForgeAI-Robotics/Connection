@@ -401,7 +401,12 @@ def target_identity(config, backend):
         return {"dream": real.get("dream_base_url"), "vla": "local:simulated-manipulation/v1"}
     if backend == "reception_real":
         real = config.get("reception_real") or {}
-        return {"dream": real.get("dream_base_url"), "vla": real.get("vla_base_url")}
+        identity = {"dream": real.get("dream_base_url"), "vla": real.get("vla_base_url")}
+        control = real.get('body_control') or {}
+        if control.get('enabled') is True:
+            identity['body_control'] = {key: control.get(key) for key in
+                                       ('robot_serial', 'action_endpoint', 'relay_base_url')}
+        return identity
     if backend == "desk" or backend.startswith("slaver:"):
         from execution.robot_api import client
         cfg = client._RUNTIME.config
@@ -410,10 +415,16 @@ def target_identity(config, backend):
     return {"backend": backend}
 
 
-def build_port(config, backend, *, agent=None):
+def build_port(config, backend, *, agent=None, body_control=None):
     from brain.config_flags import kernel_enabled
-    if backend == 'body_real':
-        return MotionGate(BodyAdapter.from_config(config), kernel_enabled(config))
+    if backend in {'body_real', 'reception_real'}:
+        port = BodyAdapter.from_config(config)
+        if ((config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is True:
+            if body_control is None:
+                raise Rejected('联合控制须通过大脑应用的唯一授权服务执行')
+            from brain.adapters.body_control import ControlledBodyAdapter
+            port = ControlledBodyAdapter(port.dream, port.vla, body_control)
+        return MotionGate(port, kernel_enabled(config))
     if backend == 'body_simple':
         from copy import deepcopy
         from shared.protocol_simulation import require_simulator_pair
@@ -448,8 +459,6 @@ def build_port(config, backend, *, agent=None):
         selected = deepcopy(config)
         selected.setdefault('reception_real', {}).update(dream_base_url=endpoints['dream'], vla_base_url=endpoints['vla'])
         return BodyAdapter.from_config(selected)
-    if backend == "reception_real":
-        return MotionGate(BodyAdapter.from_config(config), kernel_enabled(config))
     if backend == "reception_mock":
         from brain.packages.reception_mock import MockAdapter
         return MockAdapter()

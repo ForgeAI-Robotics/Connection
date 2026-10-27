@@ -54,7 +54,8 @@ def create_service(config, *, model=None, port_factory=None, inputs=None,
             return transports[0]
 
     def make_port(backend):
-        return build_port(config, backend, agent=transport() if backend.startswith("slaver:") else None)
+        return build_port(config, backend, agent=transport() if backend.startswith("slaver:") else None,
+                          body_control=getattr(service, 'body_control', None))
 
     planning = PlanningService(config, planner, inputs or PlanningInputs(config, transport=transport),
                                experiences, desk_planner=desk_planner)

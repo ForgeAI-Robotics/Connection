@@ -15,6 +15,8 @@ def create_app(application, *, facade=None):
     CORS(app, resources={r"/*": {"origins": "*"}})
     master_agent = facade if facade is not None else HttpFacade(application)
     app.extensions['brain'] = application
+    from brain.api.body_control import register_body_control
+    register_body_control(app, application)
     from shared.quiet_http_log import install_poll_diagnostics
     install_poll_diagnostics(app)
 
@@ -90,6 +92,30 @@ def create_app(application, *, facade=None):
     def task_pause():
         """暂停当前 Runtime 任务。"""
         return _control('pause')
+
+    @app.post('/api/task_control_recovery')
+    def recover_body_control():
+        from contracts.body_control import ControlError
+        data = request.get_json(silent=True)
+        try:
+            if (not isinstance(data, dict) or not {'task_id', 'expected_lease_id'} <= set(data)
+                    or set(data) - {'task_id', 'expected_lease_id', 'new_exit_check'}):
+                raise ValueError('必须指定当前 task_id 与原 expected_lease_id')
+            if type(data.get('new_exit_check', False)) is not bool:
+                raise ValueError('new_exit_check 必须为布尔值')
+            task_id = _validated_task_id(data['task_id'])
+            lease = _validated_task_id(data['expected_lease_id'])
+            if not task_id:
+                raise ValueError('缺少当前 task_id')
+            if getattr(application, 'body_control', None) is None:
+                raise ControlError('HANDOFF_DISABLED', '联合控制未启用', 501)
+            value = application.recover_control(task_id, lease,
+                **({'new_exit_check': True} if data.get('new_exit_check') else {}))
+            return jsonify({'accepted': True, 'control_recovery': value}), 202
+        except ValueError as exc:
+            return jsonify({'accepted': False, 'error': str(exc)}), 400
+        except ControlError as exc:
+            return jsonify({'accepted': False, 'error': str(exc), 'code': exc.code}), exc.status
 
     @app.post('/api/task_vla/<action>')
     def vla_effect(action):

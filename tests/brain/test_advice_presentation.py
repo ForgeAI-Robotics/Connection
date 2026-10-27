@@ -35,7 +35,7 @@ function taskText(x){return String(x??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':
     def test_compact_failure_and_escaped_details(self):
         self.run_browser('''
 const html=renderRecoveryAdvice(data), visible=html.split('<details')[0];
-for(const text of ['失败环节','导航到 1 号桌','失败原文','原因解读','附近障碍','建议','请现场人员检查并处理。']) assert(visible.includes(text), text);
+for(const text of ['失败环节','导航到 1 号桌','失败原文','回包说明','附近障碍','建议','请现场人员检查并处理。']) assert(visible.includes(text), text);
 for(const text of ['LONG_MODEL_REASON','来源','原命令结果是否未知']) assert(!visible.includes(text));
 assert(html.includes('&lt;img')); assert(!html.includes('<img')); assert(!html.includes('disabled'));
 renderTaskProgress(data);
@@ -58,6 +58,27 @@ data.attempt_summary={failure_count:1};
 const history=renderAttemptHistory(data);
 assert(history.includes('末端修正受阻：扫描覆盖不足'));
 assert(history.includes('largest_gap_deg=45.5'));
+''')
+
+    def test_unknown_peer_fields_render_with_or_without_advice_and_escape_html(self):
+        self.run_browser('''
+data.failure_detail={code:'NAV_FUTURE_FAULT',message:'new reason <script>bad</script>',
+ display_message:'回包：距目标 12.0 cm；原始错误：new reason',
+ downstream:{state:'failed',error:{code:'NAV_FUTURE_FAULT',details:{new_sensor:{hint:'<img src=x>',value:42}}},
+ result:{navigation_stopped:false,next_command_allowed:false,new_flag:'keep-me'}}};
+const original=JSON.stringify(data);
+let html=renderRecoveryAdvice(data);
+for (const text of ['NAV_FUTURE_FAULT','12.0 cm','下游原始错误与结果','new_sensor','navigation_stopped','keep-me','&lt;img']) assert(html.includes(text),text);
+assert(!html.includes('<script>bad'));assert(!html.includes('<img src=x>'));
+assert.equal(JSON.stringify(data),original);
+data.recovery_confirmation_enabled=false;
+html=renderRecoveryAdvice(data);assert(html.includes('new_sensor'));assert(!html.includes('onclick'));
+data.failure_history=[{...data.failure_detail,step_id:'NAVIGATING_TO_TABLE1',command_id:'old-cmd'}];
+data.attempt_summary={failure_count:1};
+html=renderAttemptHistory(data);assert(html.includes('new_sensor'));assert(html.includes('old-cmd'));assert(!html.includes('<img'));
+// A legacy phrase match must not hide the server's numeric evidence.
+data.failure_detail.message='terminal correction has a live nearby obstacle; holding stand';
+assert(failureExplanation(data.failure_detail).includes('12.0 cm'));
 ''')
 
     def test_stale_or_consumed_advice_never_offers_current_action(self):

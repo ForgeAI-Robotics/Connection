@@ -6,6 +6,7 @@ from shared.networks import entry_url
 
 
 ROUTES = {
+    '/api/task_control_recovery': ['POST'],
     '/api/task_vla/query': ['POST'], '/api/task_vla/pause': ['POST'], '/api/task_vla/finish': ['POST'],
     '/publish_task': ['POST'],
     '/api/publish_task': ['POST'], '/api/task_intent': ['POST'],

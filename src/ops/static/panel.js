@@ -145,7 +145,7 @@ function card(item) {
   const entry = item.id === "deploy" || item.id === "feishu" || item.id === "voice";
   el.classList.toggle("entry-card", entry);
   el.onclick = () => selectService(item.id);
-  const port = item.port ? `端口 ${item.port}` : "无本地端口";
+  const port = item.port ? `端口 ${item.port}` : item.id === "relay" ? "独立管理接口" : "无本地端口";
   const line = healthLine(item);
   el.innerHTML = `
     <div class="card-top">
@@ -319,7 +319,7 @@ function render(full) {
   $("layer-hint").textContent = {
     brain: "点击上方卡片查看对应服务的运行日志。",
     environment: "选择 SIMPLE 仿真或真机，应用后到任务网页开始测试。",
-    robot: "DREAM 导航与 VLA 操控。启停服务不会发布「开始接待」任务。",
+    robot: "DREAM 导航、VLA 操控与独立 relay。relay 转发由大脑授权；服务在线不代表真机就绪。",
   }[selectedLayer];
   document.querySelector(".workspace").classList.toggle("environment", environment);
   $("execution-settings").hidden = !environment;
@@ -407,9 +407,9 @@ async function act(item, action) {
       : item.id === "dream" && action === "stop"
         ? "已收到停止。正在关闭 DREAM 与 VLA HTTP/relay，保留 NX SONIC …"
         : item.id === "vla" && action === "start"
-          ? "已收到启动。正在按文档连接 4090：check → 依赖检查 → HTTP 8091 + 导航 relay …"
+          ? "已收到启动。正在执行操控端 VLA 运行时检查与启动 …"
           : item.id === "vla" && action === "stop"
-            ? "已收到停止。正在 SSH 4090 关闭 HTTP 与导航 relay …"
+            ? "已收到停止。正在执行操控端 VLA 停止流程，relay 独立运行 …"
             : `正在${{start: "启动", stop: "停止", restart: "重启"}[action] || action} ${item.name} …`;
   try {
     const response = await fetch(`/api/services/${item.id}/${action}`, { method: "POST" });

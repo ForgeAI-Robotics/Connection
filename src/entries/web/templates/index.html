@@ -224,17 +224,37 @@
             }
         }
 
+        async function recoverControl() {
+            const current = displayedTask;
+            if (!current?.task_id || taskControlPending) return;
+            if (!window.confirm('重新核查当前控制退出：可能发送停止／让出及关闭 relay 请求。保留旧记录，不重发导航或启动下一轮。继续？')) return;
+            taskControlPending = true;
+            try {
+                const response = await fetch('/api/task_control_recovery', {method:'POST',
+                    headers:{'Content-Type':'application/json'}, body:JSON.stringify({task_id:current.task_id,
+                        expected_lease_id:current.control_recovery?.source?.lease_id || null, new_exit_check:true})});
+                const reply = await response.json();
+                document.getElementById('task-command-feedback').textContent = reply.accepted
+                    ? '已请求核清原控制；请查看退出结果，未自动继续任务。' : (reply.error || '核查未受理');
+            } catch (error) {
+                document.getElementById('task-command-feedback').textContent = '核查请求结果未知，请刷新状态；不要重复发布任务。';
+            } finally {
+                taskControlPending = false;
+                await refreshTaskStatus();
+            }
+        }
+
         function updateTaskButtons() {
             const state = displayedTask?.state;
             const active = !!displayedTask?.task_id && !displayedTask.terminal;
             const ready = taskStatusKnown && !taskControlPending;
             const enabled = {
-                start: ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion,
-                'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion,
+                start: ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
+                'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 skip: ready && active && !!displayedTask?.can_skip,
                 pause: ready && active && (['running', 'verifying'].includes(state)
                     || (state === 'waiting_human' && !!displayedTask?.vla_confirmation)),
-                continue: ready && active && !!displayedTask?.can_resume && !pendingTaskControl,
+                continue: ready && active && !!displayedTask?.can_resume && !pendingTaskControl && !displayedTask?.control_recovery?.pending,
                 cancel: ready && active
             };
             for (const [name, allowed] of Object.entries(enabled)) {
@@ -242,7 +262,9 @@
                 button.disabled = !allowed;
                 const descriptions = {start: '执行当前环境登记的接待 Skill', 'start-nav': '同一接待流程；导航真实，开门和抓可乐为模拟',
                     pause: '暂停整轮流程，并请求停止当前动作', continue: '继续当前环节；未完成则重新下发一次指令',
-                    skip: '放弃当前环节并进入下一步，不记为成功', cancel: '废弃整轮大脑任务；不向导航发送停止指令'};
+                    skip: '放弃当前环节并进入下一步，不记为成功', cancel: displayedTask?.control_recovery?.enabled
+                        ? '取消任务，并请求原控制停止／退出；结果以下方收尾状态为准'
+                        : '废弃整轮大脑任务；不向导航发送停止指令'};
                 button.title = allowed ? descriptions[name] : (!taskStatusKnown ? '正在确认任务状态' : taskControlPending ? '控制请求处理中' : '当前任务状态不支持此操作');
             }
         }
@@ -415,8 +437,9 @@
             const rows = (data.failure_history || []).map(item =>
                 `<div style="margin:8px 0"><strong>失败环节：${taskText(taskPhase(item.step_id))}</strong>
                 <div>失败原文：${taskText(item.message || item.code || '未提供')}</div>
-                <div>原因解读：${taskText(failureExplanation(item))}</div>
-                <small>命令：${taskText(item.command_id)}</small></div>`).join('');
+                <div>回包说明：${taskText(failureExplanation(item))}</div>
+                <small>命令：${taskText(item.command_id)} · 错误码：${taskText(item.code || '未提供')}</small>
+                ${failureReceiptDetails(item, item.command_id)}</div>`).join('');
             const revisions = (data.plan_revisions || []).map(change => '<div style="margin:8px 0"><strong>恢复方案版本 '
                 + taskText(change.version) + '</strong><div>' + taskText(change.summary) + '</div><small>原失败命令：'
                 + taskText(change.original_command_id) + '</small><details><summary>调整前后与依据</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
@@ -521,6 +544,33 @@
                 任务 ID：${taskText(data.task_id)} · 任务环境：${taskText((TASK_LABELS.backends || {})[data.execution_backend] || data.execution_backend || '尚未选择')}</div>`;
 
             const vla = data.vla_confirmation;
+            const control = data.control_recovery;
+            if (control?.blocked) {
+                const old = control.source || control.unresolved?.[0] || {};
+                const canCheck = ['cancelled','failed','succeeded','recovery_required','paused'].includes(data.state);
+                html += '<div class="task-command-feedback">旧控制尚未核清退出 · '
+                    + taskText(old.command_id || '交接处理中') + '<br>'
+                    + taskText(control.pending ? '正在停止／核查原输出，退出确认后可发布下一轮。'
+                        : old.cleanup_error?.message || '取消编排不等于已停止输出；请核清原控制。')
+                    + (canCheck && !control.pending ? '<button type="button" onclick="recoverControl()">核清旧控制</button>' : '')
+                    + '</div>';
+            } else if (control?.enabled && data.state === 'cancelled') {
+                html += '<div class="task-command-feedback">任务已取消，控制授权已核清，可发布下一轮。</div>';
+            }
+            const holdingStatus = data.failure_detail?.downstream?.error?.details?.holding_status
+                || data.handoff_observation?.idle_evidence?.vla;
+            const holdingProof = holdingStatus?.holding_evidence || vla?.holding_evidence;
+            if (holdingProof) {
+                const expired = !Number.isFinite(Date.parse(holdingProof.valid_until))
+                    || Date.parse(holdingProof.valid_until) <= Date.now();
+                html += '<div class="task-command-feedback">持物证据（最近核查快照）：'
+                    + taskText(holdingStatus ? (holdingStatus.current_holding || '未知') : (holdingProof.holding || '未知'))
+                    + '<br>观察时间：' + taskText(holdingProof.observed_at || '未提供')
+                    + ' · 有效至：' + taskText(holdingProof.valid_until || '未提供')
+                    + '<br>' + taskText(holdingProof.invalid_reason || (expired ? '证据已到期，须真实重新确认'
+                        : holdingProof.valid === true ? '每段运送前重新核查当前证明，不自动续期' : '证明无效，等待核清'))
+                    + '</div>';
+            }
             if (vla && !data.pause_requested) {
                 const labels = {running:'策略运行中，请在现场确认适当时机后请求暂停',
                     waiting_result_confirmation:'策略已暂停，等待授权核验方提交暂停后的效果证据',
@@ -588,7 +638,7 @@
                     <span class="subtask-robot">${taskText(t.robot_name)}</span>
                 </div>`;
             }
-            if (data.state === 'cancelled') {
+            if (data.state === 'cancelled' && !data.control_recovery?.blocked) {
                 result.style.display = 'none';
                 result.textContent = '';
                 const unresolved = data.command_unknown || data.blocks_new_motion;
@@ -619,11 +669,19 @@
         }
         function failureExplanation(failure) {
             const raw = String(failure.message || '');
+            const translated = String(failure.display_message || '').split('；原始错误：')[0];
+            if (translated) return translated;
             const phrase = Object.entries(TASK_LABELS.failure_phrases || {}).find(([key]) => raw.includes(key));
             if (phrase) return phrase[1];
-            const translated = String(failure.display_message || '').split('；原始错误：')[0];
-            return translated || TASK_LABELS.reasons[failure.code] || TASK_LABELS.reasons[raw]
-                || '原因尚未明确，请结合原始错误核查。';
+            return TASK_LABELS.reasons[failure.code] || TASK_LABELS.reasons[raw]
+                || '下游返回了新的错误原因，请查看原文及回包详情。';
+        }
+        function failureReceiptDetails(failure, commandId) {
+            if (!failure?.downstream || !Object.keys(failure.downstream).length) return '';
+            return '<details data-task-detail="receipt:' + encodeURIComponent(commandId || '')
+                + '"><summary>下游原始错误与结果</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
+                + taskText(JSON.stringify({command_id: commandId, downstream: failure.downstream}, null, 2))
+                + '</pre></details>';
         }
         function recoveryAdviceDetails(advice, data) {
             return '<details data-task-detail="advice:' + encodeURIComponent(advice.advice_id || '') + '"><summary>详细信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
@@ -647,7 +705,8 @@
             if (failure) {
                 const raw = failure.message || failure.code || '未提供原始错误';
                 html += line('失败原文', raw + (failure.code && !raw.includes(failure.code) ? '（' + failure.code + '）' : ''));
-                html += line('原因解读', failureExplanation(failure));
+                html += line('回包说明', failureExplanation(failure));
+                html += failureReceiptDetails(failure, data.control_command_id);
             }
             if (advice) {
                 const suggestions = {query_original: '先查询原命令，确认执行结果。',
@@ -657,7 +716,7 @@
                     wait: '等待执行条件恢复。', request_help: '请现场人员检查并处理。'};
                 html += line('建议', suggestions[advice.action] || '请核对现场情况。');
                 if (['observe_scene', 'revise_plan'].includes(advice.action)) {
-                    html += line('处理理由', advice.summary + '\n' + advice.reason);
+                    html += line(advice.source === 'llm' ? '模型解释（非执行回包）' : '规则说明', advice.summary + '\n' + advice.reason);
                 }
                 if (advice.action === 'revise_plan' && Array.isArray(advice.plan?.step_order)) {
                     const steps = Object.fromEntries((data.subtask_list || []).map(s => [s.step_id, s.display_name || s.subtask]));
@@ -670,7 +729,7 @@
                     html += '<button class="btn btn-outline btn-sm" onclick="confirmRecoveryAdvice()" ' + (taskControlPending || (pendingTaskControl && ['continue', 'revise_plan'].includes(advice.action)) ? 'disabled' : '') + '>'
                         + taskText(adviceActionLabels[advice.action]) + '</button>';
                 }
-            } else {
+            } else if (!failure?.downstream || !Object.keys(failure.downstream).length) {
                 html += '<details data-task-detail="failure:' + encodeURIComponent(data.task_id + ':' + data.control_command_id) + '"><summary>详细信息</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
                     + taskText(JSON.stringify({command_id: data.control_command_id, failure}, null, 2)) + '</pre></details>';
             }

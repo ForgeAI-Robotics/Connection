@@ -10,6 +10,61 @@ from brain.kernel.runtime import status_from_record
 
 
 class TaskFeedbackTests(unittest.TestCase):
+    def test_unknown_error_and_result_fields_survive_status_history_and_copy(self):
+        raw = {'command_id': 'cmd', 'task_id': 'task', 'state': 'failed',
+               'error': {'code': 'FUTURE_FAILURE', 'message': 'future cause',
+                         'details': {'new_sensor': {'samples': [1, 2], 'mode': '<unknown>'},
+                                     'terminal': {'goal_distance': .42}}},
+               'result': {'navigation_stopped': False, 'next_command_allowed': False, 'new_flag': 'preserve'}}
+        record = {'task_id': 'task', 'state': 'recovery_required', 'command_unknown': False,
+                  'phase_specs': [{'step_id': 'NAV'}], 'steps': {'NAV': {'attempts': [{
+                      'command_id': 'cmd', 'verdict': 'FAIL', 'progress': {
+                          'terminal': 'failed', 'evidence': {'downstream': raw}}}]}}}
+        original = deepcopy(record)
+        status = status_from_record(record)
+        self.assertEqual(status['failure_detail']['downstream'], raw)
+        self.assertEqual(status['failure_history'][0]['downstream'], raw)
+        self.assertIn('距目标 42.0 cm', status['failure_detail']['display_message'])
+        self.assertIn('new_sensor', reception_report(status)['summary_text'])
+        self.assertIn('next_command_allowed', reception_report(status)['summary_text'])
+        self.assertFalse(status['command_unknown'])
+        status['failure_detail']['downstream']['error']['details']['new_sensor']['samples'].append(3)
+        self.assertEqual(record, original)
+        self.assertEqual(status['failure_history'][0]['downstream'], raw)
+
+    def test_terminal_result_without_error_object_keeps_its_reason(self):
+        record = {'state': 'recovery_required', 'phase_specs': [{'step_id': 'NAV'}],
+                  'steps': {'NAV': {'attempts': [{'command_id': 'cmd', 'verdict': 'FAIL',
+                    'progress': {'terminal': 'failed', 'evidence': {'downstream': {
+                        'state': 'failed', 'result': {'success': False, 'message': 'peer result reason',
+                                                     'new_field': 123}}}}}]}}}
+        status = status_from_record(record)
+        self.assertEqual(status['failure_detail']['message'], 'peer result reason')
+        self.assertEqual(status['failure_detail']['kind'], 'execution_failed')
+        self.assertEqual(status['failure_history'][0]['message'], 'peer result reason')
+        self.assertEqual(status['failure_detail']['downstream']['result']['new_field'], 123)
+
+    def test_new_terminal_failures_keep_history_and_summary_bound_to_their_own_attempt(self):
+        attempts = []
+        for command, message, distance, yaw in [
+                ('fridge', 'arrival_clearance_wait_timeout', .1551687, .6915553),
+                ('relay3', 'lateral_stop_not_settled', .953909, 1.2907092)]:
+            attempts.append({'command_id': command, 'verdict': 'FAIL', 'progress': {
+                'terminal': 'failed', 'evidence': {'downstream': {'error': {
+                    'code': 'NAVIGATION_TERMINAL_UNREACHABLE', 'message': message,
+                    'details': {'terminal': {'goal_distance': distance, 'final_yaw_error': yaw}}}}}}})
+        record = {'task_id': 't', 'state': 'recovery_required', 'cursor': 1,
+                  'phase_specs': [{'step_id': 'fridge'}, {'step_id': 'relay3'}],
+                  'steps': {a['command_id']: {'attempts': [a]} for a in attempts}}
+        original = deepcopy(record)
+        status = status_from_record(record)
+        self.assertIn('横移停止未稳定', status['failure_detail']['display_message'])
+        report = reception_report(status)['summary_text']
+        for text in ['末端净空等待超时', '距目标 15.5 cm', '最终朝向误差 39.6°',
+                     '横移停止未稳定', '距目标 95.4 cm', '最终朝向误差 74.0°']:
+            self.assertIn(text, report)
+        self.assertEqual(record, original)
+
     def test_yaw_timeout_metrics_belong_to_each_attempt_and_keep_raw_evidence(self):
         def attempt(command, distance, yaw):
             return {'command_id': command, 'verdict': 'FAIL', 'progress': {

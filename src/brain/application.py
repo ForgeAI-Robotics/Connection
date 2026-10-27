@@ -38,6 +38,16 @@ class BrainApplication:
         self._started = False
         self._closing = False
         self._start_lock = threading.Lock()
+        self.body_control = None
+        control_settings = (self.config.get('reception_real') or {}).get('body_control') or {}
+        if control_settings.get('enabled') is True:
+            from brain.adapters.body_control import ControlDriver
+            from brain.kernel.body_control import BodyControl
+            for key in ('robot_serial', 'action_endpoint', 'relay_base_url'):
+                if not isinstance(control_settings.get(key), str) or not control_settings[key].strip():
+                    raise ValueError('body_control requires ' + key)
+            self.body_control = BodyControl(self.config, root, ControlDriver(self.config), self.io)
+        service.body_control = self.body_control
         factory = service.port_factory
         runtime_factory = service.runtime_factory
 
@@ -126,6 +136,16 @@ class BrainApplication:
                 if callable(abandon):
                     abandon()
             self._execution_ports.clear()
+            # All cancellation paths (including confirmed advice) emit this
+            # Runtime event after the cancelled record is durable.
+            if self.body_control is not None:
+                summary = self.body_control.recovery_status()
+                if summary['blocked']:
+                    try:
+                        self.body_control.request_cleanup(record['task_id'],
+                            (summary.get('source') or {}).get('lease_id'))
+                    except Exception as exc:
+                        emit('control_cleanup_unconfirmed', record, error=str(exc))
         emit(event, record)
         if (self.config.get("brain") or {}).get("capture_timeline", True):
             self.media.event(event, record)
@@ -146,6 +166,8 @@ class BrainApplication:
                 raise Rejected('同一本账已有大脑进程持有') from None
             self._lease = fd
             try:
+                if self.body_control is not None:
+                    self.body_control.start()
                 self.owner.start()
                 self.learning.start()
                 record = load_existing(root) or {}
@@ -185,6 +207,17 @@ class BrainApplication:
             runtime = self.service.runtime
             if not result.get('no_op') and runtime and runtime.state in {'succeeded', 'failed', 'cancelled', 'recovery_required'}:
                 self.learning.enqueue(runtime.record)
+            if action == 'cancel' and result.get('accepted') and self.body_control is not None:
+                summary = self.body_control.recovery_status()
+                result['control_recovery'] = summary
+                if summary['blocked']:
+                    try:
+                        result['control_recovery'] = self.body_control.request_cleanup(
+                            result.get('task_id'), (summary.get('source') or {}).get('lease_id'))
+                        result['message'] = '任务已取消；旧控制权正在独立收尾，退出核清后可发布下一轮'
+                    except Exception as exc:
+                        result['control_recovery'] = self.body_control.recovery_status()
+                        result['message'] = '任务已取消；控制退出尚未核清：' + str(exc)
             return result
         try:
             result = self.owner.call(apply, control=True)
@@ -198,12 +231,19 @@ class BrainApplication:
     def status(self):
         # Atomic read only: health/status do not wait behind any remote call.
         result = self.service.status()
+        if self.body_control is not None:
+            result['control_recovery'] = self.body_control.recovery_status()
         if result.get('task_id'):
             reflection = self.learning.result(result['task_id'])
             if reflection:
                 result['reflection'] = {key: value for key, value in reflection.items()
                                         if key not in {'episode', 'path'}}
         return result
+
+    def recover_control(self, task_id, expected_lease_id, *, new_exit_check=False):
+        self.start()
+        return self.body_control.request_cleanup(task_id, expected_lease_id,
+            **({'new_exit_check': True} if new_exit_check else {}))
 
     def confirm_advice(self, task_id, advice_id, expected_revision):
         self.start()
@@ -235,6 +275,8 @@ class BrainApplication:
 
     def close(self, timeout=None):
         self._closing = True
+        if self.body_control is not None:
+            self.body_control.stop_accepting()
         timeout = float(timeout if timeout is not None else (self.config.get('brain') or {}).get('shutdown_timeout_sec', 10))
         deadline = time.monotonic() + timeout
         if self.owner.thread and self.owner.thread.is_alive():
@@ -251,6 +293,8 @@ class BrainApplication:
         for transport in self.service.transports:
             transport.close(remaining())
         if stopped and self._lease is not None:
+            if self.body_control is not None:
+                self.body_control.close()
             fcntl.flock(self._lease, fcntl.LOCK_UN)
             os.close(self._lease)
             self._lease = None

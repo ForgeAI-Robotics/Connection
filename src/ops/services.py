@@ -83,10 +83,26 @@ def _load_dotenv() -> None:
     apply_proxy_bypass()
 
 
-def _http_get(url: str, timeout: float = 3.0) -> tuple[bool, str, int, str]:
+class _NoProbeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _http_get(url: str, timeout: float = 3.0, *, token_env: str | None = None) -> tuple[bool, str, int, str]:
     started = time.monotonic()
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:
+        if token_env:
+            from shared.service_credentials import service_token
+            token = service_token(token_env)
+            if not token:
+                raise ValueError('健康探测凭据未配置：' + token_env)
+            request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token,
+                                                          'Cache-Control': 'no-cache'})
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoProbeRedirect())
+            response_context = opener.open(request, timeout=timeout)
+        else:
+            response_context = urllib.request.urlopen(url, timeout=timeout)
+        with response_context as response:
             body = response.read(4000).decode("utf-8", "replace")
             ms = int((time.monotonic() - started) * 1000)
             return True, f"HTTP {response.status}", ms, body
@@ -149,20 +165,23 @@ def _tcp_open(port: int, host: str = "127.0.0.1") -> bool:
         sock.close()
 
 
-def _record_probe(service_id: str, line: str, *, ok: Optional[bool] = None, signature=None) -> None:
+def _record_probe(service_id: str, line: str, *, ok: Optional[bool] = None, signature=None,
+                  record_changes: bool = False) -> None:
     stamp = datetime.now().astimezone().strftime("%H:%M:%S")
     formatted = f"[{stamp}] {line}"
     bucket = PROBE_HISTORY.setdefault(service_id, deque(maxlen=_MAX_PROBES))
     bucket.append(formatted)
     previous, last_signature = _LAST_MONITOR.get(service_id, (None, None))
     signature = line if signature is None else signature
-    if ok is True and previous is not False:
+    if ok is True and previous is not False and not (record_changes and signature != last_signature):
         _LAST_MONITOR[service_id] = (True, signature)
         return  # Healthy polling stays silent, including the first probe.
     if previous is ok and signature == last_signature:
         return
-    if ok is True:
+    if ok is True and previous is False:
         formatted = f"[{stamp}] 监测恢复：{line}"
+    elif record_changes:
+        formatted = f"[{stamp}] 监测状态：{line}"
     try:
         append_monitor_log(service_id, formatted, stamped=True)
     except OSError:
@@ -216,7 +235,19 @@ def _health_alive(_service: Service) -> dict[str, Any]:
 def _health_remote(service_id: str, base: str):
     def check(_service: Service) -> dict[str, Any]:
         url = f"{base.rstrip('/')}/health"
-        ok, status, ms, body = _http_get(url)
+        if service_id == 'dream':
+            # NAV protects health as well as business routes. Use the same
+            # private credential source as the brain; never log the token.
+            from shared.config import load_config
+            try:
+                config = load_config(ROOT / 'config/brain.yaml')
+                control = (config.get('reception_real') or {}).get('body_control') or {}
+                token_env = control.get('nav_token_env') or control.get('token_env') or 'BRAIN_CONTROL_TOKEN'
+                ok, status, ms, body = _http_get(url, token_env=token_env)
+            except (OSError, ValueError, TypeError) as exc:
+                ok, status, ms, body = False, str(exc), 0, ''
+        else:
+            ok, status, ms, body = _http_get(url)
         detail = format_http_health_detail(ok, status, body)
         _record_probe(service_id, f"{'通' if ok else '不通'} {url} {ms}ms {detail}", ok=ok, signature=(url, detail))
         return {
@@ -235,7 +266,7 @@ def feishu_ready_from_text(text: str) -> bool:
 
 def catalog() -> list[Service]:
     _load_dotenv()
-    from ops import simple_remote
+    from ops import simple_remote, relay_service
     from shared.networks import lan
 
     site = lan()
@@ -410,18 +441,26 @@ def catalog() -> list[Service]:
             remote_actions=("start", "stop"),
             confirm_start=True,
             confirm_start_message=(
-                "将按文档在 4090 上启动完整 VLA 运行时："
-                "check 全部脚本/hook → 检查 SONIC/相机/灵巧手 → "
-                "启动 8091 HTTP 和导航 relay。"
-                "不启动 SONIC，也不提前启动抓取 RTC。确认现场急停可用？"
+                "将按操控工程的 run_agent_vla_runtime.sh 启动 VLA 运行时，"
+                "执行其检查与依赖准备。relay 由独立卡片管理。确认现场急停可用？"
             ),
             confirm_stop=True,
             confirm_stop_message=(
-                "停止只关 Brain HTTP 和受管 relay，不停 SONIC、相机或灵巧手。"
-                "若任务正在执行，远端会拒绝停止。确定继续？"
+                "将执行操控工程的 VLA 停止流程，包括其受管 O6 接收器；"
+                "relay 独立运行。若任务正在执行，远端会拒绝停止。确定继续？"
             ),
-            note="按文档启动 8091 HTTP + 导航 relay",
+            note="VLA 运行时 · relay 独立管理",
             health=_health_remote("vla", vla),
+        ),
+        Service(
+            id="relay", name="导航 relay", layer="robot", controllable=True,
+            window="relay", log_service="relay",
+            match=str(relay_service.project_root() / 'g1_navigation_vla_bridge/sequential_navigation_action_relay.py'),
+            confirm_stop=True,
+            confirm_stop_message="将停止独立 relay 管理服务；仅在原授权结束、转发关闭且端口释放后允许。确定继续？",
+            action_confirms=(("restart", "将重启独立 relay 管理服务；原授权或通道未核清时会拒绝。确定继续？"),),
+            note="常驻管理 · 转发由大脑授权 · 在线不代表真机就绪",
+            health=relay_service.health,
         ),
     ]
 

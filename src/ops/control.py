@@ -1,7 +1,7 @@
 """Process control and health; no Flask or task imports."""
 from ops.services import (by_id, catalog, display_log_path, feishu_ready_from_text,
     latest_log_file, port_open, start_shell, tail_file)
-from ops import dream_remote, tmuxctl, vla_remote, simple_remote
+from ops import dream_remote, tmuxctl, vla_remote, simple_remote, relay_service
 
 def _tmux_name(service) -> str:
     return service.window or service.id
@@ -27,13 +27,15 @@ def _service_status(service, *, include_pids=True) -> dict:
     health = {"ok": False, "detail": "未运行"}
     if not service.controllable:
         health = service.health(service) if service.health else health
-    elif state != "stopped":
+    elif state != "stopped" or service.id == "relay":
         if service.id == "slaver":
             health = {"ok": True, "detail": "进程在运行"}
         elif service.id == "feishu":
             health = _feishu_health(service, state)
         elif service.health:
             health = service.health(service)
+        if service.id == 'relay' and state == 'stopped' and health.get('ok'):
+            state = 'unmanaged'
     return {
         **service_description(service),
         **_review_page(service),
@@ -96,6 +98,8 @@ def _feishu_health(service, state: str) -> dict:
 
 
 def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None, str | None]:
+    if service.id == "relay":
+        return relay_service.logs(service, lines)
     if service.id == "simple_o7":
         return simple_remote.logs(lines)
     selected = str(kind or "auto").strip().lower()
@@ -117,6 +121,9 @@ def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None
 
 
 def _start(service) -> None:
+    if service.id == "relay":
+        relay_service.start(service)
+        return
     if service.remote_control == "ssh_simple":
         simple_remote.run("start")
         return
@@ -134,6 +141,9 @@ def _start(service) -> None:
 
 
 def _stop(service) -> None:
+    if service.id == "relay":
+        relay_service.stop(service)
+        return
     if service.remote_control == "ssh_simple":
         simple_remote.run("stop")
         return

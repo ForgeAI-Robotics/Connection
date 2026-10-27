@@ -81,6 +81,19 @@ reception_real:
   contract_version: fq/reception-lan/v1
   dream_base_url: ${DREAM_BASE_URL}
   vla_base_url: ${VLA_BASE_URL}
+  # 新联合控制：只在三端适配及实际模式/保持验证完成后启用；默认不改变旧链路。
+  body_control:
+    enabled: false
+    robot_serial: ""
+    action_endpoint: ""
+    relay_base_url: ""
+    # 服务凭据只放环境变量，不存任务或控制账本。
+    token_env: BRAIN_CONTROL_TOKEN
+    # NAV HTTP 若使用独立 --api-token，可填保存该 token 的环境变量名；空值沿用上项。
+    nav_token_env: ""
+    operation_timeout_sec: 10
+    poll_interval_sec: 0.2
+    evidence_max_age_sec: 10
   # 通用身体任务的额外 VLA 动作目录；真机接待使用 Skill.real_workflow 并引用同一份 points。
   # 配置合同、暂停与授权确认 API 见 docs/接口说明_操控VLA.md。
   native_vla:

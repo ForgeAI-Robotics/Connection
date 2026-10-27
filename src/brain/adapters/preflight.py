@@ -78,6 +78,11 @@ def reception_preflight(config, task, *, client_factory=DreamClient):
             raise Rejected('未配置导航接口地址。')
         client = client_factory(settings['dream_base_url'], request_timeout_sec=3,
                                 contract_version=skill.definition['contract_version'])
+        control = settings.get('body_control') or {}
+        if control.get('enabled') is True:
+            # This read-only client is separate from the execution adapter, so
+            # it must bind the same credential source before either metadata GET.
+            client.http.auth_token_env = control.get('nav_token_env') or control.get('token_env', 'BRAIN_CONTROL_TOKEN')
         status = client.status()
         if not isinstance(status, dict) or status.get('interface_online') is not True:
             raise Rejected('导航未确认接口在线。')

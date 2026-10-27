@@ -86,6 +86,8 @@ REASONS = {
     'NAVIGATION_NO_PROGRESS': '导航持续无进展',
     'NAVIGATION_TERMINAL_UNREACHABLE': '导航末端未满足到达条件',
     'arrival_yaw_timeout': '最终朝向调整超时',
+    'arrival_clearance_wait_timeout': '末端净空等待超时',
+    'lateral_stop_not_settled': '横移停止未稳定',
     'NAVIGATION_EXECUTION_FAILED': '导航执行失败，具体原因见导航原始回包',
     'NAVIGATION_PROOF_INVALID': '缺少原导航到达并停止的有效回执，操控尚未执行；人工跳过导航不代表已经到达',
     'final_path_not_straight': '末端接近路径不满足直线要求，导航无法完成末端修正',
@@ -226,8 +228,11 @@ def failure_text(message, code=None, *, record=None, details=None):
     if not chinese:
         chinese = next((text for phrase, text in FAILURE_PHRASES.items() if phrase in raw), None)
     chinese = chinese or REASONS.get(code) or '执行异常，详情见原始错误'
-    if raw == 'arrival_yaw_timeout':
-        terminal = details.get('terminal') if isinstance(details, dict) else None
+    # Interpret stable fields, never gate evidence on an error name or message.
+    sources = [('错误详情回包', details)] if isinstance(details, dict) else []
+    if isinstance(details, dict) and isinstance(details.get('terminal'), dict):
+        sources.append(('导航终端回包', details['terminal']))
+    for source_label, terminal in sources:
         metrics = []
         for key, scale, label, unit in (
                 ('goal_distance', 100, '距目标', ' cm'),
@@ -239,7 +244,28 @@ def failure_text(message, code=None, *, record=None, details=None):
                 if math.isfinite(converted):
                     metrics.append(f'{label} {converted:.1f}{unit}')
         if metrics:
-            chinese += '；导航终端回包：' + '，'.join(metrics)
+            chinese += '；' + source_label + '：' + '，'.join(metrics)
+        clearance = terminal.get('turn_clearance') if isinstance(terminal, dict) else None
+        if isinstance(clearance, dict):
+            clearance_metrics = []
+            if clearance.get('allowed') is True:
+                clearance_metrics.append('允许转向')
+            elif clearance.get('allowed') is False:
+                clearance_metrics.append('禁止转向')
+            reason = clearance.get('reason')
+            for key, label in (('nearest_m', '最近障碍'), ('required_m', '要求净空')):
+                value = clearance.get(key)
+                # Some deployed peers keep nearest_m only in the original reason.
+                if key not in clearance and isinstance(reason, str):
+                    match = re.search(r'\b' + key + r'=([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)(?=,|;|\s|$)', reason)
+                    value = float(match[1]) if match else None
+                if (isinstance(value, (int, float)) and not isinstance(value, bool)
+                        and math.isfinite(value) and value >= 0 and math.isfinite(value * 100)):
+                    clearance_metrics.append(f'{label} {value * 100:.1f} cm')
+            if clearance_metrics:
+                chinese += '；净空回包（采样快照）：' + '，'.join(clearance_metrics)
+            if isinstance(reason, str) and reason:
+                chinese += '；净空原文：' + reason
     return f'{chinese}；原始错误：{raw}' + (f'（{code}）' if code and code not in raw else '')
 
 

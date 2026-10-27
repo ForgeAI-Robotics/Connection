@@ -8,6 +8,7 @@ import socket
 import urllib.error
 import urllib.parse
 import urllib.request
+from shared.service_credentials import service_token
 
 
 class HttpContractError(RuntimeError):
@@ -24,6 +25,7 @@ class HttpClient:
             raise ValueError(f"无效HTTP服务地址: {base_url!r}")
         self.timeout_sec = float(timeout_sec)
         self.contract_version = str(contract_version or "").strip()
+        self.auth_token_env = None  # Optional joint-control service credential, never the token itself.
 
     def url(self, path):
         value = str(path)
@@ -34,6 +36,26 @@ class HttpClient:
     def request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None):
         data = None
         headers = dict(headers or {})
+        opener = urllib.request.urlopen
+        if self.auth_token_env:
+            try:
+                token = service_token(self.auth_token_env)
+            except ValueError as exc:
+                raise HttpContractError(str(exc)) from None
+            if not token:
+                raise HttpContractError('服务鉴权环境变量未配置')
+            def origin(url):
+                parts = urllib.parse.urlsplit(url)
+                if parts.username or parts.password or not parts.hostname:
+                    raise HttpContractError('服务 URL 身份无效')
+                return parts.scheme, parts.hostname, parts.port or (443 if parts.scheme == 'https' else 80)
+            if origin(self.url(path)) != origin(self.base_url):
+                raise HttpContractError('拒绝向其他服务地址发送鉴权凭据')
+            headers.setdefault('Authorization', 'Bearer ' + token)
+            class NoRedirect(urllib.request.HTTPRedirectHandler):
+                def redirect_request(self, req, fp, code, msg, newheaders, newurl):
+                    return None
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open
         if self.contract_version:
             headers["X-Contract-Version"] = self.contract_version
         if payload is not None:
@@ -42,7 +64,7 @@ class HttpClient:
         req = urllib.request.Request(
             self.url(path), data=data, headers=headers, method=str(method).upper())
         try:
-            with urllib.request.urlopen(
+            with opener(
                 req, timeout=float(timeout_sec or self.timeout_sec)
             ) as response:
                 return (
@@ -87,7 +109,8 @@ class HttpClient:
             raise HttpContractError(
                 f"服务返回非JSON响应(HTTP {status})",
                 status_code=status,
+                payload=raw.decode('utf-8', errors='replace'),
             ) from exc
         if not isinstance(body, dict):
-            raise HttpContractError("服务JSON响应必须是对象", payload=body)
+            raise HttpContractError("服务JSON响应必须是对象", status_code=status, payload=body)
         return body, status, headers

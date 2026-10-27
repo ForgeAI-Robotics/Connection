@@ -1,4 +1,5 @@
 """Deterministic summaries of Runtime status; no new task state or diagnosis."""
+import json
 from shared.task_text import phase_text, BACKENDS, STATES
 
 
@@ -26,6 +27,8 @@ def reception_report(status):
     for f in failures:
         lines.append(f"{phase_text(f.get('step_id'), status)}：{kinds.get(f.get('kind'), '失败记录')}；命令 {f.get('command_id')}")
         lines.append(f"失败说明：{f.get('display_message') or f.get('message') or f.get('code') or '未提供'}")
+        if f.get('downstream'):
+            lines.append('下游原始错误与结果：' + json.dumps(f['downstream'], ensure_ascii=False))
     for item in unresolved:
         lines.append('未确认事项：' + item['reason'] + ('；命令 ' + item['command_id'] if item.get('command_id') else ''))
     return {'task_id': status.get('task_id'), 'verdict': state == 'succeeded', 'state': state,

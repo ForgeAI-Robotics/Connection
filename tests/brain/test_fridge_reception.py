@@ -25,7 +25,7 @@ class FridgeDefinitionTests(unittest.TestCase):
         self.assertEqual([s.key for s in actions if s.kind == 'navigate'],
                          ['table2','relay1','relay2','relay3','table1'])
         self.assertEqual(actions[0].navigation, self.skill.navigation_points['table2'])
-        self.assertEqual(actions[0].navigation['goal_xyt'], [-3.658864, 4.024073, -2.963158])
+        self.assertEqual(actions[0].navigation['goal_xyt'], [-3.549256, 3.712579, -3.007546])
         self.assertEqual(actions[0].display_name, '导航到冰箱前')
         self.assertEqual(actions[1].navigation_step_id, actions[2].navigation_step_id)
         bodies = [PackagePolicy().request(s, 'task', 'command', lambda _: 'original-nav')['body'] for s in actions[1:3]]

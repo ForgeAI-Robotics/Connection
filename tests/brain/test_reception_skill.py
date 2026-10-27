@@ -168,7 +168,7 @@ class ReceptionDefinitionTests(unittest.TestCase):
         skill = load_skill(path=BASELINE_PATH.with_name("reception_single_can_v2.yaml"))
         nav = [s for s in skill.steps if s.kind == "navigate"]
         self.assertEqual([s.navigation["goal_xyt"] for s in nav], [
-            [-3.658864, 4.024073, -2.963158], [-2.248818, -0.541162, -1.664662],
+            [-3.549256, 3.712579, -3.007546], [-2.248818, -0.541162, -1.664662],
             [-2.423402, -6.008235, 0.119759], [-2.168660, -7.378595, 0.159763],
             [-0.773222, -7.528610, -1.318242]])
         self.assertEqual([s.navigation["leg_index"] for s in nav], [1, 2, 3, 4, 5])

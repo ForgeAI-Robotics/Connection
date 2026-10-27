@@ -1,5 +1,11 @@
 import copy
 import math
+import json
+import os
+from pathlib import Path
+import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import unittest
 from unittest.mock import Mock, patch
 
@@ -81,3 +87,51 @@ class ReceptionPreflightTests(unittest.TestCase):
             r = reception_preflight(self.config, task, client_factory=factory)
             self.assertFalse(r['required']); self.assertFalse(r['checked'])
         factory.assert_not_called()
+
+    @patch('brain.adapters.preflight.select_backend', return_value='reception_real')
+    def test_joint_preflight_authenticates_both_gets_using_private_file(self, _):
+        requests = []
+        contract = self.contract
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_): pass
+            def do_GET(self):
+                requests.append((self.command, self.path, self.headers.get('Authorization')))
+                allowed = self.headers.get('Authorization') == 'Bearer preflight-test-token'
+                body = ({'interface_online': True, 'contract_version': contract['contract_version'], 'motion_ready': False}
+                        if self.path == '/v1/status' else {'agent_navigation_contract': contract})
+                data = json.dumps(body if allowed else {'error': 'unauthorized'}).encode()
+                self.send_response(200 if allowed else 401)
+                self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+            def do_POST(self):
+                requests.append(('POST', self.path, None)); self.send_error(405)
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        def close():
+            server.shutdown(); server.server_close(); thread.join(2)
+        self.addCleanup(close)
+        self.config['reception_real'].update(dream_base_url='http://127.0.0.1:' + str(server.server_port),
+            body_control={'enabled': True, 'nav_token_env': 'PREFLIGHT_NAV_TOKEN'})
+        with tempfile.TemporaryDirectory() as folder:
+            token = Path(folder) / 'token'; token.write_text('preflight-test-token'); token.chmod(0o600)
+            with patch.dict(os.environ, {'PREFLIGHT_NAV_TOKEN_FILE': str(token), 'PREFLIGHT_NAV_TOKEN': 'wrong-env-token'}):
+                report = reception_preflight(self.config, '开始接待')
+                self.assertTrue(report['ready'], report)
+                self.assertTrue(report['checked'])
+                self.assertEqual([(m, p) for m, p, _ in requests], [('GET', '/v1/status'), ('GET', '/total_scene_graph_latest.json')])
+                self.assertNotIn('preflight-test-token', json.dumps(report))
+                token.unlink()
+                report = reception_preflight(self.config, '开始接待')
+                self.assertFalse(report['ready'])
+                self.assertEqual(len(requests), 2)  # No fallback to the wrong env credential.
+
+    @patch('brain.adapters.preflight.select_backend', return_value='reception_real')
+    def test_joint_preflight_falls_back_to_brain_token_name_without_changing_config(self, _):
+        client = Mock()
+        client.status.return_value = {'interface_online': True, 'contract_version': self.contract['contract_version']}
+        client.http.request_json.return_value = ({'agent_navigation_contract': self.contract}, 200, {})
+        self.config['reception_real']['body_control'] = {'enabled': True}
+        before = copy.deepcopy(self.config)
+        report = reception_preflight(self.config, '开始接待', client_factory=Mock(return_value=client))
+        self.assertTrue(report['ready'], report)
+        self.assertEqual(client.http.auth_token_env, 'BRAIN_CONTROL_TOKEN')
+        self.assertEqual(before, self.config)

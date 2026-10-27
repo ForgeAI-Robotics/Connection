@@ -23,6 +23,61 @@ def route(package="reception", scope=True):
 
 
 class SimulationAdviceTests(unittest.TestCase):
+    def bound_record(self):
+        return {'task_id': 'fridge', 'revision': 1, 'state': 'recovery_required',
+                'stopped_confirmed': True, 'resources_cleared': True,
+                'selection': {'sop': {'id': 'fridge', 'version': '2'},
+                              'workflow': {'sha256': 'pinned', 'definition': {
+                                  'steps': [{'step_id': 'VLA_PLACING', 'kind': 'place'}]}}},
+                'phase_specs': [{'step_id': 'LATERAL_TO_RELAY3', 'kind': 'navigate',
+                                 'display_name': '横移到中转点 3'},
+                                {'step_id': 'NAVIGATING_TO_TABLE1', 'kind': 'navigate',
+                                 'display_name': '导航到 1 号桌'}]}
+
+    def test_recovery_prompt_uses_compiled_task_not_alternative_workflow(self):
+        record = self.bound_record()
+        original = deepcopy(record)
+        def model(messages):
+            prompt = messages[0]['content']
+            context = json.loads(prompt.split('\n')[-1])
+            self.assertNotIn('VLA_PLACING', json.dumps(context))
+            self.assertNotIn('workflow', context['selection'])
+            self.assertEqual(context['selection']['workflow_sha256'], 'pinned')
+            self.assertEqual(context['bound_steps'][0]['display_name'], '横移到中转点 3')
+            self.assertEqual([s['step_id'] for s in context['recovery_planning']['remaining_steps']],
+                             ['LATERAL_TO_RELAY3', 'NAVIGATING_TO_TABLE1'])
+            return json.dumps({'action': 'continue', 'summary': '横移失败且已停止',
+                               'reason': '人工继续后重试 LATERAL_TO_RELAY3，再执行 NAVIGATING_TO_TABLE1'})
+        advice = TaskReasoner(model, {}).advise(recovery_context(record))
+        self.assertEqual(advice['source'], 'llm')
+        self.assertEqual(advice['action'], 'continue')
+        self.assertEqual(record, original)
+
+    def test_extra_place_close_and_unbound_step_prose_fall_back_without_plan_change(self):
+        record = self.bound_record()
+        original = deepcopy(record)
+        context = recovery_context(record)
+        for text in ['再按原 SOP 完成 NAVIGATING_TO_TABLE1 与放置', '到桌边后放下可乐',
+                     '再关上冰箱门', 'then place the can', '继续 VLA_PLACING', '继续 STEP_99']:
+            for field in ('summary', 'reason'):
+                with self.subTest(text=text, field=field):
+                    response = {'action': 'continue', 'summary': '横移停止未稳定', 'reason': '原命令失败'}
+                    response[field] = text
+                    advice = TaskReasoner(lambda _: json.dumps(response), {}).advise(context)
+                    self.assertEqual(advice['source'], 'rules')
+                    self.assertEqual(advice['action'], 'request_help')
+                    self.assertIn('未登记', advice['error'])
+                    self.assertNotEqual(advice[field], text)
+        self.assertEqual(record, original)
+
+    def test_original_workflow_with_place_can_still_describe_place(self):
+        record = self.bound_record()
+        record['phase_specs'].append({'step_id': 'VLA_PLACING', 'kind': 'place'})
+        result = {'action': 'continue', 'summary': '导航失败', 'reason': '导航成功后执行 VLA_PLACING 放置可乐'}
+        advice = TaskReasoner(lambda _: json.dumps(result), {}).advise(recovery_context(record))
+        self.assertEqual(advice['source'], 'llm')
+        self.assertEqual(advice['reason'], result['reason'])
+
     def test_model_and_fallback_keep_simulation_scope_without_changing_allowed_actions(self):
         for backend in ('reception_real_sim_manipulation', 'reception_ros_sim_manipulation'):
             record = {'task_id': 'mixed', 'revision': 1, 'state': 'recovery_required',

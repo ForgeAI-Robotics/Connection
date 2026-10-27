@@ -7,6 +7,53 @@ from ops.brain_view import current_alert
 
 
 class TaskTextTests(unittest.TestCase):
+    def test_new_error_names_do_not_gate_structured_evidence(self):
+        from shared.task_text import failure_text
+        metrics = {'goal_distance': .12, 'final_yaw_error': -.5,
+                   'turn_clearance': {'allowed': False, 'nearest_m': .18, 'required_m': .21}}
+        for message, code in [('never_seen_before', 'NAV_NEW_CODE'), ('新设备返回的新原因', None),
+                              ('arbitrary cause', 'VLA_NEW_CODE'), (None, 'OTHER_NEW_CODE')]:
+            for details in (metrics, {'terminal': metrics}):
+                with self.subTest(message=message, code=code, details=details):
+                    original = copy.deepcopy(details)
+                    text = failure_text(message, code, details=details)
+                    for value in ['距目标 12.0 cm', '最终朝向误差 28.6°', '最近障碍 18.0 cm', '禁止转向']:
+                        self.assertIn(value, text)
+                    self.assertIn(message or code, text)
+                    self.assertEqual(details, original)
+
+    def test_terminal_failures_show_snapshot_metrics_and_embedded_clearance(self):
+        from shared.task_text import failure_text
+        reason = ('terminal correction has a live nearby obstacle; holding stand; '
+                  'nearest_m=0.201, angle_deg=79.0, near_returns=1, required_m=0.210')
+        details = {'terminal': {'goal_distance': .1551687, 'final_yaw_error': .6915553,
+                               'turn_clearance': {'allowed': False, 'required_m': .21, 'reason': reason}}}
+        text = failure_text('arrival_clearance_wait_timeout', details=details)
+        for value in ['末端净空等待超时', '距目标 15.5 cm', '最终朝向误差 39.6°',
+                      '禁止转向', '最近障碍 20.1 cm', '要求净空 21.0 cm', reason]:
+            self.assertIn(value, text)
+        details['terminal'].update(goal_distance=.953909, final_yaw_error=1.2907092,
+                                   turn_clearance={'allowed': True, 'nearest_m': .337726, 'required_m': .21})
+        text = failure_text('lateral_stop_not_settled', details=details)
+        for value in ['横移停止未稳定', '距目标 95.4 cm', '最终朝向误差 74.0°',
+                      '采样快照', '允许转向', '最近障碍 33.8 cm']:
+            self.assertIn(value, text)
+        self.assertNotIn('已到达', text)
+
+    def test_invalid_clearance_values_are_not_invented_or_replaced(self):
+        from shared.task_text import failure_text
+        for clearance in [None, [], {}, {'nearest_m': False, 'required_m': float('nan')},
+                          {'nearest_m': -1, 'required_m': float('inf')},
+                          {'nearest_m': None, 'reason': 'nearest_m=0.201, required_m=invalid'}]:
+            with self.subTest(clearance=clearance):
+                text = failure_text('arrival_clearance_wait_timeout',
+                                    details={'terminal': {'turn_clearance': clearance}})
+                self.assertIn('末端净空等待超时', text)
+                self.assertNotIn('最近障碍', text)
+                self.assertNotIn('要求净空', text)
+                self.assertNotIn('禁止转向', text)
+        self.assertIn('横移停止未稳定', failure_text('lateral_stop_not_settled'))
+
     def test_missing_or_invalid_yaw_metrics_do_not_invent_zero_or_crash(self):
         from shared.task_text import failure_text
         for terminal in [None, 'invalid', {}, {'goal_distance': -1, 'final_yaw_error': float('nan')},

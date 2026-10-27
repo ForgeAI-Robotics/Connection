@@ -100,6 +100,8 @@ venv/core/bin/python scripts/execution_mode.py apply
 
 `reception_real.kernel_enabled=false` 仍表示真机派发许可关闭，所有任务照常进入新 Runtime。DREAM/VLA HTTP 合同与 command_id 不变，交接能力未核实时不会假装接管成功。该开关的当前值以生效配置为准；工程替换、仿真成功和真机仅导航成功都不等于真机完整接待验收。
 
+大脑统一控制权接线可通过 `reception_real.body_control` 选择，默认关闭；大脑负责授权及交接，保留原 NAV 经 relay、VLA 直接发布的数据通路。三端实际接口已完成完整 Runtime 离线串联，硬件执行与观测为替身；真实输出封禁、模式与保持能力仍待执行侧完成验证，不因离线通过自动启用。配置与共同接口见 [relay 控制权对接说明](docs/接口说明_relay控制权对接.md)。
+
 真机导航与尚未就绪的操控可使用“开始接待（导航真机＋操控模拟）”验证完整接待流程。
 开门、抓可乐及其核验仅返回本地模拟回执，页面明确标记；该模式不代表真实操控完成。操作及恢复边界见
 [大脑接待流程](docs/接口说明_大脑%20Brain.md#81-流程与请求身份)。

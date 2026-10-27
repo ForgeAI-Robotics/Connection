@@ -1,15 +1,4 @@
-"""SSH into the 4090 workstation and run the reviewed VLA runtime.
-
-`run_agent_vla_runtime.sh start` is the documented launcher. It already:
-
-1. statically checks the HTTP bridge, navigation relay, phase-aware stack,
-   pick hook and place hook;
-2. re-checks live SONIC / safety / camera / LinkerHand dependencies;
-3. starts the managed sequential navigation relay and Brain HTTP on 8091.
-
-It does not start SONIC, NX cameras, LinkerHand, or the Phase-Aware RTC.
-Those last pieces stay with the pick hook after 5556 is handed over.
-"""
+"""Run the VLA-owned launcher; relay has an independent service lifecycle."""
 
 from __future__ import annotations
 
@@ -67,13 +56,9 @@ def _remote_script(action: str) -> tuple[str, float]:
     remote_dir = shlex.quote(cfg["remote_dir"])
     runtime = "./run_agent_vla_runtime.sh"
     if action == "start":
-        # Official start already runs check + live-dependencies, then HTTP+relay.
+        # The official launcher owns checks/dependencies, including managed O6.
         remote = (
             f"cd {remote_dir} && "
-            f"echo '== 1/3 check ==' && {runtime} check && "
-            f"echo '== 2/3 live-dependencies ==' && "
-            "./run_phase_aware_action_stack.sh live-dependencies && "
-            f"echo '== 3/3 start HTTP 8091 + navigation relay ==' && "
             f"BRAIN_VLA_REAL_ACTION_ACK={shlex.quote(cfg['ack'])} {runtime} start && "
             f"echo '== status ==' && {runtime} status"
         )
@@ -164,8 +149,7 @@ def _sanitize_argv(argv: list[str]) -> str:
 def run(action: str, *, runner: Optional[Runner] = None) -> str:
     argv, timeout, env = ssh_argv(action)
     if action == "start":
-        record("按文档启动 VLA 运行时: check → live-dependencies → HTTP 8091 + 导航 relay")
-        record("不启动 SONIC / 相机 / 灵巧手，也不提前启动 Phase-Aware RTC")
+        record("调用 VLA 官方启动器，由启动器执行检查、依赖准备与 HTTP 启动；relay 独立管理")
     else:
         record(f"远程执行 VLA {action}")
     record(_sanitize_argv(argv))

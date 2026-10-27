@@ -33,9 +33,9 @@ class PanelAppTests(unittest.TestCase):
         ids = [item["id"] for group in ("brain", "environment", "support", "robot") for item in payload[group]]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(set(ids), {item.id for item in services.catalog()})
-        self.assertEqual([item["id"] for item in payload["robot"]], ["dream", "vla"])
+        self.assertEqual([item["id"] for item in payload["robot"]], ["dream", "vla", "relay"])
         self.assertTrue(all(item["controllable"] for item in payload["brain"]))
-        self.assertTrue(all(not item["controllable"] for item in payload["robot"]))
+        self.assertTrue(all(not item["controllable"] for item in payload["robot"] if item['id'] != 'relay'))
         robot = {item["id"]: item for item in payload["robot"]}
         self.assertEqual(robot["vla"]["remote_actions"], ["start", "stop"])
         self.assertEqual(

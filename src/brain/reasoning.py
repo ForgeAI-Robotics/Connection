@@ -1,6 +1,7 @@
 """Shared task selection and recovery advice. This layer cannot dispatch or verify actions."""
 from copy import deepcopy
 import json
+import re
 
 from brain.kernel.planner import extract_json
 from brain.packages.registry import SOPS, match_name, reception_catalog
@@ -9,6 +10,24 @@ from shared.task_text import manipulation_is_simulated, scope_manipulation_advic
 
 
 RECOVERY_STATES = {"waiting_human", "recovery_required", "paused"}
+
+
+def validate_advice_scope(context, advice):
+    """Reject explicit out-of-plan step references and common extra manipulation actions."""
+    steps = context.get('bound_steps')
+    if not isinstance(steps, list):
+        return  # Older callers without a frozen step snapshot keep their existing contract.
+    ids = {step['step_id'] for step in steps}
+    kinds = {step.get('kind') for step in steps}
+    text = advice['summary'] + '\n' + advice['reason']
+    references = set(re.findall(r'\b(?:VLA_|NAVIGATING_|LATERAL_|VERIFYING_|STEP_)[A-Z0-9_]+\b', text))
+    if references - ids:
+        raise ValueError('LLM 建议引用了当前任务未登记的步骤')
+    for kind, pattern in (
+            ('place', r'放置|放下|摆放|\bplace\b'),
+            ('close_fridge', r'关门|关(?:闭|上)?冰箱|\bclose_fridge\b')):
+        if kind not in kinds and re.search(pattern, text, re.IGNORECASE):
+            raise ValueError('LLM 建议提及当前任务未登记的操控动作：' + kind)
 
 
 def selection(package, source, reason, sop=None):
@@ -96,6 +115,10 @@ class TaskReasoner:
             "你不能自行改 SOP、跳过步骤、重抓、重放、解除保护或把失败写成成功。"
             "人工点击继续会核对原命令，已停止且确认未完成时用新命令尝试原环节，前置检查仍保留。结果不明时只建议查询原命令；不存在原命令时不得建议查询。"
             "只能从 allowed_actions 选择一个建议。\n"
+            "bound_steps 是本任务已绑定的全部步骤；recovery_planning.remaining_steps 是当前剩余步骤，"
+            "两者是描述流程的唯一依据，不凭任务名称或其它 SOP 补步骤。"
+            "summary/reason 也必须遵守：只描述已登记动作，后续只引用 remaining_steps；"
+            "不讨论未登记的动作（包括否定式提醒）。到最后一个登记步骤即结束，不自行追加放置、关门。\n"
             "observe_scene 表示只读刷新执行端状态和场景，再根据新证据重新分析；不是拍照或重新识别。"
             "现场证据不足时优先补充信息，不把静态场景声明当成实时物体证据。"
             "若 observation_fresh=true 且同一失败没有新变化，不要重复建议相同的 observe_scene；"
@@ -128,6 +151,7 @@ class TaskReasoner:
                            for key in ("action", "summary", "reason"))):
                 raise ValueError("LLM 建议超出允许范围或格式无效")
             advice = {key: result[key][:2000] for key in ('action', 'summary', 'reason')}
+            validate_advice_scope(context, advice)
             if result['action'] == 'revise_plan':
                 from brain.recovery import validate_proposal_shape
                 advice['plan'] = validate_proposal_shape(context['recovery_planning'], result['plan'])
@@ -153,11 +177,20 @@ def recovery_context(record):
             attempt = history[-1]
             attempts.append({key: deepcopy(attempt.get(key)) for key in
                              ("step_id", "attempt_id", "command_id", "request", "verdict", "progress")})
+    selected = record.get('selection') or {}
+    sop = selected.get('sop') or {}
+    # The saved definition includes alternative workflows. It is not the task's compiled plan.
+    selected_identity = {key: deepcopy(selected.get(key)) for key in ('package', 'source', 'workflow_variant')}
+    selected_identity['sop'] = {key: sop.get(key) for key in ('id', 'version')}
+    selected_identity['workflow_sha256'] = (selected.get('workflow') or {}).get('sha256')
     return {"task_id": record["task_id"], "revision": record["revision"],
             "task": record.get("task_desc"), "package": record.get("package"),
             "execution_backend": record.get("execution_backend"),
             "manipulation_simulated": manipulation_is_simulated(record),
-            "selection": deepcopy(record.get("selection")), "state": record.get("state"),
+            "selection": selected_identity, "state": record.get("state"),
+            "bound_steps": [{key: deepcopy(step.get(key)) for key in
+                             ('step_id', 'kind', 'display_name', 'key', 'object_id', 'target_area')}
+                            for step in record.get('phase_specs') or []],
             "phase": record.get("phase"), "blocked_reason": record.get("blocked_reason"),
             "open_command_id": record.get("open_command_id"),
             "command_unknown": record.get("command_unknown"),
