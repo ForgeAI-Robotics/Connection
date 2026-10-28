@@ -358,7 +358,7 @@ class BrainEndToEndTests(unittest.TestCase):
         nav_id = record['steps']['BODY_NAV_TABLE1']['attempts'][0]['command_id']
         self.assertEqual(place['request']['body']['navigation_proof']['dream_command_id'], nav_id)
 
-    def test_real_generic_route_uses_same_wire_offline_and_no_slaver(self):
+    def test_real_generic_route_without_gateway_cannot_use_old_direct_wire(self):
         self.use_generic([{'skill': 'pick', 'object': 'cola_can_1'},
                           {'skill': 'place', 'object': 'cola_can_1', 'target': 'table_1'}])
         self.profile['routes']['execution'] = dict(mode='real', backend='body_real', available=True, url='')
@@ -366,8 +366,9 @@ class BrainEndToEndTests(unittest.TestCase):
         self.config['reception_real'].update(kernel_enabled=True, dream_base_url=endpoints['dream'], vla_base_url=endpoints['vla'])
         # These are localhost fake physics endpoints, never real robot addresses.
         service, status = self.run_task('real-wire-offline', '把可乐搬到一号桌')
-        self.assertEqual(status['state'], 'succeeded', status)
-        self.assertEqual(service.runtime.snapshot()['execution_backend'], 'body_real')
+        self.assertEqual(status['state'], 'recovery_required', status)
+        self.assertIn('网关控制', status['blocked_reason'])
+        self.assertEqual(FakeEpisode.segments, [])
         self.assertEqual(service.transports, [])
 
     def test_generic_failed_navigation_retries_original_step_only_after_continue(self):

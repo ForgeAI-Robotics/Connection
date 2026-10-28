@@ -2,7 +2,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 ROOT = Path(__file__).resolve().parents[2]
 from shared.execution_profile import resolve
@@ -13,12 +13,12 @@ from contracts.tasks import Rejected
 class ProfileRoutingTests(unittest.TestCase):
     def test_reception_profile_overrides_old_environment_but_not_motion_permission(self):
         profile = resolve({'mode': 'real'}, {})
-        config = {'reception_real': {'kernel_enabled': False}}
+        config = {'reception_real': {'kernel_enabled': False, 'body_control': {'enabled': True}}}
         with patch('shared.execution_profile.applied_profile', return_value=profile), \
              patch.dict('os.environ', {'RECEPTION_MODE': 'mock'}), \
              patch('brain.adapters.ports.BodyAdapter.from_config') as body:
             self.assertEqual(select_backend(config, 'reception'), 'reception_real')
-            port = build_port(config, 'reception_real')
+            port = build_port(config, 'reception_real', body_control=Mock())
             self.assertIsInstance(port, MotionGate)
             self.assertFalse(port.submit('nav-test', {})['accepted'])
             body.return_value.submit.assert_not_called()
@@ -32,7 +32,8 @@ class ProfileRoutingTests(unittest.TestCase):
 
     def test_generic_real_uses_shared_body_and_motion_gate(self):
         with patch('brain.adapters.ports.BodyAdapter.from_config') as body:
-            port = build_port({'reception_real': {'kernel_enabled': False}}, 'body_real')
+            port = build_port({'reception_real': {'kernel_enabled': False, 'body_control': {'enabled': True}}},
+                              'body_real', body_control=Mock())
             self.assertFalse(port.submit('test', {})['accepted'])
             body.return_value.submit.assert_not_called()
 

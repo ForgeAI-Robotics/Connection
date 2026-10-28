@@ -397,15 +397,14 @@ def target_identity(config, backend):
     if backend == 'camera' and profile:
         return {'backend': 'camera', 'observation': profile['routes']['observation']}
     if backend == "reception_real_sim_manipulation":
-        real = config.get("reception_real") or {}
-        return {"dream": real.get("dream_base_url"), "vla": "local:simulated-manipulation/v1"}
+        return {**target_identity(config, 'reception_real'), "vla": "local:simulated-manipulation/v1"}
     if backend == "reception_real":
         real = config.get("reception_real") or {}
         identity = {"dream": real.get("dream_base_url"), "vla": real.get("vla_base_url")}
         control = real.get('body_control') or {}
         if control.get('enabled') is True:
             identity['body_control'] = {key: control.get(key) for key in
-                                       ('robot_serial', 'action_endpoint', 'relay_base_url')}
+                                       ('robot_serial', 'control_resource', 'action_endpoint', 'gateway_base_url')}
         return identity
     if backend == "desk" or backend.startswith("slaver:"):
         from execution.robot_api import client
@@ -418,6 +417,8 @@ def target_identity(config, backend):
 def build_port(config, backend, *, agent=None, body_control=None):
     from brain.config_flags import kernel_enabled
     if backend in {'body_real', 'reception_real'}:
+        if ((config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is not True or body_control is None:
+            raise Rejected('真机执行必须启用大脑网关控制；不回退旧 relay 或直接派发路径')
         port = BodyAdapter.from_config(config)
         if ((config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is True:
             if body_control is None:
@@ -445,7 +446,9 @@ def build_port(config, backend, *, agent=None, body_control=None):
         return HybridReceptionAdapter.from_config(selected)
     if backend == "reception_real_sim_manipulation":
         from brain.adapters.simulated_manipulation import HybridReceptionAdapter
-        return MotionGate(HybridReceptionAdapter.from_config(config), kernel_enabled(config))
+        if ((config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is not True or body_control is None:
+            raise Rejected('混合模式的真机导航必须启用大脑网关控制')
+        return MotionGate(HybridReceptionAdapter.from_config(config, body_control=body_control), kernel_enabled(config))
     if backend == 'simple_o7':
         from brain.adapters.simple_o7 import SimpleO7Adapter
         return SimpleO7Adapter.from_config()

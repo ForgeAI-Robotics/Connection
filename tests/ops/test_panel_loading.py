@@ -20,7 +20,7 @@ class PanelLoadingTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         text = response.get_data(as_text=True)
         self.assertIn('id="initial-services"', text)
-        for name in ('master', 'deploy', 'feishu', 'voice', 'relay'):
+        for name in ('master', 'deploy', 'feishu', 'voice', 'gateway'):
             self.assertIn(f'"id": "{name}"', text)
         self.assertIn('"state": "checking"', text)
         self.assertIn('"id": "simple_o7"', text)
@@ -36,7 +36,7 @@ class PanelLoadingTests(unittest.TestCase):
             probe.reset_mock()
             self.client.get('/api/status?view=panel')
             self.assertEqual({call.args[0].id for call in probe.call_args_list},
-                             {'master', 'deploy', 'feishu', 'voice', 'simple_o7', 'dream', 'vla', 'relay'})
+                             {'master', 'deploy', 'feishu', 'voice', 'simple_o7', 'dream', 'vla', 'gateway'})
             legacy = self.client.get('/api/status?layer=environment').get_json()
             self.assertIn('desk', [s['id'] for s in legacy['environment']])
 

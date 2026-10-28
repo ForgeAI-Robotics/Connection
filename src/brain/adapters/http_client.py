@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import http.client
 import socket
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,13 +20,14 @@ class HttpContractError(RuntimeError):
 
 
 class HttpClient:
-    def __init__(self, base_url, *, timeout_sec=10.0, contract_version=None):
+    def __init__(self, base_url, *, timeout_sec=10.0, contract_version=None, ca_file=None):
         self.base_url = str(base_url or "").strip().rstrip("/")
         if not self.base_url.startswith(("http://", "https://")):
             raise ValueError(f"无效HTTP服务地址: {base_url!r}")
         self.timeout_sec = float(timeout_sec)
         self.contract_version = str(contract_version or "").strip()
         self.auth_token_env = None  # Optional joint-control service credential, never the token itself.
+        self.ssl_context = ssl.create_default_context(cafile=ca_file) if ca_file else None
 
     def url(self, path):
         value = str(path)
@@ -55,7 +57,12 @@ class HttpClient:
             class NoRedirect(urllib.request.HTTPRedirectHandler):
                 def redirect_request(self, req, fp, code, msg, newheaders, newurl):
                     return None
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect()).open
+            handlers = [urllib.request.ProxyHandler({}), NoRedirect()]
+            if self.ssl_context is not None:
+                handlers.append(urllib.request.HTTPSHandler(context=self.ssl_context))
+            opener = urllib.request.build_opener(*handlers).open
+        elif self.ssl_context is not None:
+            opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=self.ssl_context)).open
         if self.contract_version:
             headers["X-Contract-Version"] = self.contract_version
         if payload is not None:

@@ -74,6 +74,7 @@ PHASES = {
     'VERIFYING_PLACE': '确认饮料已放好',
 }
 REASONS = {
+    'STATIC_ACTIVATION_UNCONFIRMED': '导航准备未通过当前状态检查，目标尚未下发',
     'RECOVERY_COMMAND_REQUIRED': '目标与导航记录不一致，导航要求关联恢复命令；原命令结果仍需核对',
     'NAVIGATION_INPUT_INTERRUPTED': '导航定位输入中断或过期',
     'NAVIGATION_LOCALIZATION_LOST': '导航定位校验未通过',
@@ -103,7 +104,7 @@ REASONS = {
     'terminal_heading_drift': '末段行进朝向偏离',
     'fail': '执行未通过核验',
     'timeout': '未能在期限内确认执行结果',
-    'real_execution_disabled': '真机动作许可未开启',
+    'real_execution_disabled': '真机执行未开启',
     'navigation_gate': '导航执行条件尚未满足',
     'command_unknown': '原动作指令的执行状态尚未确认',
     'vla_effect_confirmation': '操控等待暂停及真实效果核验；完成确认后继续核验原命令',
@@ -315,7 +316,7 @@ def format_plan(steps):
         if step.get('target_area'):
             detail.append('区域 ' + str(step['target_area']))
         if step.get('requires_gate'):
-            detail.append('需真机许可')
+            detail.append('需开启真机执行')
         if step.get('optional'):
             detail.append('可跳过')
         label = f'{index}.{name}'

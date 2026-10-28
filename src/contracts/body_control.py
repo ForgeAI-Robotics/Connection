@@ -5,9 +5,14 @@ import re
 from datetime import datetime, timezone
 
 VERSION = 'fq/vla-handoff/v1'
-REVISION = '20261023-brain-owned-v1'
+REVISION = '20261027-control-session-v1-draft1'
+PERMIT_MODE = 'control_session'
 IDENTITY = ('contract_version', 'coordination_revision', 'robot_serial', 'action_endpoint',
-            'task_id', 'command_id', 'lease_id')
+            'control_resource', 'control_session_id', 'lease_id')
+GATEWAY_BINDING = ('robot_serial', 'control_resource', 'control_session_id',
+                   'control_authorization', 'source_id', 'action_endpoint',
+                   'publisher_instance_id', 'input_session_id', 'gateway_instance_id',
+                   'controller_instance_id')
 
 
 class ControlError(RuntimeError):
@@ -59,7 +64,7 @@ def nav_prepare_refused(wire, post):
     The original authenticated HTTP reply is tied to this exact first POST.
     REQUEST_CONFLICT, generic errors and query-only 404s prove no such fact.
     """
-    if not post or wire['service'] != 'nav' or wire['payload'].get('action') != 'prepare':
+    if not post or wire['service'] != 'nav' or not wire['path'].endswith('/handoff/prepare'):
         return False
     if post.get('method') != 'POST' or post.get('path') != wire['path']:
         return False

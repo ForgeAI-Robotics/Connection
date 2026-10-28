@@ -73,52 +73,17 @@ class HoldingContractTests(unittest.TestCase):
             holding_expiry(evidence)
 
 
-class HoldingRuntimeTests(unittest.TestCase):
-    setUp = body_tests.RuntimeIntegrationTests.setUp
-    finish = body_tests.RuntimeIntegrationTests.finish
+class HoldingRuntimeTests(body_tests.Fixture, unittest.TestCase):
+    def test_carrying_task_is_blocked_until_o6_gateway_support_exists(self):
+        request=body_tests.nav_request();request['required_holding']='cola_can_1'
+        with self.assertRaises(ControlError):self.authority.register(request)
+        self.assertFalse(self.wire.calls)
 
-    def grasp(self):
-        self.service.publish('开始接待', 'joint-reception', options={'reflect': False})
-        self.finish()
-        self.service.control('continue', task_id='joint-reception')
-        self.finish()
-
-    def test_expired_current_proof_blocks_delivery_without_replaying_grasp(self):
-        self.grasp()
-        self.vla.holding_proof['holding_evidence']['invalid_reason'] = 'HOLDING_EVIDENCE_EXPIRED'
-        self.vla.holding_proof['holding_evidence']['valid'] = False
-        self.service.control('continue', task_id='joint-reception')
-        self.assertEqual(self.service.runtime.state, 'recovery_required')
-        self.assertEqual(len(self.nav.commands), 1)
-        self.assertEqual(len(self.vla.posts), 2)
-        self.assertFalse(self.wire.relay['bound'])
-        self.assertEqual(self.vla.holding, 'cola_can_1')  # Historical inventory remains.
-        self.assertIn('HOLDING_EVIDENCE_EXPIRED', self.service.runtime.record['handoff_observation']['error'])
-
-    def test_expiration_during_prepare_leaves_original_authorization_unresolved(self):
-        self.grasp()
-        original = self.authority.prepare_navigation
-        def expire_after_prepare(request):
-            ref = original(request)
-            self.vla.holding_proof['holding_evidence']['valid_until'] = '2000-01-01T00:00:00+00:00'
-            return ref
-        with patch.object(self.authority, 'prepare_navigation', side_effect=expire_after_prepare):
-            self.service.control('continue', task_id='joint-reception')
-        self.assertEqual(len(self.nav.commands), 1)
-        self.assertEqual(self.service.runtime.state, 'recovery_required')
-        state = self.authority.store.read()
-        self.assertIsNotNone(state['current'])
-        row = state['leases'][state['current']]
-        self.assertNotIn('business_submission', row)
-        self.assertTrue(self.service.runtime.record['command_unknown'])
-        self.assertIn('holding_status', self.service.runtime.public_status()['failure_detail']['downstream']['error']['details'])
-
-    def test_confirmed_grasp_from_other_task_is_not_accepted_for_current_delivery(self):
-        self.grasp()
-        status = self.authority.driver.status('vla')
-        with self.assertRaises(ControlError):
-            self.authority.check_holding(status, 'other-task', 'cola_can_1')
-
-
-if __name__ == '__main__':
-    unittest.main()
+    def test_old_hand_task_pending_never_grants(self):
+        original=self.wire.status
+        def missing(observation):
+            status=original(observation);status['native']['old_hand_task_pending']=True
+            return status
+        self.wire.status=missing
+        with self.assertRaises(ControlError):self.prepare()
+        self.assertFalse(self.posts('grant'))

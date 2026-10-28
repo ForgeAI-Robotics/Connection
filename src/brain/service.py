@@ -139,7 +139,7 @@ class BrainService:
         if backend in {'body_real', 'reception_real'}:
             if ((self.config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is True:
                 unsupported = [s.kind for s in result.steps if s.kind not in
-                               {'local', 'verify', 'navigate', 'open_fridge', 'grasp_cola'}]
+                               {'local', 'verify', 'navigate'}]
                 if unsupported:
                     raise Rejected('联合控制尚未接入这些动作，整份计划未派发: ' + ', '.join(unsupported))
             from brain.skills.native_vla import require_operations

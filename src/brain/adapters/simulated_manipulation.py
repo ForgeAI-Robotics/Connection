@@ -2,7 +2,8 @@
 
 Runtime remains the only task ledger. Cached terminal receipts can be restored
 from it; a missing receipt after restart is UNKNOWN, never reconstructed success.
-No VLA HTTP connection or physical controller transfer exists in this mode.
+No VLA HTTP connection exists. Real navigation uses the shared body authority;
+virtual holding never supplies physical O6 evidence.
 """
 from copy import deepcopy
 from datetime import datetime
@@ -103,10 +104,11 @@ class SimulatedManipulationClient:
                     raw['result']['clear_of_fridge'] = True
             return deepcopy(raw)
 
-    def control_status(self):
+    def control_status(self, task_id=None):
         """Virtual state derived only from cached receipts, never physical ownership."""
         with self._lock:
-            records = [self.task(cid) for cid in self._commands]
+            records = [self.task(cid) for cid, record in self._commands.items()
+                       if task_id is None or record['task_id'] == task_id]
             active = next((r['command_id'] for r in records if r['state'] == 'running'), None)
             completed = sorted((r for r in records if r['state'] == 'succeeded'), key=lambda r:r['completed_at'])
             holding = completed[-1]['result'].get('holding') if completed else None
@@ -148,7 +150,29 @@ class SimulatedManipulationClient:
 
 
 class HybridReceptionAdapter(BodyAdapter):
+    def __init__(self, dream, vla, *, navigation=None):
+        super().__init__(dream, vla)
+        self.navigation = navigation
+
+    @property
+    def gate_open(self):
+        return self.navigation.gate_open if self.navigation is not None else super().gate_open
+
+    @property
+    def requires_authoritative_handoff(self):
+        return self.navigation is not None
+
     def submit(self, command_id, request):
+        if request.get('skill') == 'navigate' and self.navigation is not None:
+            local = self.vla.control_status(task_id=request['body']['task_id'])
+            if local.get('active_command_id') or (request.get('required_holding')
+                    and local.get('holding') != request['required_holding']):
+                return self._refused(command_id, request, HttpContractError('本任务模拟操控／虚拟持物未核清',
+                    status_code=409, payload={'success':False,'error':{'code':'SAFETY_NOT_READY',
+                        'message':'本任务模拟操控／虚拟持物未核清'}}))
+            # Preserve the exact Runtime request. BodyControl derives the simulated
+            # holding scope from the authoritative backend, never a caller flag.
+            return self.navigation.submit(command_id, request)
         if request.get('skill') == 'navigate' and request.get('requires_vla_clearance'):
             status = self.vla.control_status()
             if status.get('active_command_id') or (request.get('required_holding')
@@ -174,6 +198,8 @@ class HybridReceptionAdapter(BodyAdapter):
                 'error':str(error),'raw':error.payload,'submission_rejected':refusal}
 
     def query(self, command_id, request):
+        if request.get('skill') == 'navigate' and self.navigation is not None:
+            return self.navigation.query(command_id, request)
         if request.get('skill') not in NATIVE_OPERATIONS:
             return super().query(command_id, request)
         try:
@@ -183,6 +209,8 @@ class HybridReceptionAdapter(BodyAdapter):
         return interpret_observation(command_id, raw, request, allow_simulated=True)
 
     def wait(self, command_id, request):
+        if request.get('skill') == 'navigate' and self.navigation is not None:
+            return self.navigation.wait(command_id, request)
         if request.get('skill') not in NATIVE_OPERATIONS:
             return super().wait(command_id, request)
         try:
@@ -193,13 +221,22 @@ class HybridReceptionAdapter(BodyAdapter):
         return interpret_observation(command_id, raw, request, allow_simulated=True)
 
     @classmethod
-    def from_config(cls, config):
+    def from_config(cls, config, *, body_control=None):
         from brain.adapters.dream_client import DreamClient
         real = config.get("reception_real") or {}
         dream = DreamClient(real.get("dream_base_url"),
                             contract_version=real.get("contract_version") or CONTRACT_VERSION,
                             request_timeout_sec=float(real.get("request_timeout_sec", 10)))
-        return cls(dream, SimulatedManipulationClient(dream))
+        navigation = None
+        if body_control is not None:
+            from brain.adapters.body_control import ControlledBodyAdapter
+            navigation = ControlledBodyAdapter(dream, None, body_control)
+        return cls(dream, SimulatedManipulationClient(dream), navigation=navigation)
+
+    def cancel(self, command_id, request):
+        if request.get('skill') == 'navigate' and self.navigation is not None:
+            return self.navigation.cancel(command_id, request)
+        return super().cancel(command_id, request)
 
     def restore_receipts(self, record):
         self.vla.restore_receipts(record)
@@ -222,12 +259,16 @@ class HybridReceptionAdapter(BodyAdapter):
         except HttpContractError as exc:
             answer.update(reason="control_status_unavailable", error=str(exc))
             return answer
-        idle = (nav.get("navigation_transport_ready") is True
+        ready_key = 'interface_online' if self.navigation is not None else 'navigation_transport_ready'
+        idle = (nav.get(ready_key) is True
                 and "active_command_id" in nav and nav["active_command_id"] in (None, "")
                 and "active_command_state" in nav and nav["active_command_state"] is None)
         if request.get('required_holding'):
-            local = self.vla.control_status()
+            local = self.vla.control_status(task_id=request['body']['task_id'])
             idle = idle and not local.get('active_command_id') and local.get('holding') == request['required_holding']
+        if self.navigation is not None:
+            # A simulated manipulation receipt cannot clear an unresolved physical lease.
+            idle = idle and not self.navigation.authority.recovery_status()['blocked']
         answer.update(available=True, confirmed=idle, navigation_status=nav,
                       reason="simulated_manipulation_boundary" if idle else "transport_not_ready")
         return answer

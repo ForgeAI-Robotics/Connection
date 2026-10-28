@@ -56,7 +56,7 @@ class VlaRemoteTests(unittest.TestCase):
         text = vla_remote.run("start", runner=runner)
         self.assertIn("AGENT_VLA_RUNTIME_STARTED", text)
         self.assertIn("AGENT_VLA_RUNTIME_STARTED", vla_remote.history())
-        self.assertIn("relay 独立管理", vla_remote.history())
+        self.assertIn("NX 网关独立管理", vla_remote.history())
         files = list(Path(self.logdir.name).glob("*/vla/monitor.log"))
         self.assertEqual(1, len(files))
         self.assertIn("AGENT_VLA_RUNTIME_STARTED", files[0].read_text(encoding="utf-8"))

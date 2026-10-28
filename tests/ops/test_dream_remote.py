@@ -28,7 +28,7 @@ class DreamRemoteTests(unittest.TestCase):
         self.assertEqual(argv[-2], self.nav_ssh)
         remote = argv[-1]
         self.assertIn("tmux new-session -d -s g1_panel_oneclick", remote)
-        self.assertIn("g1_three_party_oneclick.sh start", remote)
+        self.assertIn("g1_brain_navigation_only_oneclick.sh start", remote)
         self.assertIn("pipe-pane", remote)
         self.assertIn(dream_remote.REMOTE_LOG, remote)
         self.assertNotIn("g1_navigation_only_oneclick.sh", remote)
@@ -36,7 +36,7 @@ class DreamRemoteTests(unittest.TestCase):
 
     def test_resume_reuses_the_same_tmux_host(self):
         remote = dream_remote.ssh_argv("resume")[0][-1]
-        self.assertIn("g1_three_party_oneclick.sh resume", remote)
+        self.assertIn("g1_brain_navigation_only_oneclick.sh start", remote)
         self.assertIn("tmux new-session -d -s g1_panel_oneclick", remote)
 
     def test_ready_is_sent_with_send_keys_not_a_held_pipe(self):
@@ -59,15 +59,13 @@ class DreamRemoteTests(unittest.TestCase):
     def test_preflight_does_not_start(self):
         argv, _timeout, _env = dream_remote.ssh_argv("preflight")
         remote = argv[-1]
-        self.assertIn("g1_three_party_oneclick.sh preflight", remote)
-        self.assertNotIn("g1_three_party_oneclick.sh check-remote", remote)
-        self.assertNotIn("g1_three_party_oneclick.sh start", remote)
+        self.assertIn("g1_brain_navigation_only_oneclick.sh preflight", remote)
+        self.assertNotIn("g1_brain_navigation_only_oneclick.sh check-remote", remote)
+        self.assertNotIn("g1_brain_navigation_only_oneclick.sh start", remote)
 
-    def test_check_remote_is_a_separate_step(self):
-        argv, _timeout, _env = dream_remote.ssh_argv("check-remote")
-        remote = argv[-1]
-        self.assertIn("g1_three_party_oneclick.sh check-remote", remote)
-        self.assertNotIn("g1_three_party_oneclick.sh start", remote)
+    def test_old_combined_startup_check_is_not_supported(self):
+        with self.assertRaises(ValueError): dream_remote.ssh_argv('check-remote')
+        self.assertNotIn('g1_three_party_oneclick.sh', dream_remote.ssh_argv('start')[0][-1])
 
     def test_stand_enter_sends_one_enter_to_the_adapter_window(self):
         argv, _timeout, _env = dream_remote.ssh_argv("stand-enter")
@@ -98,8 +96,8 @@ class DreamRemoteTests(unittest.TestCase):
     def test_stop_preserves_sonic_by_using_official_stop(self):
         argv, _timeout, _env = dream_remote.ssh_argv("stop")
         remote = argv[-1]
-        self.assertIn("g1_three_party_oneclick.sh stop", remote)
-        self.assertNotIn("g1_three_party_oneclick.sh start", remote)
+        self.assertIn("g1_brain_navigation_only_oneclick.sh stop", remote)
+        self.assertNotIn("g1_brain_navigation_only_oneclick.sh start", remote)
 
     def test_successful_start_with_runner_records_follow_up(self):
         def runner(_argv, _timeout, env=None):

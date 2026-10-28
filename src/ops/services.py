@@ -266,7 +266,7 @@ def feishu_ready_from_text(text: str) -> bool:
 
 def catalog() -> list[Service]:
     _load_dotenv()
-    from ops import simple_remote, relay_service
+    from ops import simple_remote, gateway_service
     from shared.networks import lan
 
     site = lan()
@@ -417,18 +417,18 @@ def catalog() -> list[Service]:
             confirm_start=True,
             confirm_start_message=(
                 f"将按导航组一键脚本在 {site.ip('nav')} 启动："
-                "g1_three_party_oneclick.sh。"
-                "会准备 NX SONIC、DREAM 8001/9882，以及操控机上的 VLA HTTP/relay。"
+                "g1_brain_navigation_only_oneclick.sh。"
+                "启动正式 NAV 网关链路和 DREAM 8001/9882；依导航脚本复用或初始化 SONIC。"
                 "面板只代填 READY，不会代按站立 Enter，也不会点 9882。"
                 f"之后仍需在 {review} 点初始位置/朝向并 Approve。"
                 "确认现场已支撑、肩带连接、急停人员就位？"
             ),
             confirm_stop=True,
             confirm_stop_message=(
-                "停止只关 DREAM 与 VLA HTTP/relay，保留 NX SONIC、相机和灵巧手。"
+                "停止只关 NAV 工作流，保留独立网关及 SONIC；任务退出须先核清。"
                 "确定继续？"
             ),
-            note="一键脚本拉 SONIC+导航+VLA HTTP；9882 需人工 Approve",
+            note="NAV 正式网关入口；不启动旧 relay 或 VLA；9882 需人工 Approve",
             health=_health_remote("dream", dream),
         ),
         Service(
@@ -442,25 +442,20 @@ def catalog() -> list[Service]:
             confirm_start=True,
             confirm_start_message=(
                 "将按操控工程的 run_agent_vla_runtime.sh 启动 VLA 运行时，"
-                "执行其检查与依赖准备。relay 由独立卡片管理。确认现场急停可用？"
+                "执行其检查与依赖准备。身体转发由 NX 独立网关管理。确认现场急停可用？"
             ),
             confirm_stop=True,
             confirm_stop_message=(
                 "将执行操控工程的 VLA 停止流程，包括其受管 O6 接收器；"
-                "relay 独立运行。若任务正在执行，远端会拒绝停止。确定继续？"
+                "NX 网关独立运行。若任务正在执行，远端会拒绝停止。确定继续？"
             ),
-            note="VLA 运行时 · relay 独立管理",
+            note="VLA 运行时 · 网关业务接入尚未启用",
             health=_health_remote("vla", vla),
         ),
         Service(
-            id="relay", name="导航 relay", layer="robot", controllable=True,
-            window="relay", log_service="relay",
-            match=str(relay_service.project_root() / 'g1_navigation_vla_bridge/sequential_navigation_action_relay.py'),
-            confirm_stop=True,
-            confirm_stop_message="将停止独立 relay 管理服务；仅在原授权结束、转发关闭且端口释放后允许。确定继续？",
-            action_confirms=(("restart", "将重启独立 relay 管理服务；原授权或通道未核清时会拒绝。确定继续？"),),
-            note="常驻管理 · 转发由大脑授权 · 在线不代表真机就绪",
-            health=relay_service.health,
+            id="gateway", name="机器人统一网关", layer="robot", controllable=False,
+            log_service="gateway", note="由大脑授权 · 连接正常不代表机器人已就绪",
+            health=gateway_service.health,
         ),
     ]
 

@@ -1,24 +1,7 @@
-"""SSH into the DREAM workstation and run the reviewed navigation one-click.
+"""Use NAV's delivered gateway one-click; no workstation relay/VLA launcher.
 
-现场执行口径：
-
-    cd /home/fq/BJHYZJ_FQ/DREAM
-    bash tools/g1_three_party_oneclick.sh start
-
-该脚本会：
-
-1. 静态 preflight（不发真机动作）；
-2. 要求交互确认后输入 ``READY``；
-3. 准备或复用 NX SONIC、相机、灵巧手，并拉起 4090 VLA HTTP/relay；
-4. 进入 DREAM 两次 Enter 站立、解肩带确认、9882 点初始位/朝向并 Approve。
-
-面板只自动完成 1–2，并在确认后提交官方 ``start``。站立 Enter 要人点「站立 Enter」按钮，
-一次一个；9882 的 Approve 面板永远不代点。
-
-脚本跑在导航机自己的 tmux 会话里，输出用 ``pipe-pane`` 落到导航机文件，面板只是 ``tail -F``。
-这样面板重启或 SSH 断开都不会带走编排，也不会像 2026-09-17 那样把导航机的报错吞掉：
-工作流等两次站立 Enter 只给 600 秒，超时会打出
-``POSE ready file was not created; navigation remains locked.`` 然后退出。
+Physical startup and standing still require the existing operator confirmations.
+The independent NX gateway is never started/stopped by this module.
 """
 
 from __future__ import annotations
@@ -39,8 +22,8 @@ from typing import Callable, Optional
 from ops.services import _load_dotenv
 
 
-DEFAULT_REMOTE_DIR = "/home/fq/BJHYZJ_FQ/DREAM"
-ONECLICK = "tools/g1_three_party_oneclick.sh"
+DEFAULT_REMOTE_DIR = "/home/dev/g1_navigation_migration_20260930/dream"
+ONECLICK = "tools/g1_brain_navigation_only_oneclick.sh"
 ASKPASS = Path(__file__).resolve().parent / "ssh_askpass.sh"
 ALLOWED_ACTIONS = {
     "start",
@@ -48,7 +31,6 @@ ALLOWED_ACTIONS = {
     "stop",
     "status",
     "preflight",
-    "check-remote",
     "stand-enter",
 }
 WORKFLOW_SESSION = "g1_fixed_map_relocalize_navigation"
@@ -66,11 +48,6 @@ GATE_HINT = (
 )
 GATE_PATTERNS = ("First Enter -> wait for stage 1 stable", "Use the opened adapter window")
 REVIEW_PORT = 9882
-CHECK_REMOTE_ADVISORY = (
-    "check-remote 失败不拦启动：它会 SSH Administrator@大脑机（按旧 Windows 大脑写的），"
-    "现在大脑是 gpu3080 Linux，这一项必然不通。"
-    "官方 start 走 runtime-sync，本身跳过这台机器，并自带严格检查。"
-)
 def follow_up(review: str) -> str:
     return (
         "脚本已收到 READY。现场还要完成："
@@ -128,6 +105,8 @@ def record(line: str) -> None:
 
 
 def _remote_script(action: str) -> tuple[str, float]:
+    if action == "resume":
+        action = "start"  # The delivered gateway launcher resumes its own startup safely.
     cfg = settings()
     remote_dir = shlex.quote(cfg["remote_dir"])
     nav_ip = cfg["ssh_target"].split("@")[-1]
@@ -139,11 +118,6 @@ def _remote_script(action: str) -> tuple[str, float]:
             f"echo '导航机找不到 tmux。{ONECLICK} 进入 8001/9882 工作流必须有 tmux。'; "
             f"echo '请在 {nav_ip} 安装: sudo apt install tmux'; exit 2; }}; "
             f"echo '== preflight ==' && {script} preflight",
-            90.0,
-        )
-    if action == "check-remote":
-        return (
-            f"cd {remote_dir} && echo '== check-remote ==' && {script} check-remote",
             90.0,
         )
     if action == "stand-enter":
@@ -520,17 +494,13 @@ def _run_remote(
 def _launch(action: str, *, runner: Optional[Runner] = None) -> str:
     record("先跑官方 preflight，不发真机动作")
     _run_sync("preflight", runner=runner)
-    try:
-        _run_sync("check-remote", runner=runner)
-    except RuntimeError:
-        record(CHECK_REMOTE_ADVISORY)
     record(f"在导航机 tmux {PANEL_SESSION} 里跑 {ONECLICK} {action}")
     argv, timeout, env = ssh_argv(action)
     _run_remote(argv, timeout, env, runner=runner)
     if runner is None:
         follow_marker().write_text(f"{PANEL_SESSION}\n", encoding="utf-8")
         ensure_log_follower()
-    if action == "start":
+    if action in {"start", "resume"}:
         record("等脚本要 READY，然后 send-keys 递进去")
         ready_cmd, ready_timeout, ready_env = ready_argv()
         _run_remote(ready_cmd, ready_timeout, ready_env, runner=runner)
@@ -547,7 +517,7 @@ def run(action: str, *, runner: Optional[Runner] = None) -> str:
         record(f"向导航机 {ADAPTER_TARGET} 发 1 个 Enter，不代解肩带")
         return _run_sync("stand-enter", runner=runner)
     if action == "stop":
-        record("停止 DREAM 与 VLA HTTP/relay，保留 NX SONIC / 相机 / 灵巧手")
+        record("停止 NAV 工作流，保留独立网关及 NX SONIC / 相机 / 灵巧手")
         output = _run_sync("stop", runner=runner)
         follow_marker().unlink(missing_ok=True)
         _stop_follower()

@@ -81,18 +81,24 @@ reception_real:
   contract_version: fq/reception-lan/v1
   dream_base_url: ${DREAM_BASE_URL}
   vla_base_url: ${VLA_BASE_URL}
-  # 新联合控制：只在三端适配及实际模式/保持验证完成后启用；默认不改变旧链路。
+  # 所有真实 NAV（含操控模拟）统一经网关；关闭时拒绝派发，不回退旧 relay。
+  # 真实 VLA 业务未接入，旧账本须显式迁移；未知占用保留阻断。
   body_control:
     enabled: false
     robot_serial: ""
-    action_endpoint: ""
-    relay_base_url: ""
+    permit_mode: control_session
+    control_resource: ""  # g1:<robot_serial>:body
+    action_endpoint: "tcp://127.0.0.1:5556"  # 网关看到的 NAV 来源，不是 SONIC 输入
+    gateway_base_url: "https://<robot-host>:18001"
+    gateway_ca_file: ""  # 受信任证书文件；正常校验证书及主机名
+    gateway_token_env: BRAIN_GATEWAY_TOKEN  # 支持 BRAIN_GATEWAY_TOKEN_FILE
+    gateway_timeout_sec: 2
     # 服务凭据只放环境变量，不存任务或控制账本。
     token_env: BRAIN_CONTROL_TOKEN
     # NAV HTTP 若使用独立 --api-token，可填保存该 token 的环境变量名；空值沿用上项。
     nav_token_env: ""
     operation_timeout_sec: 10
-    poll_interval_sec: 0.2
+    poll_interval_sec: 0.05
     evidence_max_age_sec: 10
   # 通用身体任务的额外 VLA 动作目录；真机接待使用 Skill.real_workflow 并引用同一份 points。
   # 配置合同、暂停与授权确认 API 见 docs/接口说明_操控VLA.md。

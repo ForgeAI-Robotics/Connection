@@ -1,8 +1,4 @@
-"""Single brain authority for physical handoff; Runtime remains task authority.
-
-Mutations are durable before I/O. Historical GETs never run a transition. Robot
-operations are injected, and startup never guesses an old owner's physical exit.
-"""
+"""Single body authority. Reuses Runtime identities, directory lock and request journal."""
 from copy import deepcopy
 import fcntl
 import os
@@ -11,28 +7,36 @@ import time
 import uuid
 from pathlib import Path
 
-from contracts.body_control import (VERSION, REVISION, IDENTITY, ControlError, digest,
-                                    encode, identifier, lease_identity, stamp, nav_prepare_refused)
+from contracts.body_control import (VERSION, REVISION, PERMIT_MODE, IDENTITY, GATEWAY_BINDING, ControlError,
+                                    encode, identifier, lease_identity, stamp)
 from brain.storage.body_control import ControlStore
+from brain.workers import WorkerPool
 
 
 class BodyControl:
     def __init__(self, config, root, driver, executor=None):
         self.config, self.root, self.driver, self.executor = config, Path(root), driver, executor
-        real = config.get('reception_real') or {}
-        self.settings = real.get('body_control') or {}
-        self.robot = self.settings['robot_serial']
-        self.endpoint = self.settings['action_endpoint']
-        self.binding = dict(robot_serial=self.robot, action_endpoint=self.endpoint,
-                            dream=real['dream_base_url'], vla=real['vla_base_url'],
-                            relay=self.settings['relay_base_url'])
+        real = config['reception_real']
+        self.settings = real['body_control']
+        self.robot, self.endpoint = self.settings['robot_serial'], self.settings['action_endpoint']
+        self.resource = self.settings['control_resource']
+        if self.resource != 'g1:' + self.robot + ':body':
+            raise ValueError('control_resource must name this robot body')
+        self.binding = dict(robot_serial=self.robot, control_resource=self.resource, action_endpoint=self.endpoint,
+                            dream=real['dream_base_url'], gateway=self.settings['gateway_base_url'])
         self.authority_id = uuid.uuid4().hex
-        self.store = None
-        self._fd = None
+        self.store = self._fd = None
         self._start_lock = threading.Lock()
-        self._closed = False
         self._cleanup_lock = threading.Lock()
+        self._permit_lock = threading.Lock()
         self._cleanup_future = None
+        self._cleanup_futures = {}
+        self._closed = False
+        self._stop = threading.Event()
+        # Independent bounded stop lanes cannot queue behind a long prepare.
+        self._exit_pool = WorkerPool('brain-body-exit', 2)
+        if self.settings.get('permit_mode') != PERMIT_MODE:
+            raise ValueError('Control session configuration required; migrate before switching')
 
     def start(self):
         with self._start_lock:
@@ -48,24 +52,35 @@ class BodyControl:
                 with store.writer():
                     state = store.read()
                     if state is None:
-                        state = dict(schema=1, binding=self.binding, epoch=0, revision=0,
+                        state = dict(schema=3, binding=self.binding, epoch=0, revision=0,
                                      current=None, busy=None, leases={}, requests={})
+                    if state['schema'] != 3:
+                        raise ControlError('CONTROL_MIGRATION_REQUIRED', '旧控制账本必须显式迁移到 schema=3，不能恢复旧执行权')
                     if state['binding'] != self.binding:
                         raise ControlError('CONTROL_TARGET_CHANGED', '控制端点改变，须先核清原控制记录')
                     # Leave all source identities and receipts intact. No replay.
                     for row in state['leases'].values():
-                        if row['state'] not in {'released', 'registered'}:
+                        if row['state'] != 'released':
                             row['state'] = 'recovery_required'
                     for op in state['requests'].values():
-                        if op['receipt']['state'] == 'pending':
+                        if (op['receipt']['state'] == 'pending' and not
+                                state['leases'].get(op['body'].get('lease_id'), {}).get('legacy_control')):
                             op['receipt'].update(state='unconfirmed', error={'code': 'AUTHORITY_RESTARTED',
                                                                           'message': '重启后仅查询原操作'})
-                    state.update(authority_id=self.authority_id, busy=None)
-                    # Older versions reserved a NAV lease even when the first
-                    # idle observation failed before publishing any grant.
                     for row in state['leases'].values():
-                        if self._legacy_unissued_nav(state, row):
-                            self._retire_unissued_nav(state, row)
+                        operations = [op for op in state['requests'].values()
+                                      if op['body'].get('lease_id') == row['lease_id']]
+                        if (row['state'] != 'released' and not row.get('legacy_control') and 'business_submission' not in row
+                                and not any(op['children'] for op in operations)):
+                            row.update(state='released', evidence=dict(exit_confirmed=True, not_acquired=True,
+                                cleanup=True, business_not_submitted=True, physical_readiness_verified=False,
+                                scope='restart: original journal proves no peer writes'))
+                            if state['current'] == row['lease_id']:
+                                state['current'] = None
+                    if state['current'] is None:
+                        state['current'] = next((r['lease_id'] for r in state['leases'].values()
+                                                 if r['state'] != 'released' and not r.get('task_cancelled')), None)
+                    state.update(authority_id=self.authority_id, busy=None)
                     state['revision'] += 1
                     store.write(state)
                 self._fd, self.store = fd, store
@@ -73,16 +88,28 @@ class BodyControl:
                 os.close(fd)
                 raise
 
+    def stop_accepting(self):
+        self._closed = True
+        self._stop.set()
+
     def close(self):
+        self.stop_accepting()
+        futures = list(self._cleanup_futures.values())
+        for future in futures:
+            if not future.done():
+                try:
+                    future.result(timeout=self.driver.timeout + 1)
+                except Exception:
+                    pass
+        stopped = self._exit_pool.close(self.driver.timeout + 1)
+        if not stopped or any(not future.done() for future in futures):
+            return False
         with self._start_lock:
-            self._closed = True
             if self._fd is not None:
                 fcntl.flock(self._fd, fcntl.LOCK_UN)
                 os.close(self._fd)
                 self._fd = None
-
-    def stop_accepting(self):
-        self._closed = True
+        return True
 
     def _save(self, state):
         if state.get('authority_id') != self.authority_id:
@@ -90,32 +117,6 @@ class BodyControl:
         state['revision'] += 1
         state['updated_at'] = stamp()
         self.store.write(state)
-
-    @staticmethod
-    def _legacy_unissued_nav(state, row):
-        if (row['state'] == 'released' or row['target'] != 'navigation'
-                or row.get('grant_published') is True or 'business_submission' in row):
-            return False
-        ops = [op for op in state['requests'].values() if op['body'].get('lease_id') == row['lease_id']]
-        acquires = [op for op in ops if op['body']['action'] == 'acquire']
-        if (len(acquires) != 1 or acquires[0]['children']
-                or acquires[0]['receipt'].get('state') != 'unconfirmed'
-                or (acquires[0]['receipt'].get('error') or {}).get('code') != 'STALE_EVIDENCE'):
-            return False
-        # STALE_EVIDENCE with no acquire children can only come from idle(),
-        # before the grant/current transition. Preserve any failed stop-only check.
-        return all(op['body']['action'] == 'acquire' or (
-            op['body']['action'] == 'release' and set(op['children']) <= {'nav-yield'}
-            and all(child.get('state') != 'confirmed' for child in op['children'].values())) for op in ops)
-
-    @staticmethod
-    def _retire_unissued_nav(state, row):
-        row.update(state='released', updated_at=stamp(), evidence=dict(exit_confirmed=True,
-            not_acquired=True, cleanup=True, business_not_submitted=True, physical_readiness_verified=False,
-            scope='local NAV intent retired: failed before grant or peer writes; original failure preserved'))
-        row.pop('cleanup_error', None)
-        if state['current'] == row['lease_id']:
-            state['current'] = None
 
     def _eligible(self, request):
         """Called under the same directory writer lock as Runtime cancellation."""
@@ -126,78 +127,123 @@ class BodyControl:
                 or record.get('open_command_id') != body.get('command_id')
                 or record.get('dispatch_closed') or record.get('control_request')
                 or record.get('state') not in {'running', 'verifying', 'waiting_human'}
-                or record.get('execution_backend') not in {'body_real', 'reception_real'}
+                or record.get('execution_backend') not in {'body_real', 'reception_real', 'reception_real_sim_manipulation'}
                 or (self.config.get('reception_real') or {}).get('kernel_enabled') is not True):
             raise ControlError('NOT_SCHEDULED', '当前 Runtime 未允许该命令申请控制')
         target = record.get('execution_target') or {}
-        if target.get('dream') != self.binding['dream'] or target.get('vla') != self.binding['vla']:
+        if target.get('dream') != self.binding['dream']:
             raise ControlError('CONTROL_TARGET_CHANGED', '任务绑定的执行端与控制端不符')
+        if 'body_control' in target and target['body_control'] != {
+                key:self.settings[key] for key in ('robot_serial','control_resource','action_endpoint','gateway_base_url')}:
+            raise ControlError('CONTROL_TARGET_CHANGED', '任务绑定的网关资源已变化')
         for bucket in (record.get('steps') or {}).values():
             for attempt in bucket.get('attempts') or []:
                 if attempt.get('command_id') == body['command_id'] and attempt.get('request') == request:
-                    return
+                    return record['execution_backend']
         raise ControlError('NOT_SCHEDULED', '请求与原 Runtime 尝试不一致')
 
     def register(self, request):
         self.start()
         request = deepcopy(request)
         body = request['body']
-        if request.get('skill') not in {'navigate', 'open_fridge', 'grasp_cola'}:
-            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '联合控制只支持已登记的 NAV 与 native VLA')
+        if request.get('skill') != 'navigate':
+            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '当前网关接线仅支持 NAV 身体控制')
         if not all(identifier(body.get(k)) for k in ('task_id', 'command_id')):
             raise ControlError('INVALID_IDENTITY', '任务／命令身份无效', 400)
-        lease = lease_identity(self.robot, body['task_id'], body['command_id'])
         with self.store.writer():
-            self._eligible(request)
+            backend = self._eligible(request)
+            if body.get('required_holding') or (request.get('required_holding')
+                    and backend != 'reception_real_sim_manipulation'):
+                raise ControlError('UNSUPPORTED_CONTROL_SKILL', '身体独立模式不接受真实携物要求')
             state = self.store.read()
-            row = state['leases'].get(lease)
-            if row:
-                if row['request'] != request:
+            old = self._command_row(state, body['task_id'], body['command_id'])
+            if old:
+                if old['request'] != request:
                     raise ControlError('REQUEST_CONFLICT', '同一命令的请求内容改变')
-                return deepcopy(row)
-            row = dict(contract_version=VERSION, coordination_revision=REVISION,
-                       robot_serial=self.robot, action_endpoint=self.endpoint,
-                       task_id=body['task_id'], command_id=body['command_id'], lease_id=lease,
-                       authority_id=self.authority_id, ownership_epoch=None,
-                       target='navigation' if request['skill'] == 'navigate' else 'vla',
-                       state='registered', request=request, evidence={}, updated_at=stamp())
-            state['leases'][lease] = row
+                return old
+            # command_id is globally unique; never retarget an existing command.
+            if any(body['command_id'] in r.get('commands', {}) for r in state['leases'].values()):
+                raise ControlError('REQUEST_CONFLICT', 'command_id 已被其他任务使用')
+            row = state['leases'].get(state['current'])
+            if row:
+                if (row['state'] != 'authorized' or row.get('revoked')
+                        or row['authority_id'] != self.authority_id or row.get('active_command_id')):
+                    raise ControlError('SOURCE_NOT_RELEASED', '当前命令或控制退出尚未核清')
+            else:
+                if any(r['state'] != 'released' and not r.get('task_cancelled') for r in state['leases'].values()):
+                    raise ControlError('SOURCE_NOT_RELEASED', '原身体占用尚未核清')
+                state['epoch'] += 1
+                session = uuid.uuid4().hex
+                lease = lease_identity(self.robot, 'control_session', session)
+                row = dict(contract_version=VERSION, coordination_revision=REVISION,
+                    permit_mode=PERMIT_MODE, control_session_id=session,
+                    robot_serial=self.robot, control_resource=self.resource, action_endpoint=self.endpoint,
+                    lease_id=lease, authority_id=self.authority_id, ownership_epoch=state['epoch'],
+                    target='navigation', state='registered', evidence={}, commands={}, command_seq=0,
+                    updated_at=stamp())
+                state['leases'][lease] = row
+            row.pop('business_submission', None)
+            row['command_seq'] += 1
+            row.update(task_id=body['task_id'], command_id=body['command_id'], request=request,
+                       active_command_id=body['command_id'],
+                       holding_scope='simulated' if backend == 'reception_real_sim_manipulation' else 'physical')
+            row['commands'][body['command_id']] = dict(task_id=body['task_id'], command_id=body['command_id'],
+                command_seq=row['command_seq'], request=request, state='registered')
             self._save(state)
             return deepcopy(row)
+
+    @staticmethod
+    def _command_row(state, task_id, command_id):
+        for row in state['leases'].values():
+            command = row.get('commands', {}).get(command_id)
+            if command and command['task_id'] == task_id:
+                value = deepcopy(row)
+                value.pop('business_submission', None)
+                value.update(deepcopy(command))
+                # Command state and ownership state are distinct.
+                value['command_state'] = command['state']
+                value['state'] = row['state']
+                return value
+        return None
+
+    def command_row(self, task_id, command_id):
+        self.start()
+        with self.store.writer():
+            row = self._command_row(self.store.read(), task_id, command_id)
+            if row is None:
+                raise ControlError('UNKNOWN_COMMAND', '没有本命令控制关联')
+            return row
 
     def record_submission(self, request, wire_body):
         """Persist the exact business wire request, checking cancellation before dispatch."""
         self.start()
         body = request['body']
-        lease = lease_identity(self.robot, body['task_id'], body['command_id'])
         with self.store.writer():
             self._eligible(request)
             state = self.store.read()
-            row = state['leases'].get(lease)
-            if row is None or row['authority_id'] != self.authority_id:
-                raise ControlError('STALE_AUTHORIZATION', '派发没有本实例登记的授权')
-            if 'business_submission' in row:
-                raise ControlError('SUBMISSION_ALREADY_ATTEMPTED', '原业务提交已落盘，必须查询原命令')
-            if row['target'] == 'navigation' and (
-                    row['state'] != 'authorized' or state['current'] != lease
-                    or row['evidence'].get('prepared') is not True):
-                raise ControlError('NAVIGATION_NOT_PREPARED', '导航准备尚未核清')
-            row['business_submission'] = {'body': deepcopy(wire_body), 'recorded_at': stamp()}
+            snapshot = self._command_row(state, body['task_id'], body['command_id'])
+            if snapshot is None:
+                raise ControlError('STALE_AUTHORIZATION', '派发没有登记的会话')
+            row = state['leases'][snapshot['lease_id']]
+            command = row['commands'][body['command_id']]
+            if 'business_submission' in command:
+                raise ControlError('SUBMISSION_ALREADY_ATTEMPTED', '原业务已落盘，必须查询原命令')
+            if row.get('active_command_id') != body['command_id'] or row['state'] != 'authorized':
+                raise ControlError('NAVIGATION_NOT_PREPARED', '当前控制会话或业务命令未就绪')
+            self._require_live(row, 'execute')
+            submitted = {'body': deepcopy(wire_body), 'recorded_at': stamp()}
+            command.update(business_submission=submitted, state='submitted')
+            row['business_submission'] = submitted
             self._save(state)
 
-    def close_unacquired(self, request):
-        """Seal a definitively refused VLA request before any acquire can race it."""
-        self.start()
-        body = request['body']
-        lease = lease_identity(self.robot, body['task_id'], body['command_id'])
-        with self.store.writer():
-            state = self.store.read()
-            row = state['leases'].get(lease)
-            if row is None or row['state'] != 'registered':
-                return False
-            row.update(state='released', evidence={'exit_confirmed': True, 'not_acquired': True})
-            self._save(state)
-            return True
+    def business_body(self, request):
+        body = deepcopy(request['body'])
+        row = self.command_row(body['task_id'], body['command_id'])
+        body.update(control_authorization=self.reference(row), control_session_id=row['control_session_id'],
+                    command_seq=row['command_seq'], coordination_revision=REVISION, permit_mode=PERMIT_MODE,
+                    dispatch_policy='when_idle',
+                    request_id=uuid.uuid5(uuid.NAMESPACE_URL, row['lease_id']+':goal:'+body['command_id']).hex)
+        return body
 
     @staticmethod
     def reference(row):
@@ -206,213 +252,73 @@ class BodyControl:
     def identity(self, row):
         return {key: row[key] for key in IDENTITY}
 
-    def capabilities(self):
-        self.start()
-        return dict(contract_version=VERSION, coordination_revision=REVISION, authority='brain',
-                    authority_id=self.authority_id, robot_serial=self.robot, action_endpoint=self.endpoint,
-                    operations=['acquire', 'release', 'query'],
-                    features=['brain-owned-control', 'release-without-navigation-restore',
-                              'persistent-fenced-owner', 'async-query'], ready=True,
-                    physical_readiness_verified=False)
-
     def recovery_status(self):
         """Local resource facts only; polling never performs a recovery."""
         if self.store is None:
             return dict(enabled=True, blocked=False, pending=False, source=None, unresolved=[])
         with self.store.writer():
             state = self.store.read()
-            rows = [row for row in state['leases'].values() if row['state'] != 'released']
-            fields = ('task_id','command_id','lease_id','target','state','ownership_epoch','cleanup_error')
+            rows = [row for row in state['leases'].values() if row['state'] != 'released' and not row.get('task_cancelled')]
+            fields = ('control_session_id','active_command_id','command_seq','permit_mode','task_id','command_id','lease_id','target','state','ownership_epoch','cleanup_error',
+                      'control_resource','gateway_binding','permit_phase','permit_seq','revoked','legacy_control')
             source = state['leases'].get(state['current'])
-            return dict(enabled=True, blocked=bool(rows or state['busy']),
-                pending=bool(state['busy'] or (self._cleanup_future and not self._cleanup_future.done())),
-                source={key:deepcopy(source.get(key)) for key in fields} if source else None,
-                unresolved=[{key:deepcopy(row.get(key)) for key in fields} for row in rows])
+            source_view = {key:deepcopy(source.get(key)) for key in fields} if source else None
+            blocked = any(r['state'] != 'authorized' or r.get('revoked') or
+                          r['authority_id'] != self.authority_id for r in rows)
+            return dict(enabled=True, blocked=bool(blocked or state['busy']),
+                occupied=bool(rows), permit_mode=PERMIT_MODE, renew_required=False,
+                pending=bool(state['busy'] or (state['current'] in self._cleanup_futures
+                    and not self._cleanup_futures[state['current']].done())),
+                previous_exit_unconfirmed=sum(r['state'] != 'released' and bool(r.get('task_cancelled'))
+                                              for r in state['leases'].values()),
+                source=source_view,
+                unresolved=[{key:deepcopy(row.get(key)) for key in fields} for row in rows if row['state'] != 'authorized' or row.get('revoked')
+                            or row['authority_id'] != self.authority_id])
 
     def assert_new_task_allowed(self):
         self.start()
         status = self.recovery_status()
-        if status['blocked']:
+        if status['blocked'] or (status.get('source') or {}).get('active_command_id'):
             source = status['source'] or (status['unresolved'] or [{}])[0]
-            raise ControlError('SOURCE_NOT_RELEASED', '旧控制尚未核清退出：' +
-                str(source.get('command_id') or '交接处理中') + '；请等待取消收尾或点击“核清旧控制”，不要重复发布')
+            raise ControlError('SOURCE_NOT_RELEASED', '当前控制尚未结束：' +
+                str(source.get('command_id') or '交接处理中') + '；取消整轮任务后可重新发布，原会话退出在后台独立核查')
 
-    def request_cleanup(self, task_id, expected_lease_id, *, new_exit_check=False):
-        """Explicit operator cleanup (also requested by task cancellation).
-
-        Revoke first, then use the existing workers and original stop/yield IDs.
-        Task state is untouched; historical receipts are never deleted.
-        """
-        from brain.storage.tasks import load_existing
-        if type(new_exit_check) is not bool:
-            raise ControlError('INVALID_REQUEST', 'new_exit_check 必须为布尔值', 400)
+    def released(self, task_id, command_id):
         self.start()
-        with self._cleanup_lock:
-            with self.store.writer():
-                state = self.store.read()
-                task = load_existing(self.root) or {}
-                if (task.get('task_id') != task_id or task.get('state') not in
-                        {'cancelled','failed','succeeded','recovery_required','paused'}):
-                    raise ControlError('TASK_NOT_QUIESCENT', '请先取消或暂停当前任务，再核清旧控制')
-                if state['current'] != expected_lease_id:
-                    raise ControlError('STALE_AUTHORIZATION', '当前控制源已变化，请刷新后重查')
-                if self._cleanup_future and not self._cleanup_future.done():
-                    return self.recovery_status()
-                leases = [key for key,row in state['leases'].items() if row['state'] != 'released']
-                source = state['leases'].get(state['current'])
-                if source:
-                    source['state'] = 'recovery_required'  # A cancelled task cannot keep output permission.
-                    source.pop('cleanup_error', None)
-                    self._save(state)
-            if self.executor is None:
-                raise ControlError('CONTROL_WORKER_UNAVAILABLE', '控制收尾工作器不可用', 503)
-            self._cleanup_future = self.executor.submit(self._cleanup, expected_lease_id, leases, new_exit_check)
-        return self.recovery_status()
-
-    def _seal_unused(self, state, leases):
-        for key in leases:
-            row = state['leases'][key]
-            if key == state['current'] or row['state'] == 'released' or 'business_submission' in row:
-                continue
-            operations = [op for op in state['requests'].values() if op['body'].get('lease_id') == key]
-            if all(op['body']['action'] == 'acquire' and not op['children']
-                   and op['receipt'].get('state') == 'unconfirmed'
-                   and (op['receipt'].get('error') or {}).get('code') == 'SOURCE_NOT_RELEASED' for op in operations):
-                # A request rejected behind the old owner never issued any peer write.
-                row.update(state='released', evidence=dict(exit_confirmed=True, not_acquired=True,
-                    cleanup=True, business_not_submitted=True), updated_at=stamp())
-
-    def _reserve_cleanup_release(self, row, new_exit_check=False):
-        suffix = ':current-exit-release-v1' if new_exit_check else ':release'
-        rid = uuid.uuid5(uuid.NAMESPACE_URL, row['lease_id'] + suffix).hex
-        body = dict(self.identity(row), action='release', request_id=rid,
-                    authority_id=row['authority_id'], ownership_epoch=row['ownership_epoch'])
-        receipt, created = self._begin(body, 'navigation')
         with self.store.writer():
-            state = self.store.read()
-            if state['current'] != row['lease_id'] or self._closed:
-                raise ControlError('STALE_AUTHORIZATION', '原控制源已变化，未继续收尾')
-            if not created:
-                if state['busy'] or receipt['state'] != 'unconfirmed':
-                    raise ControlError('CONTROL_BUSY', '原退出请求仍在处理，请查询原请求')
-                op = state['requests'][rid]
-                op.setdefault('recovery_checks', []).append(deepcopy(op['receipt']))
-                op['receipt'].update(state='pending', updated_at=stamp())
-                state['busy'] = rid
-                state['leases'][row['lease_id']]['state'] = 'releasing'
-            state['requests'][rid]['cleanup'] = True
-            if new_exit_check:
-                state['requests'][rid]['current_exit_check'] = True
-            self._save(state)
-        return rid
+            row = self._command_row(self.store.read(), task_id, command_id)
+            return bool(row and row['state'] == 'released' and row['evidence'].get('exit_confirmed') is True)
 
-    @staticmethod
-    def _relay_only_prepare(state, row):
-        """Journal proves NAV never accepted this preparation.
-
-        A persisted child counts as possibly sent even without a reply. Older
-        cleanup attempts may contain stop-only NAV yields; keep those intact.
-        """
-        if row['target'] != 'navigation' or 'business_submission' in row:
-            return None
-        ops = [op for op in state['requests'].values()
-               if op['body'].get('lease_id') == row['lease_id']]
-        acquires = [op for op in ops if op['body']['action'] == 'acquire']
-        if len(acquires) != 1:
-            return None
-        children = acquires[0]['children']
-        rejected_prepare = None
-        if set(children) == {'relay-enable', 'nav-prepare'}:
-            child = children['nav-prepare']
-            if child.get('state') == 'confirmed':
-                return None
-            rejected_prepare = (child.get('observations') or {}).get('first_post')
-            if not nav_prepare_refused(child['wire'], rejected_prepare):
-                return None
-        elif set(children) != {'relay-enable'}:
-            return None
-        if any(op['body']['action'] != 'acquire' and (
-                op['body']['action'] != 'release'
-                or set(op['children']) - {'nav-yield', 'relay-close'}) for op in ops):
-            return None
-        wire = deepcopy(children['relay-enable']['wire'])
-        if rejected_prepare:
-            wire['nav_prepare_rejection'] = deepcopy(rejected_prepare)
-        return wire
-
-    def _cleanup(self, lease, leases, new_exit_check=False):
-        try:
-            deadline = time.monotonic() + 30
-            while True:
-                with self.store.writer():
-                    state = self.store.read()
-                    busy = state['busy']
-                if not busy:
-                    break
-                if self._closed or time.monotonic() >= deadline:
-                    raise ControlError('CONTROL_BUSY', '原交接仍在收尾；稍后点击“核清旧控制”查询，不要重发任务')
-                time.sleep(.05)
-            with self.store.writer():
-                state = self.store.read()
-                row = deepcopy(state['leases'].get(lease))
-                if state['current'] != lease:
-                    if row and row['state'] == 'released':
-                        row = None
-                    else:
-                        raise ControlError('STALE_AUTHORIZATION', '控制源变化，未操作新控制源')
-            if row and row['target'] == 'navigation':
-                rid = self._reserve_cleanup_release(row, new_exit_check)
-                self._run(rid)
-                with self.store.writer():
-                    relay_only = self._relay_only_prepare(self.store.read(), row) is not None
-                if (not self.released(row['task_id'], row['command_id'])
-                        and 'business_submission' not in row and not relay_only and not new_exit_check):
-                    # A failed prepare may not have an active NAV execution to yield.
-                    # Retry only GETs for recorded effects, then reconcile current exit facts.
-                    rid = self._reserve_cleanup_release(row)
-                    try:
-                        with self.store.writer():
-                            state = self.store.read()
-                            prepare = next((op['children']['nav-prepare']['wire'] for op in state['requests'].values()
-                                if op['body'].get('lease_id') == lease and 'nav-prepare' in op['children']), None)
-                        proof = self.driver.reconcile_navigation(row, prepare, lambda *args:self.exchange(rid, *args))
-                        self._finish(rid, proof, None)
-                    except Exception as exc:
-                        self._finish(rid, None, exc)
-                if not self.released(row['task_id'], row['command_id']):
-                    receipt = self.query(lease, request_id=rid)
-                    raise ControlError('SOURCE_NOT_RELEASED', str(receipt.get('error') or '原 NAV 退出未确认'))
-            elif row:
-                stopped = self.stop_vla(row['task_id'], row['command_id'])
-                if not self.released(row['task_id'], row['command_id']):
-                    raise ControlError('SOURCE_NOT_RELEASED', 'VLA 原停止／release 尚未核清：' + str(stopped.get('error') or stopped['state']))
-            with self.store.writer():
-                state = self.store.read()
-                if state.get('authority_id') != self.authority_id:
-                    return
-                if lease and state['leases'][lease]['state'] == 'released':
-                    ended = state['leases'][lease]
-                    ended['evidence'].update(cleanup=True, business_not_submitted='business_submission' not in ended)
-                    ended.pop('cleanup_error', None)
-                self._seal_unused(state, leases)
-                self._save(state)
-        except Exception as exc:
-            with self.store.writer():
-                state = self.store.read()
-                if state.get('authority_id') != self.authority_id:
-                    return
-                if lease in state['leases'] and state['leases'][lease]['state'] != 'released':
-                    state['leases'][lease]['cleanup_error'] = dict(code=getattr(exc,'code','CONTROL_CLEANUP_UNCONFIRMED'),
-                        message=str(exc), checked_at=stamp())
-                    self._save(state)
+    def submission_attempted(self, task_id, command_id):
+        self.start()
+        with self.store.writer():
+            row = self._command_row(self.store.read(), task_id, command_id)
+            return bool(row and 'business_submission' in row)
 
     def business_not_submitted_after_cleanup(self, task_id, command_id):
         self.start()
         with self.store.writer():
-            row = self.store.read()['leases'].get(lease_identity(self.robot, task_id, command_id))
+            row = self._command_row(self.store.read(), task_id, command_id)
             return bool(row and row['state'] == 'released' and 'business_submission' not in row
-                        and row['evidence'].get('cleanup') is True
-                        and row['evidence'].get('business_not_submitted') is True)
+                        and row['evidence'].get('cleanup') is True)
+
+    def capabilities(self):
+        self.start()
+        return dict(contract_version=VERSION, coordination_revision=REVISION, authority='brain',
+                    authority_id=self.authority_id, robot_serial=self.robot, control_resource=self.resource,
+                    action_endpoint=self.endpoint, operations=['query'], supported_sources=['navigation'],
+                    hand_policy='body_only', supported_hand_modes=['not_required'],
+                    features=['gateway-push', 'persistent-fenced-owner'], ready=True,
+                    physical_readiness_verified=False, permit_mode=PERMIT_MODE, renew_required=False)
+
+    def submit(self, body):
+        raise ControlError('SOURCE_NOT_ENABLED', '执行端不再 acquire/release；许可由大脑直推网关', 409)
+
+    def _require_live(self, row, phase=None):
+        if (self._closed or row.get('revoked') or row['authority_id'] != self.authority_id
+                or not row.get('permit') or row.get('permit_mode') != PERMIT_MODE
+                or (phase and row.get('permit_phase') != phase)):
+            raise ControlError('PERMIT_NOT_CURRENT', '当前会话许可尚未确认或已撤销')
 
     def query(self, lease, *, request_id=None, observation_id=None):
         self.start()
@@ -431,8 +337,12 @@ class BodyControl:
             active = state['leases'].get(state['current']) or {}
             current = (row['state'] == 'authorized' and row['authority_id'] == self.authority_id
                        and state['current'] == lease and not self._closed)
+            try:
+                self._require_live(row, 'execute')
+            except ControlError:
+                current = False
             owner = (active['target'] if active.get('state') == 'authorized'
-                     and active.get('authority_id') == self.authority_id else 'unknown' if active else 'none')
+                     and active.get('authority_id') == self.authority_id and current else 'unknown' if active else 'none')
             return dict(self.identity(row), authority='brain', authority_id=self.authority_id,
                         issued_authority_id=row['authority_id'], ownership_epoch=row['ownership_epoch'],
                         owner=owner, state=row['state'], authorization_current=current,
@@ -472,26 +382,13 @@ class BodyControl:
                 self._eligible(row['request'])
                 if row['state'] != 'registered' or row['authority_id'] != self.authority_id:
                     raise ControlError('STALE_AUTHORIZATION', '原命令授权已使用或属于旧实例')
-                if target == 'vla' and body.get('navigation_proof') != row['request']['body'].get('navigation_proof'):
-                    raise ControlError('IDENTITY_MISMATCH', '原导航证明与派发请求不一致')
-                if target == 'vla' and 'business_submission' not in row:
-                    raise ControlError('NOT_SCHEDULED', 'VLA 业务提交意图尚未落盘')
-                state['epoch'] += 1
-                row.update(ownership_epoch=state['epoch'], state='acquiring')
+                row.update(state='acquiring')
             else:
                 if (state['current'] != row['lease_id'] or row['state'] not in {'authorized', 'recovery_required'}
                         or body.get('authority_id') != row['authority_id']
                         or type(body.get('ownership_epoch')) is not int
                         or body['ownership_epoch'] != row['ownership_epoch']):
                     raise ControlError('STALE_AUTHORIZATION', '只能核清对应的原授权')
-                if target == 'vla':
-                    exit_state = body.get('exit_state')
-                    if (not isinstance(exit_state, dict) or body.get('policy_stopped') is not True
-                            or body.get('exit_state_sha256') != digest(exit_state)):
-                        raise ControlError('INVALID_EXIT_STATE', '退出状态或摘要无效', 400)
-                    controller = row['evidence'].get('controller_instance_id')
-                    if not controller or ('controller_instance_id' in body and body['controller_instance_id'] != controller):
-                        raise ControlError('IDENTITY_MISMATCH', '退出请求的 SONIC 实例不匹配原接管证明')
                 row['state'] = 'releasing'
             receipt = dict(self.identity(row), request_id=body['request_id'], action=action,
                            authority='brain', authority_id=row['authority_id'],
@@ -501,17 +398,6 @@ class BodyControl:
             state['requests'][body['request_id']] = dict(body=body, receipt=receipt, children={})
             self._save(state)
             return deepcopy(receipt), True
-
-    def submit(self, body):
-        receipt, created = self._begin(body, 'vla')
-        if created:
-            try:
-                if self.executor is None:
-                    raise RuntimeError('Control worker is unavailable')
-                self.executor.submit(self._run, body['request_id'])
-            except Exception as exc:
-                self._finish(body['request_id'], None, exc)
-        return self.query(body['lease_id'], request_id=body['request_id'])
 
     def _internal(self, row, action):
         # Fixed operation identity: after an uncertain result, a second invocation
@@ -532,60 +418,14 @@ class BodyControl:
 
     def prepare_navigation(self, request):
         row = self.register(request)
-        result = self._internal(row, 'acquire')
-        # A historical acquire receipt cannot authorize a replay after restart/release.
-        observed = self.query(row['lease_id'], observation_id=uuid.uuid4().hex)
-        if observed['authorization_current'] is not True:
-            raise ControlError('STALE_AUTHORIZATION', '导航授权已经失效')
-        return self.reference(result)
-
-    def settle_navigation(self, task_id, command_id):
-        self.start()
-        lease = lease_identity(self.robot, task_id, command_id)
-        with self.store.writer():
-            row = deepcopy(self.store.read()['leases'].get(lease))
-        if row is None:
-            raise ControlError('UNKNOWN_LEASE', '没有可核清的原导航授权')
-        if row['state'] == 'released':
-            return deepcopy(row['evidence'])
-        return self._internal(row, 'release')
-
-    def released(self, task_id, command_id):
-        self.start()
-        with self.store.writer():
-            row = self.store.read()['leases'].get(lease_identity(self.robot, task_id, command_id))
-            return bool(row and row['state'] == 'released' and row['evidence'].get('exit_confirmed') is True)
-
-    def submission_attempted(self, task_id, command_id):
-        self.start()
-        with self.store.writer():
-            row = self.store.read()['leases'].get(lease_identity(self.robot, task_id, command_id))
-            return bool(row and 'business_submission' in row)
-
-    def check_holding(self, status, task_id, object_id):
-        """Bind current object evidence to this Runtime's released grasp grant."""
-        from contracts.vla import validate_current_holding
-        self.driver._fresh(status)
-        proof = status.get('holding_evidence') or {}
-        if not isinstance(proof, dict):
-            raise ControlError('HOLD_UNCONFIRMED', '当前持物证明格式无效')
-        command = proof.get('command_id')
-        if not isinstance(command, str):
-            raise ControlError('HOLD_UNCONFIRMED', '当前持物证明缺少原抓取命令')
-        self.start()
-        with self.store.writer():
-            row = self.store.read()['leases'].get(lease_identity(self.robot, task_id, command))
-            if (not row or row['state'] != 'released' or row['evidence'].get('exit_confirmed') is not True
-                    or type(row.get('ownership_epoch')) is not int
-                    or row['request'].get('skill') != 'grasp_cola'
-                    or row['request']['body'].get('object_id') != object_id):
-                raise ControlError('HOLD_UNCONFIRMED', '持物证明未关联本任务已退出的原抓取授权')
-            association = dict(task_id=task_id, command_id=command, owner='vla', **self.reference(row))
-        try:
-            return validate_current_holding(status, object_id, robot_serial=self.robot,
-                                            task_id=task_id, source_association=association)
-        except (ValueError, TypeError, KeyError) as exc:
-            raise ControlError('HOLD_UNCONFIRMED', str(exc)) from None
+        if row['state'] == 'authorized':
+            # Admission only: a lost observation does not revoke existing control.
+            self.driver.verify_current_permit(row, self.driver.status('gateway'), 'execute', require_hold=True)
+        else:
+            self._internal(row, 'acquire')
+        row = self.command_row(request['body']['task_id'], request['body']['command_id'])
+        self._require_live(row, 'execute')
+        return self.reference(row)
 
     def _snapshot(self, request_id):
         with self.store.writer():
@@ -593,7 +433,7 @@ class BodyControl:
             op = state['requests'][request_id]
             return deepcopy(state['leases'][op['body']['lease_id']]), deepcopy(op)
 
-    def exchange(self, request_id, label, service, path, payload, query_path, kind=None):
+    def exchange(self, request_id, label, service, path, payload, query_path, kind=None, *, until_registered=False):
         """Persist exact wire request before POST; recover only by original GET."""
         child_id = uuid.uuid5(uuid.NAMESPACE_URL, request_id + ':' + label).hex
         payload = dict(deepcopy(payload), request_id=child_id)
@@ -605,7 +445,10 @@ class BodyControl:
                 raise ControlError('CONTROL_CLOSED', '关闭期间不再发送控制写请求', 503)
             state = self.store.read()
             op = state['requests'][request_id]
-            if op['body']['action'] == 'acquire':
+            if op['body']['action'] in {'acquire','grant','allow_execute'}:
+                row = state['leases'][op['body']['lease_id']]
+                if row.get('revoked'):
+                    raise ControlError('CONTROL_REVOKED', '本轮已撤销，禁止后到控制写入')
                 self._eligible(state['leases'][op['body']['lease_id']]['request'])
             existing = op['children'].get(label)
             if existing and existing['wire'] != wire:
@@ -630,7 +473,7 @@ class BodyControl:
                 self._save(state)
         try:
             result = self.driver.exchange(wire, send=existing is None, record=record,
-                history=deepcopy((existing or {}).get('observations', {})))
+                history=deepcopy((existing or {}).get('observations', {})), until_registered=until_registered)
         except ControlError as exc:
             with self.store.writer():
                 state = self.store.read()
@@ -642,151 +485,401 @@ class BodyControl:
         with self.store.writer():
             state = self.store.read()
             child = state['requests'][request_id]['children'][label]
-            child.update(state='confirmed', receipt=deepcopy(result))
+            child.update(state='registered' if result.get('state') == 'pending' else 'confirmed', receipt=deepcopy(result))
             self._save(state)
         return result
 
-    def stop_vla(self, task_id, command_id):
-        """An independent stop must not hold the lock needed by VLA's release callback."""
-        self.start()
-        lease = lease_identity(self.robot, task_id, command_id)
-        request_id = uuid.uuid5(uuid.NAMESPACE_URL, lease + ':stop').hex
-        with self.store.writer():
-            state = self.store.read()
-            row = deepcopy(state['leases'].get(lease))
-            if not row or row['target'] != 'vla' or state['current'] not in (None, lease):
-                raise ControlError('STALE_AUTHORIZATION', '停止目标不再是原控制任务')
-            old = state['requests'].get(request_id)
-            if old and old['receipt']['state'] == 'stopped':
-                return deepcopy(old['receipt'])
-            if old:
-                receipt = deepcopy(old['receipt'])  # Existing child causes GET-only recovery.
-            else:
-                body = dict(self.identity(row), action='stop', request_id=request_id,
-                            authority_id=row['authority_id'], ownership_epoch=row['ownership_epoch'])
-                receipt = dict(body, accepted=True, state='pending', updated_at=stamp())
-                state['requests'][request_id] = dict(body=body, receipt=receipt, children={})
+    def _permit(self, lease, operation, *, request_id=None):
+        if operation not in {'grant','allow_execute','revoke'}:
+            raise ControlError('RENEW_NOT_SUPPORTED', '持续控制会话不接受续期')
+        # Revoke never waits for this lock: it persists a higher sequence and a tombstone first.
+        lock = self._permit_lock if operation != 'revoke' else threading.Lock()
+        with lock:
+            with self.store.writer():
+                state = self.store.read()
+                row = deepcopy(state['leases'][lease])
+                if operation != 'revoke':
+                    self._eligible(row['request'])
+                    if row.get('revoked') or row['authority_id'] != self.authority_id or self._closed:
+                        raise ControlError('CONTROL_REVOKED', '许可已撤销')
+                    if operation != 'grant':
+                        self._require_live(row)
+            status = ({'gateway_instance_id': row['gateway_binding']['gateway_instance_id']}
+                      if operation == 'revoke' and row.get('gateway_binding')
+                      else self.driver.status('gateway'))
+            binding = row.get('gateway_binding') or dict(robot_serial=self.robot, control_resource=self.resource,
+                control_session_id=row['control_session_id'], source_id='navigation',
+                control_authorization=self.reference(row), gateway_instance_id=status['gateway_instance_id'])
+            if binding['gateway_instance_id'] != status['gateway_instance_id']:
+                raise ControlError('GATEWAY_INSTANCE_CHANGED', '网关实例变化，需当前退出核验')
+            phase = 'execute' if operation == 'allow_execute' else row.get('permit_phase', 'prepare')
+            if operation == 'allow_execute':
+                self.driver.verify_current_permit(row, status, row.get('permit_phase', 'prepare'),
+                                                  require_hold=operation == 'allow_execute')
+            rid = request_id or uuid.uuid4().hex
+            with self.store.writer():
+                state = self.store.read()
+                current = state['leases'][lease]
+                if operation != 'revoke':
+                    self._eligible(current['request'])
+                    if current.get('revoked') or self._closed:
+                        raise ControlError('CONTROL_REVOKED', '申请锚点期间已撤销')
+                old = state['requests'].get(rid)
+                if old:
+                    payload = deepcopy(old['body']['permit_request'])
+                else:
+                    current['permit_seq'] = current.get('permit_seq', 0) + 1
+                    payload = dict(binding, contract_version=VERSION, coordination_revision=REVISION, permit_mode=PERMIT_MODE,
+                                   operation=operation, permit_seq=current['permit_seq'])
+                    if operation != 'revoke':
+                        payload.update(phase=phase, hand_mode='not_required', hold_reference_id=None)
+                    if operation == 'grant':
+                        if 'brain-takeover-v1' not in status.get('features', []):
+                            raise ControlError('TAKEOVER_UNSUPPORTED', '网关尚未支持大脑接管授权')
+                        payload['takeover'] = True
+                    state['requests'][rid] = dict(body=dict(self.identity(current), action=operation,
+                        permit_request=deepcopy(payload)), receipt=dict(request_id=rid, state='pending'), children={})
+                    self._save(state)
+            result = self.exchange(rid, 'gateway-permit', 'gateway', '/v1/body-input/permits', payload,
+                                   '/v1/body-input/requests/{request_id}')
+            with self.store.writer():
+                state = self.store.read()
+                state['requests'][rid]['receipt'] = deepcopy(result)
+                current = state['leases'][lease]
+                if operation != 'revoke':
+                    self._eligible(current['request'])
+                    if current.get('revoked') or self._closed or current['authority_id'] != self.authority_id:
+                        self._save(state)
+                        raise ControlError('CONTROL_REVOKED', '保留迟到许可回包，但不恢复执行权')
+                    permit = result['evidence']['permit']
+                    current.update(permit_phase=phase, permit=deepcopy(permit))
                 self._save(state)
-        try:
-            result = self.driver.stop_vla(row, lambda *args: self.exchange(request_id, *args))
-            receipt.update(state='stopped', evidence=result)
-        except Exception as exc:
-            receipt.update(state='unconfirmed', error={'code': getattr(exc, 'code', 'STOP_UNCONFIRMED'),
-                                                       'message': str(exc)})
-        with self.store.writer():
-            state = self.store.read()
-            receipt['updated_at'] = stamp()
-            state['requests'][request_id]['receipt'] = receipt
-            self._save(state)
-        return deepcopy(receipt)
+            return result
 
-    def _retire_navigation(self, row, request_id):
+    def _run(self, request_id):
+        row, op = self._snapshot(request_id)
+        try:
+            # NAV owns business admission; the gateway owns old-flow retirement.
+            status = self.driver.status('gateway')
+            if 'brain-takeover-v1' not in status.get('features', []):
+                raise ControlError('TAKEOVER_UNSUPPORTED', '网关尚未支持大脑接管授权')
+            with self.store.writer():
+                state = self.store.read()
+                self._eligible(row['request'])
+                current = state['leases'][row['lease_id']]
+                if state['current'] is not None or current.get('revoked'):
+                    raise ControlError('SOURCE_NOT_RELEASED', '身体资源未释放或本轮已取消')
+                current.update(state='preparing', grant_published=True)
+                state['current'] = row['lease_id']
+                self._save(state)
+            payload = self.driver.payload(row, 'prepare')
+            args = (request_id, 'nav-prepare', 'nav', '/v1/navigation/handoff/prepare', payload,
+                    '/v1/navigation/handoff/requests/{request_id}')
+            registered = self.exchange(*args, until_registered=True)
+            publisher = registered.get('registration') or {}
+            status = self.driver.status('gateway')
+            controller = publisher.get('controller_instance_id')
+            if not isinstance(controller, str) or not controller:
+                raise ControlError('IDENTITY_MISMATCH', 'NAV 登记缺少目标 SONIC 实例')
+            native = status.get('native') or {}
+            if native.get('controller_instance_id') not in (None, controller):
+                raise ControlError('CONTROLLER_INSTANCE_CHANGED', 'NAV 登记与网关目标实例不符')
+            binding = dict(robot_serial=self.robot, control_resource=self.resource, action_endpoint=self.endpoint,
+                control_session_id=row['control_session_id'], control_authorization=self.reference(row),
+                source_id='navigation', gateway_instance_id=status['gateway_instance_id'],
+                controller_instance_id=controller, hold_reference_id=None,
+                publisher_instance_id=publisher['publisher_instance_id'], input_session_id=publisher['input_session_id'])
+            with self.store.writer():
+                state = self.store.read()
+                current = state['leases'][row['lease_id']]
+                # Preserve late registration as evidence, but never grant after cancellation.
+                current['gateway_binding'] = binding
+                self._save(state)
+                if current.get('revoked'):
+                    raise ControlError('CONTROL_REVOKED', '登记返回前已取消')
+            self._permit(row['lease_id'], 'grant')
+            prepared = self.exchange(*args)
+            self.driver.require(prepared, 'mode_ready', 'hold_verified', 'navigation_not_started')
+            facts = prepared.get('evidence') or {}
+            self.driver.require(facts, 'fresh_preparation_output')
+            if facts.get('hand_participation') != 'not_required' or facts.get('hold_scope') != 'body':
+                raise ControlError('HAND_POLICY_MISMATCH', 'NAV prepare 未明确核验身体独立模式')
+            if any(facts.get('publisher', {}).get(k) != binding[k] for k in ('publisher_instance_id','input_session_id')):
+                raise ControlError('IDENTITY_MISMATCH', '准备完成的 publisher/session 改变')
+            self._permit(row['lease_id'], 'allow_execute')
+            with self.store.writer():
+                state = self.store.read()
+                current = state['leases'][row['lease_id']]
+                self._eligible(current['request'])
+                self._require_live(current, 'execute')
+                evidence = dict(prepared=True, navigation=prepared, controller_instance_id=binding['controller_instance_id'])
+                current.update(state='authorized', evidence=evidence)
+                state['requests'][request_id]['receipt'].update(state='authorized', evidence=evidence,
+                    authority_id=current['authority_id'], ownership_epoch=current['ownership_epoch'])
+                self._save(state)
+        except Exception as exc:
+            uncertain = (getattr(exc, 'code', None) in {'HANDOFF_UNCONFIRMED','CONTROL_STATE_UNKNOWN'}
+                         or exc.__class__.__name__ == 'HttpContractError')
+            if not uncertain:
+                self._mark_revoked(row['lease_id'], exc)
+            with self.store.writer():
+                state = self.store.read()
+                current = state['leases'][row['lease_id']]
+                if uncertain:
+                    current.update(state='recovery_required', observation_error=self._error(exc))
+                state['requests'][request_id]['receipt'].update(state='unconfirmed', error=self._error(exc))
+                if not state['requests'][request_id]['children']:
+                    current.update(state='released', evidence=dict(exit_confirmed=True, not_acquired=True,
+                        cleanup=True, business_not_submitted=True, physical_readiness_verified=False))
+                    if state['current'] == row['lease_id']:
+                        state['current'] = None
+                self._save(state)
+        finally:
+            with self.store.writer():
+                state = self.store.read()
+                if state['busy'] == request_id:
+                    state['busy'] = None
+                    self._save(state)
+                needs_exit = state['leases'][row['lease_id']].get('revoked') and state['leases'][row['lease_id']]['state'] != 'released'
+            if needs_exit and not self._closed:
+                self._schedule_exit(row['lease_id'])
+
+    @staticmethod
+    def _error(exc):
+        return deepcopy(exc.response()['error']) if isinstance(exc, ControlError) else dict(
+            code='CONTROL_UNCONFIRMED', message=str(exc))
+
+    def _mark_revoked(self, lease, error=None, *, cancel_business=True):
         with self.store.writer():
             state = self.store.read()
-            if state['current'] != row['lease_id']:
-                raise ControlError('STALE_AUTHORIZATION', '导航让出目标已经变化')
-            state['leases'][row['lease_id']]['state'] = 'releasing'
-            relay_only = self._relay_only_prepare(state, row)
-            current_exit_check = state['requests'][request_id].get('current_exit_check') is True
+            row = state['leases'][lease]
+            if row['state'] == 'released':
+                return
+            row.update(revoked=True, state='recovery_required')
+            row['cancel_business'] = row.get('cancel_business', False) or cancel_business
+            if error:
+                row['cleanup_error'] = self._error(error)
+                row.setdefault('revocation_reason', self._error(error))
+                row.setdefault('revoked_at', stamp())
+            if state['current'] is None and not row.get('task_cancelled'):
+                state['current'] = lease
             self._save(state)
-        exchange = lambda *args: self.exchange(request_id, *args)
-        result = (self.driver.retire_relay_preparation(row, relay_only, exchange)
-                  if relay_only is not None else self.driver.yield_navigation(row, exchange,
-                      verify_current=current_exit_check))
+
+    def _schedule_exit(self, lease, new_exit_check=False):
+        with self._cleanup_lock:
+            future = self._cleanup_futures.get(lease)
+            if future and not future.done():
+                return future
+            if self.executor is None:
+                raise ControlError('CONTROL_WORKER_UNAVAILABLE', '控制收尾工作器不可用')
+            future = self.executor.submit(self._cleanup, lease, new_exit_check)
+            self._cleanup_futures[lease] = self._cleanup_future = future
+            return future
+
+    def cancel_task(self, task_id):
+        """Detach the cancelled Runtime task immediately; retire its remote session separately."""
+        from brain.storage.tasks import load_existing
+        self.start()
+        targets = []
+        with self.store.writer():
+            state, task = self.store.read(), load_existing(self.root) or {}
+            if task.get('task_id') != task_id or task.get('state') != 'cancelled':
+                raise ControlError('TASK_NOT_CANCELLED', '先由 Runtime 取消指定任务')
+            for lease, row in state['leases'].items():
+                if (row.get('task_id') != task_id and state['current'] != lease) or row['state'] == 'released':
+                    continue
+                if row.get('task_cancelled'):
+                    continue  # Repeated button presses do not restart cleanup effects.
+                row.update(task_cancelled=True, cancelled_by_task_id=task_id, revoked=True, state='recovery_required', cancel_business=True,
+                           detached_at=stamp(), physical_exit_confirmed=False)
+                targets.append(lease)
+                if state['current'] == lease:
+                    state['current'] = None
+                busy = state['requests'].get(state.get('busy')) or {}
+                if busy.get('body', {}).get('lease_id') == lease:
+                    state['busy'] = None
+            self._save(state)
+        for lease in targets:
+            try:
+                self._schedule_exit(lease)
+            except Exception as exc:
+                # Cancellation remains durable even if a background worker cannot start.
+                self._mark_revoked(lease, exc)
+        return self.recovery_status()
+
+    def request_cleanup(self, task_id, expected_lease_id, *, new_exit_check=False):
+        from brain.storage.tasks import load_existing
+        self.start()
+        if type(new_exit_check) is not bool:
+            raise ControlError('INVALID_REQUEST', 'new_exit_check 必须为布尔值', 400)
+        with self.store.writer():
+            state, task = self.store.read(), load_existing(self.root) or {}
+            if task.get('task_id') != task_id or task.get('state') not in {
+                    'cancelled','failed','succeeded','recovery_required','paused'}:
+                raise ControlError('TASK_NOT_QUIESCENT', '先取消或暂停原任务')
+            if state['current'] != expected_lease_id or not expected_lease_id:
+                raise ControlError('STALE_AUTHORIZATION', '旧控制目标已变化')
+        self._mark_revoked(expected_lease_id)
+        self._schedule_exit(expected_lease_id, new_exit_check)
+        return self.recovery_status()
+
+    def release_control(self, task_id, command_id):
+        """Explicit whole-session release, distinct from cancelling one command."""
+        row = self.command_row(task_id, command_id)
+        if row['state'] == 'released':
+            return row['evidence']
+        with self.store.writer():
+            current = self.store.read()['leases'][row['lease_id']]
+            if current.get('command_id') != command_id or current.get('task_id') != task_id:
+                raise ControlError('STALE_AUTHORIZATION', '旧业务命令不能释放新命令的控制会话')
+        self._mark_revoked(row['lease_id'])
+        self._schedule_exit(row['lease_id']).result()
+        with self.store.writer():
+            row = self.store.read()['leases'][row['lease_id']]
+            if row['state'] != 'released':
+                raise ControlError('EXIT_UNCONFIRMED', str(row.get('cleanup_error')))
+            return deepcopy(row['evidence'])
+
+    def cancel_navigation(self, task_id, command_id):
+        row = self.command_row(task_id, command_id)
+        rid = uuid.uuid5(uuid.NAMESPACE_URL, row['lease_id']+':cancel:'+command_id).hex
+        with self.store.writer():
+            state = self.store.read()
+            if rid not in state['requests']:
+                state['requests'][rid] = dict(body=dict(self.identity(row), action='cancel_command'),
+                    receipt=dict(state='pending', request_id=rid), children={})
+                self._save(state)
+        result = self.driver.cancel_navigation(row, lambda *args:self.exchange(rid,*args))
+        with self.store.writer():
+            state = self.store.read()
+            state['requests'][rid]['receipt'] = deepcopy(result)
+            self._save(state)
+        # A stale cancel completes without affecting the newer active command.
+        if result.get('stale_command') is True:
+            return result
+        self.settle_navigation(task_id, command_id)
+        return result
+
+    def settle_navigation(self, task_id, command_id, raw=None):
+        row = self.command_row(task_id, command_id)
+        if row['state'] == 'released':
+            return row['evidence']
+        proof = self.driver.command_hold(row, raw) if raw is not None else self.driver.navigation_finished(row)
         with self.store.writer():
             state = self.store.read()
             current = state['leases'][row['lease_id']]
-            if state['current'] != row['lease_id']:
-                raise ControlError('STALE_AUTHORIZATION', '导航让出返回时授权已经变化')
-            current.update(state='released', evidence=deepcopy(result), updated_at=stamp())
-            state['current'] = None
+            command = current['commands'][command_id]
+            command.update(state='held', hold_evidence=proof)
+            if current.get('active_command_id') == command_id:
+                current['active_command_id'] = None
             self._save(state)
-        return result
+        return proof
 
-    def _run(self, request_id):
+    def _cleanup(self, lease, new_exit_check=False):
+        rid = uuid.uuid5(uuid.NAMESPACE_URL, lease + (':current-exit' if new_exit_check else ':exit')).hex
         try:
-            row, op = self._snapshot(request_id)
-            exchange = lambda *args: self.exchange(request_id, *args)
-            if op['body']['action'] == 'release':
-                if op.get('cleanup') and row['target'] == 'navigation' and 'business_submission' in row:
-                    self.driver.cancel_navigation(row, exchange)
-                evidence = (self.driver.vla_exit(row, op['body']) if row['target'] == 'vla'
-                            else self._retire_navigation(row, request_id))
-            else:
-                with self.store.writer():
-                    state = self.store.read()
-                    previous = deepcopy(state['leases'].get(state['current']))
-                if previous:
-                    if previous['target'] != 'navigation' or previous['state'] != 'authorized':
-                        raise ControlError('SOURCE_NOT_RELEASED', '旧控制源尚未核清退出')
-                    self.driver.navigation_finished(previous)
-                    self._retire_navigation(previous, request_id)
-                else:
-                    self.driver.idle(row)  # The requesting VLA may be accepted but must not yet output.
-                with self.store.writer():
-                    state = self.store.read()
-                    self._eligible(row['request'])
-                    if state['current'] is not None or self._closed:
-                        raise ControlError('CONTROL_BUSY', '现场或服务状态已经变化')
-                    stored = state['leases'][row['lease_id']]
-                    # NAV may perform its own mode preparation under this grant;
-                    # no business goal is sent until prepare_navigation returns.
-                    stored['state'] = 'authorized' if row['target'] == 'navigation' else 'preparing'
-                    if row['target'] == 'navigation':
-                        stored['grant_published'] = True
-                    state['current'] = row['lease_id']
+            with self.store.writer():
+                state = self.store.read()
+                row = deepcopy(state['leases'][lease])
+                if (state['current'] != lease and not row.get('task_cancelled')) or row['state'] == 'released':
+                    return
+                if row.get('legacy_control'):
+                    raise ControlError('LEGACY_EXIT_EVIDENCE_REQUIRED',
+                        '旧链路占用已保留，需关联原命令的当前退出证明；不调用旧 relay，也不将迁移当作释放')
+                had_exit_request = any(o['body'].get('lease_id') == lease and o['body'].get('action') == 'exit'
+                                       for o in state['requests'].values())
+                if rid not in state['requests']:
+                    state['requests'][rid] = dict(body=dict(self.identity(row), action='exit'),
+                        receipt=dict(state='pending', request_id=rid), children={})
                     self._save(state)
-                evidence = (self.driver.prepare_navigation(row, exchange) if row['target'] == 'navigation'
-                            else self.driver.vla_prerequisites(row))
-            self._finish(request_id, evidence, None)
+            if row.get('gateway_binding') and (had_exit_request or row['authority_id'] != self.authority_id):
+                # Reconcile a completed exit before addressing an old instance.
+                # This is an explicit recovery request, not an effectful status poll.
+                try:
+                    evidence = self.driver.verify_exit(row, {'observation_only': True}, self.driver.status('gateway'))
+                except Exception:
+                    pass  # No proof: preserve the normal targeted stop/revoke path.
+                else:
+                    self._complete_exit(lease, rid, evidence)
+                    return
+            exchange = lambda *args: self.exchange(rid, *args)
+            def stop_source():
+                return self.driver.yield_navigation(row, exchange)
+            stop = self._exit_pool.submit(stop_source)
+            revoke = self._exit_pool.submit(self._permit, lease, 'revoke', request_id=rid+'-revoke')
+            source = None
+            try:
+                revoke.result()
+            finally:
+                try:
+                    source = stop.result()
+                except Exception:
+                    pass  # The receive-side proof below remains mandatory.
+            with self.store.writer():
+                state = self.store.read()
+                row = deepcopy(state['leases'][lease])
+            binding = row.get('gateway_binding')
+            if not binding:
+                # No grant intent means this session could never enter the gateway.
+                # A real source yield plus current isolated/held receiver is still required.
+                with self.store.writer():
+                    state = self.store.read()
+                    granted = any(op['body'].get('lease_id') == lease and op['body']['action'] == 'grant'
+                                  for op in state['requests'].values())
+                if granted or not source:
+                    raise ControlError('EXIT_UNCONFIRMED', '登记未核清，保留旧请求并等待会话／退出证明')
+                status = self.driver.status('gateway')
+                self.driver.native_facts(status, isolated=True)
+                if 'permit' not in status or status['permit'] is not None:
+                    raise ControlError('EXIT_UNCONFIRMED', '当前网关仍有许可')
+                evidence = dict(exit_confirmed=True, hold_verified=True, source_output_fenced=True,
+                    navigation=source, current_gateway=status,
+                    scope='NAV source yielded; journal proves grant never issued; target revoked')
+            else:
+                payload = {k:binding[k] for k in GATEWAY_BINDING}
+                payload.update(contract_version=VERSION, coordination_revision=REVISION, permit_mode=PERMIT_MODE, operation='fence')
+                try:
+                    fence = exchange('gateway-fence', 'gateway', '/v1/body-input/operations', payload,
+                                     '/v1/body-input/requests/{request_id}')
+                except ControlError as exc:
+                    # Keep the failed/unknown operation intact; a separately
+                    # verified current exit may still retire this occupancy.
+                    fence = dict(original_outcome='unknown', error=self._error(exc))
+                evidence = self.driver.wait_exit(row, fence, source)
+            self._complete_exit(lease, rid, evidence)
         except Exception as exc:
-            self._finish(request_id, None, exc)
+            with self.store.writer():
+                state = self.store.read()
+                if state.get('authority_id') != self.authority_id:
+                    return
+                row = state['leases'][lease]
+                if row['state'] != 'released':
+                    row['cleanup_error'] = self._error(exc)
+                    if rid in state['requests']:
+                        state['requests'][rid]['receipt'].update(state='unknown', error=self._error(exc))
+                    self._save(state)
 
-    def _finish(self, request_id, evidence, error):
+
+    def _complete_exit(self, lease, rid, evidence):
+        # Only this session's prepare can delay its release, never a newer task.
+        deadline = time.monotonic() + self.driver.timeout
+        while True:
+            with self.store.writer():
+                state = self.store.read()
+                busy = (state['requests'].get(state.get('busy')) or {}).get('body', {}).get('lease_id') == lease
+            if not busy or self._closed or time.monotonic() >= deadline:
+                break
+            time.sleep(.01)
         with self.store.writer():
             state = self.store.read()
-            if state.get('authority_id') != self.authority_id:
-                return  # Another authority owns the ledger; this result is late.
-            op = state['requests'][request_id]
-            row = state['leases'][op['body']['lease_id']]
-            if self._closed and error is None:
-                error = ControlError('CONTROL_CLOSED', '控制服务关闭后不确认新的授权或释放')
-            if op['body']['action'] == 'acquire' and not error:
-                try:
-                    self._eligible(row['request'])
-                    if self._closed or row['authority_id'] != self.authority_id:
-                        raise ControlError('STALE_AUTHORIZATION', '授权服务已经变化')
-                except Exception as exc:
-                    error = exc
-            receipt = op['receipt']
-            if error:
-                unissued = (op['body']['action'] == 'acquire' and row['target'] == 'navigation'
-                            and row['state'] == 'acquiring' and row.get('grant_published') is not True
-                            and not op['children'] and 'business_submission' not in row)
-                row['state'] = 'recovery_required'
-                # A partially completed operation may still own hardware. Reserve
-                # it only if no older unresolved source still occupies the resource.
-                if state['current'] is None:
-                    state['current'] = row['lease_id']
-                detail = (deepcopy(error.response()['error']) if isinstance(error, ControlError)
-                          else {'code': 'HANDOFF_UNCONFIRMED', 'message': str(error)})
-                receipt.update(state='unconfirmed', error=detail)
-                if unissued:
-                    self._retire_unissued_nav(state, row)
-            else:
-                ended = op['body']['action'] == 'release'
-                row.update(state='released' if ended else 'authorized', evidence=deepcopy(evidence))
-                state['current'] = None if ended else row['lease_id']
-                receipt.update(state=row['state'], owner='none' if ended else row['target'], evidence=deepcopy(evidence))
-                receipt.pop('error', None)  # Previous failed checks remain in recovery_checks.
-                for key in ('navigation_stopped', 'action_port_released', 'navigation_proof',
-                            'proof_context', 'controller_instance_id'):
-                    if key in evidence:
-                        receipt[key] = deepcopy(evidence[key])
-                if ended:
-                    receipt.update(authorization_released=True, exit_state_sha256=op['body'].get('exit_state_sha256'))
-            row['updated_at'] = stamp()
-            receipt['updated_at'] = stamp()
-            if state['busy'] == request_id:
-                state['busy'] = None
+            row = state['leases'][lease]
+            busy = (state['requests'].get(state.get('busy')) or {}).get('body', {}).get('lease_id') == lease
+            if busy or self._closed or (state['current'] != lease and not row.get('task_cancelled')):
+                raise ControlError('CONTROL_BUSY', '本会话准备仍在收尾或实例已变化')
+            evidence.update(cleanup=True, business_not_submitted='business_submission' not in row)
+            row.update(state='released', evidence=evidence, physical_exit_confirmed=True)
+            row.pop('cleanup_error', None)
+            if state['current'] == lease:
+                state['current'] = None
+            state['requests'][rid]['receipt'].update(state='released', evidence=evidence)
             self._save(state)

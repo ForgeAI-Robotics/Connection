@@ -53,5 +53,70 @@
         "tests/brain/test_kernel_reception.py"
       ]
     }
-  ]
+  ],
+  "gateway_migration": {
+    "baseline_commit": "dfee9bf",
+    "date": "2026-10-27",
+    "reason": "Retire the relay execution chain; retain Runtime and control journal. NAV gateway replaces old relay/VLA authority flows.",
+    "mapping": [
+      {
+        "old": "test_body_control: relay enable/close, VLA acquire/release, port ownership",
+        "replacement": [
+          "tests/brain/test_body_control.py",
+          "tests/brain/test_gateway_peer.py"
+        ],
+        "scope": "NAV registration/permit phases, unique owner, original requests, lost replies, renewal, restart; VLA execution explicitly refused"
+      },
+      {
+        "old": "test_control_cleanup: relay-only cleanup, sequential relay stop, legacy reboot inference",
+        "replacement": [
+          "tests/brain/test_control_cleanup.py",
+          "tests/brain/test_current_nav_exit.py",
+          "tests/brain/test_gateway_migration.py"
+        ],
+        "scope": "Parallel source/revoke, pending grant cancellation, receive-side proof, unknown source, new exit checks, changed instances remain blocked, explicit old-ledger migration"
+      },
+      {
+        "old": "test_control_http_failures: relay cleanup after NAV admission refusals",
+        "replacement": [
+          "tests/brain/test_control_http_failures.py",
+          "tests/brain/test_body_control.py"
+        ],
+        "scope": "First HTTP refusal retained, 404/conflict/500 never imply nonexecution, loss of prepare/grant replies, wrong identity and renewal failure"
+      },
+      {
+        "old": "test_control_peer/test_nav_peer/test_joint_control_peer: optional old three-peer relay/VLA source integration",
+        "replacement": [
+          "tests/brain/test_control_peer.py",
+          "tests/brain/test_nav_peer.py",
+          "tests/brain/test_joint_control_peer.py",
+          "tests/brain/test_gateway_peer.py"
+        ],
+        "scope": "Actual TLS/auth isolation, NAV receipt checks, existing NAV-only Runtime four legs, optional actual gateway core. Old three-peer physical/VLA behavior is not claimed covered or supported by the NAV gateway stage"
+      },
+      {
+        "old": "test_holding_evidence: old VLA lease carrying integration",
+        "replacement": [
+          "tests/brain/test_holding_evidence.py"
+        ],
+        "scope": "Independent holding evidence contract tests preserved; NAV carrying tasks refused until O6 gateway integration, existing O6 hold remains required"
+      }
+    ]
+  },
+  "gateway_ui_rollout": {
+    "date": "2026-10-27",
+    "reason": "Retire relay service-management entry and real direct-dispatch fallback; all real NAV paths use the single gateway authority.",
+    "coverage": [
+      "tests/brain/test_gateway_hybrid.py",
+      "tests/brain/test_simulated_manipulation.py",
+      "tests/brain/test_gateway_migration.py",
+      "tests/ops/test_gateway_service.py",
+      "tests/ops/test_dream_remote.py",
+      "tests/brain/test_execution_profile.py"
+    ],
+    "retired": [
+      "tests/ops/test_relay_service.py"
+    ],
+    "scope": "Old relay management tests replaced by read-only gateway card, no legacy startup, mixed Runtime five NAV legs/local effects, fail-closed missing authority, blocked legacy-owner migration. Physical VLA remains unsupported."
+  }
 }

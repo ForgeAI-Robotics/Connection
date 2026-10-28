@@ -43,7 +43,7 @@ class BrainApplication:
         if control_settings.get('enabled') is True:
             from brain.adapters.body_control import ControlDriver
             from brain.kernel.body_control import BodyControl
-            for key in ('robot_serial', 'action_endpoint', 'relay_base_url'):
+            for key in ('robot_serial', 'control_resource', 'action_endpoint', 'gateway_base_url', 'gateway_ca_file'):
                 if not isinstance(control_settings.get(key), str) or not control_settings[key].strip():
                     raise ValueError('body_control requires ' + key)
             self.body_control = BodyControl(self.config, root, ControlDriver(self.config), self.io)
@@ -139,13 +139,10 @@ class BrainApplication:
             # All cancellation paths (including confirmed advice) emit this
             # Runtime event after the cancelled record is durable.
             if self.body_control is not None:
-                summary = self.body_control.recovery_status()
-                if summary['blocked']:
-                    try:
-                        self.body_control.request_cleanup(record['task_id'],
-                            (summary.get('source') or {}).get('lease_id'))
-                    except Exception as exc:
-                        emit('control_cleanup_unconfirmed', record, error=str(exc))
+                try:
+                    self.body_control.cancel_task(record['task_id'])
+                except Exception as exc:
+                    emit('control_cleanup_unconfirmed', record, error=str(exc))
         emit(event, record)
         if (self.config.get("brain") or {}).get("capture_timeline", True):
             self.media.event(event, record)
@@ -208,16 +205,8 @@ class BrainApplication:
             if not result.get('no_op') and runtime and runtime.state in {'succeeded', 'failed', 'cancelled', 'recovery_required'}:
                 self.learning.enqueue(runtime.record)
             if action == 'cancel' and result.get('accepted') and self.body_control is not None:
-                summary = self.body_control.recovery_status()
-                result['control_recovery'] = summary
-                if summary['blocked']:
-                    try:
-                        result['control_recovery'] = self.body_control.request_cleanup(
-                            result.get('task_id'), (summary.get('source') or {}).get('lease_id'))
-                        result['message'] = '任务已取消；旧控制权正在独立收尾，退出核清后可发布下一轮'
-                    except Exception as exc:
-                        result['control_recovery'] = self.body_control.recovery_status()
-                        result['message'] = '任务已取消；控制退出尚未核清：' + str(exc)
+                result['control_recovery'] = self.body_control.cancel_task(result.get('task_id'))
+                result['message'] = '整轮任务已取消，可发布新任务；旧会话停止与撤权独立收尾'
             return result
         try:
             result = self.owner.call(apply, control=True)

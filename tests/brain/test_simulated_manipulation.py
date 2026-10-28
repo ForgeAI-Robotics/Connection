@@ -269,13 +269,16 @@ class MixedReceptionTests(unittest.TestCase):
         self.assertEqual(self.nav.submits, [])
 
     def test_factory_never_constructs_real_vla_and_motion_gate_is_preserved(self):
+        authority = Mock()
+        authority.driver.token_env.return_value = 'NAV_CONTROL_TOKEN'
+        config = deepcopy(self.config)
+        config['reception_real']['body_control'] = {'enabled': True}
         with patch("brain.adapters.vla_client.VlaClient.__init__", side_effect=AssertionError("real VLA")):
-            port = build_port(self.config, BACKEND)
+            port = build_port(config, BACKEND, body_control=authority)
         self.assertIsInstance(port.vla, SimulatedManipulationClient)
         self.assertTrue(port.enabled)
-        config = deepcopy(self.config)
         config["reception_real"]["kernel_enabled"] = False
-        port = build_port(config, BACKEND)
+        port = build_port(config, BACKEND, body_control=authority)
         self.assertFalse(port.gate_open)
         self.assertFalse(port.submit("x", {})["accepted"])
 

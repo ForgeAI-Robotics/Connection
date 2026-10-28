@@ -1,4 +1,4 @@
-"""Run the VLA-owned launcher; relay has an independent service lifecycle."""
+"""Run the VLA-owned launcher; the NX gateway has an independent service lifecycle."""
 
 from __future__ import annotations
 
@@ -149,7 +149,7 @@ def _sanitize_argv(argv: list[str]) -> str:
 def run(action: str, *, runner: Optional[Runner] = None) -> str:
     argv, timeout, env = ssh_argv(action)
     if action == "start":
-        record("调用 VLA 官方启动器，由启动器执行检查、依赖准备与 HTTP 启动；relay 独立管理")
+        record("调用 VLA 官方启动器，由启动器执行检查、依赖准备与 HTTP 启动；NX 网关独立管理")
     else:
         record(f"远程执行 VLA {action}")
     record(_sanitize_argv(argv))

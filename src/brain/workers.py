@@ -53,7 +53,11 @@ class WorkerPool:
                 self.queue.task_done()
 
     def close(self, timeout=2):
-        self.closing.set()
+        # start() appends before Thread.start(); snapshot under the same guard
+        # so shutdown cannot join a thread that has not started yet.
+        with self._guard:
+            self.closing.set()
+            threads = tuple(self.threads)
         while True:
             try:
                 future, *_ = self.queue.get_nowait()
@@ -62,9 +66,9 @@ class WorkerPool:
             except queue.Empty:
                 break
         end = time.monotonic() + timeout
-        for thread in self.threads:
+        for thread in threads:
             thread.join(max(0, end - time.monotonic()))
-        return not any(thread.is_alive() for thread in self.threads)
+        return not any(thread.is_alive() for thread in threads)
 
     def health(self):
         return {'name': self.name, 'threads': len(self.threads),

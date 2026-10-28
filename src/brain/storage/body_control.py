@@ -16,16 +16,18 @@ class ControlStore:
             return None
         with self.path.open(encoding='utf-8') as stream:
             state = json.load(stream)
-        if (not isinstance(state, dict) or state.get('schema') != 1
+        if (not isinstance(state, dict) or state.get('schema') not in (1, 2, 3)
                 or type(state.get('epoch')) is not int or state['epoch'] < 0
                 or not isinstance(state.get('leases'), dict) or not isinstance(state.get('requests'), dict)):
             raise ValueError('Invalid body control ledger; refusing to reset it')
         return state
 
     def write(self, value):
+        # Encode once; retain the entire journal and durable atomic replacement.
+        encoded = json.dumps(value, ensure_ascii=True, allow_nan=False)
         tmp = self.path.with_suffix('.json.tmp')
         with tmp.open('w', encoding='utf-8') as stream:
-            json.dump(value, stream, ensure_ascii=True, allow_nan=False)
+            stream.write(encoded)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(tmp, self.path)
