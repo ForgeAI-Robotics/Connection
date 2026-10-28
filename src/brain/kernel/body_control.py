@@ -61,6 +61,9 @@ class BodyControl:
                     # Leave all source identities and receipts intact. No replay.
                     for row in state['leases'].values():
                         if row['state'] != 'released':
+                            if (row.get('target') == 'vla' and row.get('source_url') !=
+                                    self.config['reception_real']['vla_base_url']):
+                                raise ControlError('CONTROL_TARGET_CHANGED', '原 VLA 控制记录尚未核清，不能改用新端点')
                             row['state'] = 'recovery_required'
                     for op in state['requests'].values():
                         if (op['receipt']['state'] == 'pending' and not
@@ -127,11 +130,12 @@ class BodyControl:
                 or record.get('open_command_id') != body.get('command_id')
                 or record.get('dispatch_closed') or record.get('control_request')
                 or record.get('state') not in {'running', 'verifying', 'waiting_human'}
-                or record.get('execution_backend') not in {'body_real', 'reception_real', 'reception_real_sim_manipulation'}
+                or record.get('execution_backend') not in {'body_real', 'reception_real', 'reception_real_sim_manipulation', 'reception_sim_navigation_real'}
                 or (self.config.get('reception_real') or {}).get('kernel_enabled') is not True):
             raise ControlError('NOT_SCHEDULED', '当前 Runtime 未允许该命令申请控制')
         target = record.get('execution_target') or {}
-        if target.get('dream') != self.binding['dream']:
+        service = 'dream' if request.get('skill') == 'navigate' else 'vla'
+        if target.get(service) != self.config['reception_real'][service + '_base_url']:
             raise ControlError('CONTROL_TARGET_CHANGED', '任务绑定的执行端与控制端不符')
         if 'body_control' in target and target['body_control'] != {
                 key:self.settings[key] for key in ('robot_serial','control_resource','action_endpoint','gateway_base_url')}:
@@ -146,8 +150,9 @@ class BodyControl:
         self.start()
         request = deepcopy(request)
         body = request['body']
-        if request.get('skill') != 'navigate':
-            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '当前网关接线仅支持 NAV 身体控制')
+        if request.get('skill') not in {'navigate', 'open_fridge', 'grasp_cola'}:
+            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '当前网关未接入该动作')
+        target = 'navigation' if request['skill'] == 'navigate' else 'vla'
         if not all(identifier(body.get(k)) for k in ('task_id', 'command_id')):
             raise ControlError('INVALID_IDENTITY', '任务／命令身份无效', 400)
         with self.store.writer():
@@ -167,7 +172,8 @@ class BodyControl:
             row = state['leases'].get(state['current'])
             if row:
                 if (row['state'] != 'authorized' or row.get('revoked')
-                        or row['authority_id'] != self.authority_id or row.get('active_command_id')):
+                        or row['authority_id'] != self.authority_id or row.get('active_command_id')
+                        or row['target'] != target or target == 'vla'):
                     raise ControlError('SOURCE_NOT_RELEASED', '当前命令或控制退出尚未核清')
             else:
                 if any(r['state'] != 'released' and not r.get('task_cancelled') for r in state['leases'].values()):
@@ -179,14 +185,22 @@ class BodyControl:
                     permit_mode=PERMIT_MODE, control_session_id=session,
                     robot_serial=self.robot, control_resource=self.resource, action_endpoint=self.endpoint,
                     lease_id=lease, authority_id=self.authority_id, ownership_epoch=state['epoch'],
-                    target='navigation', state='registered', evidence={}, commands={}, command_seq=0,
+                    target=target, state='registered', evidence={}, commands={}, command_seq=0,
                     updated_at=stamp())
+                if target == 'vla':
+                    row['source_url'] = self.config['reception_real']['vla_base_url']
                 state['leases'][lease] = row
             row.pop('business_submission', None)
             row['command_seq'] += 1
             row.update(task_id=body['task_id'], command_id=body['command_id'], request=request,
                        active_command_id=body['command_id'],
                        holding_scope='simulated' if backend == 'reception_real_sim_manipulation' else 'physical')
+            if backend == 'reception_sim_navigation_real':
+                from brain.storage.tasks import load_existing
+                record = load_existing(self.root) or {}
+                row['worksite_confirmation'] = deepcopy((record.get('selection') or {}).get('worksite_confirmation'))
+                if not isinstance(row['worksite_confirmation'], dict) or row['worksite_confirmation'].get('ready') is not True:
+                    raise ControlError('WORKSITE_EVIDENCE_REQUIRED', '导航模拟模式需要本任务的现场作业确认')
             row['commands'][body['command_id']] = dict(task_id=body['task_id'], command_id=body['command_id'],
                 command_seq=row['command_seq'], request=request, state='registered')
             self._save(state)
@@ -226,6 +240,8 @@ class BodyControl:
                 raise ControlError('STALE_AUTHORIZATION', '派发没有登记的会话')
             row = state['leases'][snapshot['lease_id']]
             command = row['commands'][body['command_id']]
+            if row['target'] == 'vla' and wire_body != row.get('prepared_business'):
+                raise ControlError('REQUEST_CONFLICT', '操控执行请求必须与原准备请求完全一致')
             if 'business_submission' in command:
                 raise ControlError('SUBMISSION_ALREADY_ATTEMPTED', '原业务已落盘，必须查询原命令')
             if row.get('active_command_id') != body['command_id'] or row['state'] != 'authorized':
@@ -239,6 +255,8 @@ class BodyControl:
     def business_body(self, request):
         body = deepcopy(request['body'])
         row = self.command_row(body['task_id'], body['command_id'])
+        if row['target'] == 'vla':
+            return deepcopy(row['prepared_business'])
         body.update(control_authorization=self.reference(row), control_session_id=row['control_session_id'],
                     command_seq=row['command_seq'], coordination_revision=REVISION, permit_mode=PERMIT_MODE,
                     dispatch_policy='when_idle',
@@ -306,8 +324,8 @@ class BodyControl:
         self.start()
         return dict(contract_version=VERSION, coordination_revision=REVISION, authority='brain',
                     authority_id=self.authority_id, robot_serial=self.robot, control_resource=self.resource,
-                    action_endpoint=self.endpoint, operations=['query'], supported_sources=['navigation'],
-                    hand_policy='body_only', supported_hand_modes=['not_required'],
+                    action_endpoint=self.endpoint, operations=['query'], supported_sources=['navigation', 'vla'],
+                    hand_policy='per_command', supported_hand_modes=['not_required', 'hold', 'execute'],
                     features=['gateway-push', 'persistent-fenced-owner'], ready=True,
                     physical_readiness_verified=False, permit_mode=PERMIT_MODE, renew_required=False)
 
@@ -406,7 +424,7 @@ class BodyControl:
         body = dict(self.identity(row), action=action, request_id=request_id)
         if action == 'release':
             body.update(authority_id=row['authority_id'], ownership_epoch=row['ownership_epoch'])
-        receipt, created = self._begin(body, 'navigation')
+        receipt, created = self._begin(body, row['target'])
         if created:
             self._run(request_id)
         result = self.query(row['lease_id'], request_id=request_id)
@@ -417,6 +435,22 @@ class BodyControl:
         return result
 
     def prepare_navigation(self, request):
+        return self.prepare_command(request)
+
+    def prepare_command(self, request):
+        # A source change or VLA's one-command session uses the original exit path.
+        # Same-source NAV continues reusing its existing session.
+        self.start()
+        target = 'navigation' if request.get('skill') == 'navigate' else 'vla'
+        with self.store.writer():
+            self._eligible(request)
+            state = self.store.read()
+            current = deepcopy(state['leases'].get(state['current']))
+            known = self._command_row(state, request['body']['task_id'], request['body']['command_id'])
+        if (not known and current and (current['target'] != target or target == 'vla')):
+            if current.get('active_command_id'):
+                raise ControlError('SOURCE_NOT_RELEASED', '原动作仍在执行，不能交接')
+            self.release_control(current['task_id'], current['command_id'])
         row = self.register(request)
         if row['state'] == 'authorized':
             # Admission only: a lost observation does not revoke existing control.
@@ -508,7 +542,7 @@ class BodyControl:
                       if operation == 'revoke' and row.get('gateway_binding')
                       else self.driver.status('gateway'))
             binding = row.get('gateway_binding') or dict(robot_serial=self.robot, control_resource=self.resource,
-                control_session_id=row['control_session_id'], source_id='navigation',
+                control_session_id=row['control_session_id'], source_id=row['target'],
                 control_authorization=self.reference(row), gateway_instance_id=status['gateway_instance_id'])
             if binding['gateway_instance_id'] != status['gateway_instance_id']:
                 raise ControlError('GATEWAY_INSTANCE_CHANGED', '网关实例变化，需当前退出核验')
@@ -532,7 +566,8 @@ class BodyControl:
                     payload = dict(binding, contract_version=VERSION, coordination_revision=REVISION, permit_mode=PERMIT_MODE,
                                    operation=operation, permit_seq=current['permit_seq'])
                     if operation != 'revoke':
-                        payload.update(phase=phase, hand_mode='not_required', hold_reference_id=None)
+                        hand_mode = ('execute' if phase == 'execute' else 'hold') if row['target'] == 'vla' else 'not_required'
+                        payload.update(phase=phase, hand_mode=hand_mode, hold_reference_id=binding.get('hold_reference_id'))
                     if operation == 'grant':
                         if 'brain-takeover-v1' not in status.get('features', []):
                             raise ControlError('TAKEOVER_UNSUPPORTED', '网关尚未支持大脑接管授权')
@@ -563,6 +598,14 @@ class BodyControl:
             status = self.driver.status('gateway')
             if 'brain-takeover-v1' not in status.get('features', []):
                 raise ControlError('TAKEOVER_UNSUPPORTED', '网关尚未支持大脑接管授权')
+            vla = row['target'] == 'vla'
+            if vla:
+                from brain.adapters.vla_control import capabilities
+                capabilities(status)
+            elif (status.get('hand_policy') == 'body_only'
+                    and (status.get('native') or {}).get('old_hand_task_pending') is True):
+                # A body-only takeover cannot fence an unresolved hand action.
+                raise ControlError('OLD_HAND_TASK_UNRESOLVED', '旧手部动作未退出，身体独立网关不能接管')
             with self.store.writer():
                 state = self.store.read()
                 self._eligible(row['request'])
@@ -573,22 +616,41 @@ class BodyControl:
                 state['current'] = row['lease_id']
                 self._save(state)
             payload = self.driver.payload(row, 'prepare')
-            args = (request_id, 'nav-prepare', 'nav', '/v1/navigation/handoff/prepare', payload,
-                    '/v1/navigation/handoff/requests/{request_id}')
+            service = 'vla' if vla else 'nav'
+            prefix = '/v1/vla' if vla else '/v1/navigation'
+            if vla:
+                rid = uuid.uuid5(uuid.NAMESPACE_URL, request_id + ':vla-prepare').hex
+                business, worksite = self.driver.vla_business(row, rid)
+                with self.store.writer():
+                    state = self.store.read()
+                    current = state['leases'][row['lease_id']]
+                    current.update(prepared_business=business, worksite_observation=worksite)
+                    self._save(state)
+                payload['business_request'] = business
+            args = (request_id, service+'-prepare', service, prefix+'/handoff/prepare', payload,
+                    prefix+'/handoff/requests/{request_id}')
             registered = self.exchange(*args, until_registered=True)
             publisher = registered.get('registration') or {}
             status = self.driver.status('gateway')
             controller = publisher.get('controller_instance_id')
             if not isinstance(controller, str) or not controller:
-                raise ControlError('IDENTITY_MISMATCH', 'NAV 登记缺少目标 SONIC 实例')
+                raise ControlError('IDENTITY_MISMATCH', '执行端登记缺少目标 SONIC 实例')
             native = status.get('native') or {}
             if native.get('controller_instance_id') not in (None, controller):
-                raise ControlError('CONTROLLER_INSTANCE_CHANGED', 'NAV 登记与网关目标实例不符')
+                raise ControlError('CONTROLLER_INSTANCE_CHANGED', '执行端登记与网关目标实例不符')
             binding = dict(robot_serial=self.robot, control_resource=self.resource, action_endpoint=self.endpoint,
                 control_session_id=row['control_session_id'], control_authorization=self.reference(row),
-                source_id='navigation', gateway_instance_id=status['gateway_instance_id'],
+                source_id=row['target'], gateway_instance_id=status['gateway_instance_id'],
                 controller_instance_id=controller, hold_reference_id=None,
                 publisher_instance_id=publisher['publisher_instance_id'], input_session_id=publisher['input_session_id'])
+            if vla:
+                if any(publisher.get(k) != binding[k] for k in
+                       ('robot_serial','control_resource','control_session_id','control_authorization','source_id','gateway_instance_id')):
+                    raise ControlError('IDENTITY_MISMATCH', 'VLA 登记与本次控制请求不符')
+                binding.update(action_endpoint=publisher['action_endpoint'], o6_instance_id=publisher['o6_instance_id'],
+                               hold_reference_id=publisher['hold_reference_id'])
+                if (status.get('o6') or {}).get('receiver_instance_id') != binding['o6_instance_id']:
+                    raise ControlError('IDENTITY_MISMATCH', 'VLA 登记与网关手部实例不符')
             with self.store.writer():
                 state = self.store.read()
                 current = state['leases'][row['lease_id']]
@@ -599,20 +661,29 @@ class BodyControl:
                     raise ControlError('CONTROL_REVOKED', '登记返回前已取消')
             self._permit(row['lease_id'], 'grant')
             prepared = self.exchange(*args)
-            self.driver.require(prepared, 'mode_ready', 'hold_verified', 'navigation_not_started')
-            facts = prepared.get('evidence') or {}
-            self.driver.require(facts, 'fresh_preparation_output')
-            if facts.get('hand_participation') != 'not_required' or facts.get('hold_scope') != 'body':
-                raise ControlError('HAND_POLICY_MISMATCH', 'NAV prepare 未明确核验身体独立模式')
-            if any(facts.get('publisher', {}).get(k) != binding[k] for k in ('publisher_instance_id','input_session_id')):
-                raise ControlError('IDENTITY_MISMATCH', '准备完成的 publisher/session 改变')
+            if vla:
+                if prepared['registration'] != registered['registration']:
+                    raise ControlError('IDENTITY_MISMATCH', 'VLA 准备完成的登记身份改变')
+                self.driver.verify_current_permit(dict(row, gateway_binding=binding),
+                    prepared.get('current_observation') or {}, 'prepare', require_hold=True)
+            else:
+                self.driver.require(prepared, 'mode_ready', 'hold_verified', 'navigation_not_started')
+                facts = prepared.get('evidence') or {}
+                self.driver.require(facts, 'fresh_preparation_output')
+                if facts.get('hand_participation') != 'not_required' or facts.get('hold_scope') != 'body':
+                    raise ControlError('HAND_POLICY_MISMATCH', 'NAV prepare 未明确核验身体独立模式')
+                if any(facts.get('publisher', {}).get(k) != binding[k] for k in ('publisher_instance_id','input_session_id')):
+                    raise ControlError('IDENTITY_MISMATCH', '准备完成的 publisher/session 改变')
             self._permit(row['lease_id'], 'allow_execute')
+            if vla:
+                self.driver.verify_current_permit(dict(row, gateway_binding=binding),
+                    self.driver.status('gateway'), 'execute', require_hold=True)
             with self.store.writer():
                 state = self.store.read()
                 current = state['leases'][row['lease_id']]
                 self._eligible(current['request'])
                 self._require_live(current, 'execute')
-                evidence = dict(prepared=True, navigation=prepared, controller_instance_id=binding['controller_instance_id'])
+                evidence = dict(prepared=True, **{row['target']: prepared}, controller_instance_id=binding['controller_instance_id'])
                 current.update(state='authorized', evidence=evidence)
                 state['requests'][request_id]['receipt'].update(state='authorized', evidence=evidence,
                     authority_id=current['authority_id'], ownership_epoch=current['ownership_epoch'])
@@ -804,7 +875,7 @@ class BodyControl:
                     return
             exchange = lambda *args: self.exchange(rid, *args)
             def stop_source():
-                return self.driver.yield_navigation(row, exchange)
+                return (self.driver.yield_vla if row['target'] == 'vla' else self.driver.yield_navigation)(row, exchange)
             stop = self._exit_pool.submit(stop_source)
             revoke = self._exit_pool.submit(self._permit, lease, 'revoke', request_id=rid+'-revoke')
             source = None
@@ -829,7 +900,9 @@ class BodyControl:
                 if granted or not source:
                     raise ControlError('EXIT_UNCONFIRMED', '登记未核清，保留旧请求并等待会话／退出证明')
                 status = self.driver.status('gateway')
-                self.driver.native_facts(status, isolated=True)
+                self.driver.native_facts(status, isolated=True, vla=row['target'] == 'vla')
+                if row['target'] == 'vla':
+                    raise ControlError('EXIT_UNCONFIRMED', '缺少 VLA 登记身份，无法关联手部退出证明')
                 if 'permit' not in status or status['permit'] is not None:
                     raise ControlError('EXIT_UNCONFIRMED', '当前网关仍有许可')
                 evidence = dict(exit_confirmed=True, hold_verified=True, source_output_fenced=True,
@@ -837,6 +910,9 @@ class BodyControl:
                     scope='NAV source yielded; journal proves grant never issued; target revoked')
             else:
                 payload = {k:binding[k] for k in GATEWAY_BINDING}
+                if row['target'] == 'vla':
+                    payload.update(o6_instance_id=binding['o6_instance_id'],
+                                   hold_reference_id=binding['hold_reference_id'])
                 payload.update(contract_version=VERSION, coordination_revision=REVISION, permit_mode=PERMIT_MODE, operation='fence')
                 try:
                     fence = exchange('gateway-fence', 'gateway', '/v1/body-input/operations', payload,

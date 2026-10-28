@@ -39,6 +39,13 @@ ROS_SIM_MANIPULATION_SOP = {
     "triggers": ["开始接待（导航仿真＋操控模拟）"],
 }
 
+SIM_NAVIGATION_SOP = {
+    'id': 'reception.fridge_pick.sim_navigation', 'version': '2',
+    'description': '导航模拟＋操控真机：同一接待流程，导航不驱动机器人，开门与抓取真实执行。',
+    'constraints': '现场先摆好冰箱作业姿态并确认；模拟到达不能证明实际到位，运送仅模拟。',
+    'triggers': ['开始接待（导航模拟＋操控真机）', '开始接待(导航模拟+操控真机)'],
+}
+
 # Without a manipulation step every transition stays within one navigation source.
 NAV_ONLY_PHASES = tuple(_replace(step, handoff_before="") for step in PHASES
                         if step.kind in {"local", "navigate"})

@@ -131,6 +131,7 @@ ACTIONS = {'query_original': '查询原指令的执行状态', 'request_help': '
            'wait': '等待执行条件就绪', 'cancel': '通过原任务入口取消任务',
            'continue': '确认执行条件后，通过原任务入口继续'}
 BACKENDS = {'reception_real': '真机接待', 'reception_protocol': '接待协议模拟',
+            'reception_sim_navigation_real': '导航模拟＋操控真机（不含真实移动与运送）',
             'reception_ros_sim_manipulation': '真实 ROS 导航项目仿真＋操控模拟',
             'reception_real_sim_manipulation': '导航真机＋操控模拟（不含真实抓放）',
             'reception_simple': 'SIMPLE 物理仿真接待',
@@ -277,10 +278,12 @@ def manipulation_is_simulated(record):
 
 def scope_manipulation_advice(advice, record):
     """Qualify both saved and newly generated prose without changing its action."""
-    if not advice or not manipulation_is_simulated(record):
+    navigation_simulated = (record or {}).get('execution_backend') == 'reception_sim_navigation_real'
+    if not advice or not (manipulation_is_simulated(record) or navigation_simulated):
         return advice
     result = dict(advice)
-    prefix = '模拟操控说明：下述开门、持物、抓取和放置仅指模拟状态，不代表真实效果。\n'
+    prefix = ('模拟导航说明：导航到达和运送仅为模拟，不能证明机器人实际到位；操控效果按真实回执核验。\n'
+              if navigation_simulated else '模拟操控说明：下述开门、持物、抓取和放置仅指模拟状态，不代表真实效果。\n')
     for key in ('summary', 'reason'):
         text = result.get(key)
         if isinstance(text, str) and text and not text.startswith(prefix):

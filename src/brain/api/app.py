@@ -408,7 +408,8 @@ def create_app(application, *, facade=None):
                 subtask_list = master_agent.publish_global_task(
                     task, data["refresh"], task_id,
                     force_new_task=bool(data.get("force_new_task")),
-                    resume=resume, options={"entry": request.headers.get("X-FQ-Source") or "api"},
+                    resume=resume, options={"entry": request.headers.get("X-FQ-Source") or "api",
+                                            'worksite_confirmed': data.get('worksite_confirmed') is True},
                 )
 
             accepted = not (

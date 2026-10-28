@@ -52,6 +52,8 @@ class TaskReasoner:
                 chosen['workflow_variant'] = 'real'
             elif skill.real_sop and chosen['sop']['id'] == skill.real_sop['id'] + '.sim_manipulation':
                 chosen['workflow_variant'] = 'real_sim_manipulation'
+            elif skill.real_sop and chosen['sop']['id'] == skill.real_sop['id'] + '.sim_navigation':
+                chosen['workflow_variant'] = 'real_sim_navigation'
         return chosen
 
     def _select(self, task, options, sops, variants):
@@ -110,6 +112,7 @@ class TaskReasoner:
             "ledger_state 可能包含尚未观测的初始值；已确认事实以 established_facts 和尝试证据为准。\n"
             "manipulation_simulated=true 时，开门、持物、抓取和放置证据仅是模拟状态；"
             "summary 和 reason 中提到这些事实时必须明确写模拟，不得声称已真实抓取或真实持物。"
+            "navigation_simulated=true 时，导航到达和运送只代表模拟；不能说机器人实际移动或实际送达，操控仍须真实核验。"
             "接近目标的位置数值不证明已到达；arrival_yaw_timeout 只表明最终朝向调整超时，"
             "不能据此断言位置已通过全部到达条件。\n"
             "你不能自行改 SOP、跳过步骤、重抓、重放、解除保护或把失败写成成功。"
@@ -187,6 +190,7 @@ def recovery_context(record):
             "task": record.get("task_desc"), "package": record.get("package"),
             "execution_backend": record.get("execution_backend"),
             "manipulation_simulated": manipulation_is_simulated(record),
+            "navigation_simulated": record.get('execution_backend') == 'reception_sim_navigation_real',
             "selection": selected_identity, "state": record.get("state"),
             "bound_steps": [{key: deepcopy(step.get(key)) for key in
                              ('step_id', 'kind', 'display_name', 'key', 'object_id', 'target_area')}

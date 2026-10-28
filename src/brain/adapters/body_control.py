@@ -28,6 +28,7 @@ class ControlDriver:
             if not url.startswith('https://') or not self.settings.get('gateway_ca_file'):
                 raise ValueError('Gateway requires HTTPS and gateway_ca_file; TLS verification cannot be disabled')
             clients = dict(nav=HttpClient(real['dream_base_url'], timeout_sec=float(real.get('request_timeout_sec', 10))),
+                vla=HttpClient(real['vla_base_url'], timeout_sec=float(real.get('request_timeout_sec', 10))),
                 gateway=HttpClient(url, timeout_sec=self.request_timeout, ca_file=self.settings['gateway_ca_file']))
         self.clients = clients
         for service, client in self.clients.items():
@@ -37,7 +38,7 @@ class ControlDriver:
     def token_env(self, service):
         if service == 'gateway':
             return self.settings.get('gateway_token_env', 'BRAIN_GATEWAY_TOKEN')
-        return self.settings.get('nav_token_env') or self.settings.get('token_env', 'BRAIN_CONTROL_TOKEN')
+        return self.settings.get(service + '_token_env') or self.settings.get('token_env', 'BRAIN_CONTROL_TOKEN')
 
     def _call(self, service, method, path, payload=None, *, record=None):
         try:
@@ -68,7 +69,9 @@ class ControlDriver:
     def status(self, service):
         if service == 'gateway':
             observation = uuid.uuid4().hex
+            started = time.monotonic()
             value = self._call(service, 'GET', '/v1/body-input/status?observation_id=' + observation)
+            value['_request_elapsed_ms'] = (time.monotonic() - started) * 1000
             if (value.get('contract_version') != VERSION or value.get('coordination_revision') != REVISION
                     or not isinstance(value.get('gateway_instance_id'), str)
                     or value.get('permit_mode') != PERMIT_MODE or value.get('renew_required') is not False
@@ -77,28 +80,37 @@ class ControlDriver:
             return value
         return self._fresh(self._call('nav', 'GET', '/v1/status?observation_id=' + uuid.uuid4().hex), robot_required=False)
 
-    def native_facts(self, status, *, isolated=False, require_hold=True):
+    def native_facts(self, status, *, isolated=False, require_hold=True, vla=False):
         native = status.get('native')
-        if (status.get('hand_policy') != 'body_only'
-                or status.get('supported_hand_modes') != ['not_required']):
-            raise ControlError('HAND_POLICY_MISMATCH', '首轮需要网关 body_only / not_required')
+        if not vla and 'not_required' not in status.get('supported_hand_modes', []):
+            raise ControlError('HAND_POLICY_MISMATCH', '网关未支持本次身体独立控制')
+        if not vla and status.get('hand_policy') != 'body_only':
+            from brain.adapters.vla_control import capabilities
+            capabilities(status)  # An explicitly extended gateway may still serve body-only NAV.
         if not isinstance(native, dict) or status.get('observation_error'):
             raise ControlError('NATIVE_UNAVAILABLE', 'SONIC 当前证据未就绪：' +
                                str(status.get('observation_error') or 'native missing'), details=status)
-        self.freshness(status.get('freshness'), gateway_instance_id=status['gateway_instance_id'])
+        timing = deepcopy(status.get('freshness'))
+        if vla and isinstance(timing, dict):
+            for key in ('sample_age_ms', 'body_sample_age_ms'):
+                if type(timing.get(key)) in (int, float):
+                    timing[key] += status.get('_request_elapsed_ms', 0)
+        self.freshness(timing, gateway_instance_id=status['gateway_instance_id'])
         generated = status['freshness'].get('generated_monotonic_ns')
         observed = native.get('observed_monotonic')
         if (type(generated) is not int or type(observed) not in (int, float)
                 or not 0 <= generated / 1e9 - observed <= .15):
             raise ControlError('STALE_EVIDENCE', 'native 时间与当前观测不一致')
-        if (native.get('hand_participation') != 'not_required'
+        if not vla and (native.get('hand_participation') != 'not_required'
                 or native.get('old_hand_task_pending') is not False):
             raise ControlError('OLD_HAND_TASK_UNRESOLVED', '手部未参与声明或旧手部退出尚未核清')
-        if any(k not in native or native[k] is not None for k in
+        if not vla and any(k not in native or native[k] is not None for k in
                ('o6_hold_verified', 'o6_output_fenced', 'hold_reference_id')):
             raise ControlError('HAND_POLICY_MISMATCH', '未参与的手部事实必须明确为 null')
         if require_hold or isolated:
             self.require(native, 'body_hold_verified')
+            if vla and native.get('safety_override') is not False:
+                raise ControlError('BODY_RUNTIME_UNCONFIRMED', '身体安全状态未核清')
         else:
             # Current permission may be observed during motion; stationarity
             # belongs at command admission and exit.
@@ -159,15 +171,21 @@ class ControlDriver:
             raise ControlError('GATEWAY_INSTANCE_CHANGED', '网关实例改变，旧执行权不可恢复')
         if any(encode(permit.get(k)) != encode(binding[k]) for k in GATEWAY_BINDING):
             raise ControlError('STALE_AUTHORIZATION', '网关当前许可绑定不匹配')
+        vla = row['target'] == 'vla'
+        hand_mode = ('execute' if phase == 'execute' else 'hold') if vla else 'not_required'
         if (permit.get('phase') != phase or permit.get('permit_mode') != PERMIT_MODE
                 or 'valid_until_monotonic' not in permit
-                or permit.get('valid_until_monotonic') is not None or permit.get('hand_mode') != 'not_required'
-                or 'hold_reference_id' not in permit or permit['hold_reference_id'] is not None):
+                or permit.get('valid_until_monotonic') is not None or permit.get('hand_mode') != hand_mode
+                or 'hold_reference_id' not in permit or permit['hold_reference_id'] != binding.get('hold_reference_id')):
             raise ControlError('PERMIT_NOT_CURRENT', '网关当前阶段或持续会话模式不符')
-        native = self.native_facts(status, require_hold=require_hold)
+        native = self.native_facts(status, require_hold=require_hold, vla=vla)
+        if vla:
+            from brain.adapters.vla_control import hands, capabilities
+            capabilities(status)
+            hands(status, binding, phase)
         if native['controller_instance_id'] != binding['controller_instance_id']:
             raise ControlError('CONTROLLER_INSTANCE_CHANGED', 'SONIC 实例已变化')
-        if phase == 'execute' and native.get('active_session') != binding['input_session_id']:
+        if (phase == 'execute' or vla) and native.get('active_session') != binding['input_session_id']:
             raise ControlError('STATIC_ACTIVATION_UNCONFIRMED', 'SONIC 未采用本会话')
         return permit
 
@@ -181,11 +199,21 @@ class ControlDriver:
             raise ControlError('IDENTITY_MISMATCH', '当前退出证明未关联原会话')
         self.require(facts, 'exit_confirmed', 'body_forwarding_fenced', 'receiver_callbacks_sealed',
                      'receiver_decoded_caches_cleared', 'input_session_retired', 'body_stopped', 'body_hold_verified')
-        if (facts.get('hand_participation') != 'not_required'
+        vla = row['target'] == 'vla'
+        if not vla and (facts.get('hand_participation') != 'not_required'
                 or any(k not in facts or facts[k] is not None for k in
                        ('o6_output_fenced', 'o6_hold_verified', 'hold_reference_id'))):
             raise ControlError('HAND_POLICY_MISMATCH', '当前退出证明的手部范围不符')
-        native = self.native_facts(status, isolated=True)
+        native = self.native_facts(status, isolated=True, vla=vla)
+        if vla:
+            from brain.adapters.vla_control import hands
+            self.require(facts, 'o6_output_fenced', 'o6_hold_verified')
+            never_bound = facts.get('o6_never_bound') is True
+            if never_bound and facts.get('o6_instance_id') != binding['o6_instance_id']:
+                raise ControlError('O6_EXIT_UNCONFIRMED', '未绑定退出证明未关联原 O6 实例')
+            held = hands(status, binding, exiting=True, never_bound=never_bound)
+            if not held.get('hold_reference_id') or facts.get('hold_reference_id') != held['hold_reference_id']:
+                raise ControlError('O6_EXIT_UNCONFIRMED', '当前手部保持参考与退出回执不一致')
         last = status.get('last_binding') or {}
         if (status.get('permit') is not None or 'permit' not in status
                 or any(encode(last.get(k)) != encode(binding.get(k)) for k in GATEWAY_BINDING)):
@@ -204,9 +232,9 @@ class ControlDriver:
         # The source can remain unknown: retired session + cache isolation prevents late input.
         source_closed = True if source and source.get('output_fenced') is True else None
         return dict(exit_confirmed=True, hold_verified=True, source_output_fenced=source_closed,
-                    navigation=source, gateway=fence, current_gateway=status,
-                    hand_participation='not_required', hold_scope='body',
-                    scope='NAV body exit only; hands not participating')
+                    **{row['target']: source}, gateway=fence, current_gateway=status,
+                    hand_participation='required' if vla else 'not_required', hold_scope='body_and_hands' if vla else 'body',
+                    scope='VLA body and hand exit' if vla else 'NAV body exit only; hands not participating')
 
     def wait_exit(self, row, fence, source=None):
         """Observe asynchronous native stop/hold completion without replaying effects."""
@@ -243,7 +271,7 @@ class ControlDriver:
         value = dict(contract_version=VERSION, coordination_revision=REVISION, permit_mode=PERMIT_MODE,
                      robot_serial=row['robot_serial'], control_resource=row['control_resource'],
                      action_endpoint=row['action_endpoint'], control_session_id=row['control_session_id'],
-                     source_id='navigation', control_authorization={k: row[k] for k in
+                     source_id=row['target'], control_authorization={k: row[k] for k in
                         ('lease_id', 'authority_id', 'ownership_epoch')})
         if action == 'yield':
             value['cancel_scope'] = 'control_session'
@@ -265,6 +293,9 @@ class ControlDriver:
 
     @staticmethod
     def operation_receipt(value, payload, service=None):
+        if service == 'vla':
+            from brain.adapters.vla_control import receipt
+            return receipt(value, payload)
         if not isinstance(value, dict):
             raise ControlError('INVALID_RECEIPT', '控制回执必须为对象')
         view = deepcopy(value)
@@ -377,7 +408,7 @@ class ControlDriver:
         deadline = time.monotonic() + self.timeout
         while True:
             if value is not None:
-                if service == 'vla' and payload['action'] == 'stop' and 'stop_requests' in value:
+                if service == 'vla' and payload.get('action') == 'stop' and 'stop_requests' in value:
                     value = (value['stop_requests'] or {}).get(payload['request_id'])
                     if value is None:
                         if time.monotonic() >= deadline:
@@ -394,7 +425,7 @@ class ControlDriver:
                     raise failed('HANDOFF_UNCONFIRMED', str(value.get('error') or value.get('blockers') or value['state']))
                 if value.get('state') != 'pending' and (
                         value.get('completed') is True or value.get('state') in {'succeeded', 'completed'}):
-                    if service != 'gateway':
+                    if service == 'nav':
                         self._fresh(value, robot_required=not nav_receipt)
                     return value
                 if until_registered and value.get('state') == 'pending' and value.get('registration'):
@@ -451,12 +482,88 @@ class ControlDriver:
         self.require(result, 'navigation_stopped', 'output_fenced', 'hold_verified')
         return result
 
+    def yield_vla(self, row, exchange):
+        result = exchange('vla-yield', 'vla', '/v1/vla/handoff/yield', self.payload(row, 'yield'),
+                          '/v1/vla/handoff/requests/{request_id}')
+        self.require(result.get('evidence'), 'policy_stopped', 'publisher_stopped', 'output_fenced', 'hold_verified')
+        return result
+
+    def vla_business(self, row, prepare_request_id):
+        """Collect business evidence once, before persisting the exact prepare/task body."""
+        from datetime import datetime, timedelta
+        from brain.adapters.vla_control import worksite, WORKSITE_SCHEMA
+        from contracts.body_control import digest
+        body = deepcopy(row['request']['body'])
+        from contracts.vla import machine_id
+        if (body.get('operation') != row['request']['skill']
+                or body.get('contract_version') != 'fq/reception-lan/v1'
+                or any(not machine_id(body.get(k)) for k in ('task_id','command_id','object_id','target_area'))
+                or set(body) - {'contract_version','task_id','command_id','operation','object_id','target_area',
+                                'navigation_proof','worksite_evidence'}):
+            raise ControlError('INVALID_REQUEST', '操控请求字段或动作身份无效')
+        status = self.status('gateway')
+        controller = (status.get('native') or {}).get('controller_instance_id')
+        proof = body.get('worksite_evidence')
+        acknowledgment = row.get('worksite_confirmation')
+        if proof is None and acknowledgment:
+            if acknowledgment.get('target_area') != body['target_area']:
+                raise ControlError('WORKSITE_IDENTITY_MISMATCH', '现场准备确认不属于当前作业点')
+            observed = acknowledgment['observed_at']
+            proof = dict(deepcopy(acknowledgment), schema=WORKSITE_SCHEMA, kind='operator_ready',
+                **{k:body[k] for k in ('task_id','command_id','operation','object_id','target_area')},
+                pose_reference=acknowledgment['reference'],
+                valid_until=(datetime.fromisoformat(observed.replace('Z','+00:00'))+timedelta(seconds=300)).isoformat())
+        if proof is None:
+            from contracts.vla import validate_request
+            validate_request(body)
+            reference = body['navigation_proof']
+            command = self._call('nav', 'GET', '/v1/commands/' + quote(reference['dream_command_id'], safe=''))
+            nav = self.status('nav')
+            result, pose = command.get('result') or {}, nav.get('proof_context') or {}
+            if (command.get('contract_version') != body['contract_version']
+                    or command.get('task_id') != body['task_id']
+                    or command.get('command_id') != reference['dream_command_id']
+                    or command.get('target_id') != body['target_area'] or command.get('state') != 'succeeded'
+                    or any(result.get(k) is not True for k in ('success', 'reached', 'navigation_stopped'))
+                    or nav.get('controller_instance_id') != controller or nav.get('robot_serial') != row['robot_serial']
+                    or pose.get('valid') is not True or pose.get('pose_within_tolerance') is not True
+                    or pose.get('dream_command_id') != command['command_id']
+                    or pose.get('target_id') != body['target_area']
+                    or not all(isinstance(pose.get(k), str) and pose[k] for k in
+                               ('map_id', 'localization_epoch', 'navigation_epoch'))):
+                raise ControlError('WORKSITE_NOT_READY', '作业点的原导航结果或当前位姿未核清')
+            observed = nav['observed_at']
+            try:
+                completed = datetime.fromisoformat(command['completed_at'].replace('Z', '+00:00'))
+                valid_time = completed.tzinfo is not None and completed <= datetime.fromisoformat(observed.replace('Z', '+00:00'))
+            except (KeyError, TypeError, ValueError, AttributeError):
+                valid_time = False
+            if not valid_time:
+                raise ControlError('WORKSITE_NOT_READY', '原导航完成时间未核清')
+            until = datetime.fromisoformat(observed.replace('Z', '+00:00')) + timedelta(seconds=60)
+            proof = dict(schema=WORKSITE_SCHEMA, kind='navigation_arrival', ready=True, pose_verified=True,
+                **{k: body[k] for k in ('task_id','command_id','operation','object_id','target_area')},
+                robot_serial=row['robot_serial'], controller_instance_id=controller,
+                reference='brain-nav:'+digest(dict(command=command, observation=nav)),
+                pose_reference='nav-pose:'+digest(nav), navigation_command_id=command['command_id'],
+                navigation_result_reference='nav-result:'+digest(command),
+                observed_at=observed, valid_until=until.isoformat())
+            evidence = dict(command=command, observation=nav)
+        else:
+            evidence = {'worksite_evidence': deepcopy(proof)}
+        body['worksite_evidence'] = worksite(proof, body, row['robot_serial'], controller, row['control_session_id'])
+        body.pop('navigation_proof', None)
+        body['control'] = dict(coordination_revision=REVISION, permit_mode=PERMIT_MODE,
+            control_session_id=row['control_session_id'], control_authorization={k:row[k] for k in
+                ('lease_id', 'authority_id', 'ownership_epoch')}, command_seq=1, prepare_request_id=prepare_request_id)
+        return body, evidence
+
 
 from brain.adapters.execution import BodyAdapter, interpret_observation
 
 
 class ControlledBodyAdapter(BodyAdapter):
-    """Existing Runtime body port, NAV only until VLA gateway integration is implemented."""
+    """Existing Runtime body port; each command checks only its selected source."""
     requires_authoritative_handoff = True
     def __init__(self, dream, vla, authority):
         super().__init__(dream, vla)
@@ -467,20 +574,30 @@ class ControlledBodyAdapter(BodyAdapter):
 
     @property
     def gate_open(self):
-        return self.dream.status().get('interface_online') is True
+        # MotionGate owns the configured enable switch. Remote admission belongs
+        # to submit, where the command's source is known.
+        return True
 
     def capabilities(self):
-        return dict(operations={}, real_action_enabled=False, supported_sources=['navigation'])
+        # Planning metadata, not a live all-source readiness check.
+        return dict(operations={k: {'configured': True} for k in ('open_fridge', 'grasp_cola')},
+                    real_action_enabled=True, supported_sources=['navigation', 'vla'],
+                    readiness_checked_at_dispatch=True)
 
     def submit(self, command_id, request):
-        if request.get('skill') != 'navigate':
-            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '首阶段只支持 NAV 身体控制，VLA 尚未接入网关')
+        if request.get('skill') not in {'navigate', 'open_fridge', 'grasp_cola'}:
+            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '当前网关未接入该动作')
         body = deepcopy(request['body'])
         try:
-            self.authority.prepare_navigation(request)
+            if request['skill'] != 'navigate':
+                caps = self.vla.capabilities() or {}
+                if (caps.get('real_action_enabled') is not True
+                        or (caps.get('operations', {}).get(request['skill']) or {}).get('configured') is not True):
+                    raise ControlError('VLA_UNAVAILABLE', '当前操控端未启用本动作')
+            self.authority.prepare_command(request)
             body = self.authority.business_body(request)
             self.authority.record_submission(request, body)
-            raw = self.dream.submit_navigation(body)
+            raw = self.dream.submit_navigation(body) if request['skill'] == 'navigate' else self.vla.submit_task(body)
             return dict(accepted=True, unclear=False, completed=False, command_id=command_id, raw=raw)
         except (ControlError, HttpContractError, ValueError) as exc:
             raw = exc.response() if isinstance(exc, ControlError) else getattr(exc, 'payload', None)
@@ -492,6 +609,22 @@ class ControlledBodyAdapter(BodyAdapter):
         viewed['body_control_released'] = released
         viewed['resources_released'] = released
         facts = viewed.get('evidence') or {}
+        if request.get('skill') != 'navigate':
+            try:
+                row = self.authority.command_row(request['body']['task_id'], command_id)
+                self.authority.driver.same_control(raw, row)
+                if raw.get('control_session_id') != row['control_session_id'] or raw.get('command_seq') != 1:
+                    raise ControlError('IDENTITY_MISMATCH', '操控回执不属于本次会话')
+                if (viewed.get('terminal') in {'succeeded', 'failed', 'cancelled'}
+                        and facts.get('identity_ok') is True and facts.get('time_ok') is True
+                        and viewed.get('stopped') is True and not released):
+                    self.authority.release_control(request['body']['task_id'], command_id)
+                    return self._view(command_id, raw, request)
+            except (ControlError, HttpContractError) as exc:
+                viewed.update(resources_released=False, error=str(exc))
+                if getattr(exc, 'code', '') in {'IDENTITY_MISMATCH', 'STALE_AUTHORIZATION'}:
+                    facts.update(identity_ok=False, supports=False)
+            return viewed
         if (viewed.get('terminal') in {'succeeded','failed','cancelled'}
                 and facts.get('identity_ok') is True and facts.get('time_ok') is True and not released):
             try:
@@ -521,11 +654,23 @@ class ControlledBodyAdapter(BodyAdapter):
         base = super().wait(command_id, request)
         return self._view(command_id, base['raw'], request) if base.get('raw') else base
 
-    def effect_control(self, *args, **kwargs):
-        raise ControlError('UNSUPPORTED_CONTROL_SKILL', 'VLA 尚未接入网关')
+    def effect_control(self, action, command_id, request, **kwargs):
+        row = self.authority.command_row(request['body']['task_id'], command_id)
+        raw = self.vla.task(command_id)
+        self.authority.driver.same_control(raw, row)
+        if raw.get('control_session_id') != row['control_session_id'] or raw.get('command_seq') != 1:
+            raise ControlError('IDENTITY_MISMATCH', '效果确认未关联原操控会话')
+        value = super().effect_control(action, command_id, request, **kwargs)
+        if action == 'query':
+            return interpret_observation(command_id, value['raw'], request,
+                control_released=self.authority.released(request['body']['task_id'], command_id))
+        return self._view(command_id, value['raw'], request)
 
     def cancel(self, command_id, request):
         try:
+            if request.get('skill') != 'navigate':
+                result = self.authority.release_control(request['body']['task_id'], command_id)
+                return dict(accepted=True, completed=result.get('exit_confirmed') is True, raw=result)
             result = self.authority.cancel_navigation(request['body']['task_id'], command_id)
             return dict(accepted=True, completed=result.get('state') == 'completed', raw=result)
         except (ControlError, HttpContractError) as exc:
@@ -545,8 +690,14 @@ class ControlledBodyAdapter(BodyAdapter):
                 or (source.get('terminal') != 'succeeded' and not context.get('manual_skips'))):
             return answer
         try:
-            self.authority.settle_navigation(context['task_id'], command)
-            answer.update(confirmed=True, reason='command_held_control_session_retained')
+            if request.get('skill') == 'navigate':
+                self.authority.settle_navigation(context['task_id'], command)
+                if context['kind'] == 'to_vla':
+                    self.authority.release_control(context['task_id'], command)
+                answer.update(confirmed=True, reason='source_command_held')
+            else:
+                self.authority.release_control(context['task_id'], command)
+                answer.update(confirmed=True, reason='source_exit_confirmed')
         except (ControlError, HttpContractError) as exc:
             answer.update(reason='handoff_unconfirmed', error=str(exc))
         return answer

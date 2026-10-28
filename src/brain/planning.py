@@ -33,6 +33,12 @@ class PlanningService:
             snapshot = selected.get("workflow")
             skill = from_snapshot(snapshot) if snapshot else load_skill(self.config)
             sop = selected.get("sop") or {}
+            if selected.get('workflow_variant') == 'real_sim_navigation':
+                if (runtime.record['execution_backend'] != 'reception_sim_navigation_real' or not skill.real_sop
+                        or (sop.get('id'), sop.get('version')) !=
+                           (skill.real_sop['id']+'.sim_navigation', skill.real_sop['version'])):
+                    raise Rejected('模拟导航分支与任务快照或执行后端不一致')
+                return Plan(skill.phases(real=True), '导航仅本地模拟；开门、抓取及效果核验真实执行，不代表实际运送完成。')
             if selected.get('workflow_variant') == 'real_sim_manipulation':
                 if (runtime.record['execution_backend'] != 'reception_real_sim_manipulation' or not skill.real_sop
                         or (sop.get('id'), sop.get('version')) !=

@@ -158,6 +158,8 @@ def status_from_record(record) -> dict:
         simulated = ((record or {}).get("execution_backend") in {"reception_real_sim_manipulation",
                                                                 "reception_ros_sim_manipulation"}
                      and spec.get("kind") in {"pick", "place", "open_fridge", "grasp_cola", "verify"})
+        simulated = simulated or ((record or {}).get('execution_backend') == 'reception_sim_navigation_real'
+                                   and spec.get('kind') == 'navigate')
         done = verdict == "PASS" or marker in {"done", "skipped", "manual_skipped"}
         tasks.append({"order": order, "robot_name": spec.get("robot_name") or "FQrobot",
                       "display_name": spec.get('display_name') or '',

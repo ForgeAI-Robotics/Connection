@@ -15,7 +15,7 @@ def create_runtime(config, port, *, package="reception"):
     runtime.reconcile_cancel_intent()
     # Restore execution receipts, not physical actions. Only ports with this capability opt in.
     if runtime.record.get("execution_backend") in {"desk", "reception_real_sim_manipulation",
-                                                  "reception_ros_sim_manipulation"}:
+                                                  "reception_ros_sim_manipulation", "reception_sim_navigation_real"}:
         restore = getattr(port, "restore_receipts", None)
         if callable(restore):
             restore(runtime.record)

@@ -6,7 +6,7 @@ from contracts.tasks import Rejected
 
 OBSERVATION_TTL_SEC = 60
 SUPPORTED_BACKENDS = {'desk', 'simple_o7', 'body_real', 'body_simple', 'reception_real', 'reception_protocol',
-                      'reception_simple', 'reception_real_sim_manipulation', 'reception_ros_sim_manipulation'}
+                      'reception_simple', 'reception_real_sim_manipulation', 'reception_ros_sim_manipulation', 'reception_sim_navigation_real'}
 
 
 def bind_policy(policy, package, backend, port, config):

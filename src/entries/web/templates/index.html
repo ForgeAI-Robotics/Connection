@@ -74,8 +74,9 @@
             <div id="task-command-feedback" style="white-space:pre-wrap;font-size:13px" aria-live="polite"></div>
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
-                <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception()">🤝 开始接待</button>
+                <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception('开始接待（导航真机＋操控真机）')">🤝 开始接待（导航真机＋操控真机）</button>
                 <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="与左侧同一接待流程：真实导航，开冰箱和抓可乐使用本地模拟，不执行真实操控" onclick="startReception('开始接待（导航真机＋操控模拟）')">🧭 开始接待（导航真机＋操控模拟）</button>
+                <button id="task-start-vla" disabled class="btn btn-sm" style="background:#0f766e;color:#fff" title="导航只模拟；确认现场作业姿态后，开冰箱和抓可乐真实执行" onclick="startReception('开始接待（导航模拟＋操控真机）')">🦾 开始接待（导航模拟＋操控真机）</button>
                 <button id="task-skip" disabled class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
                 <button id="task-pause" disabled class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
                 <button id="task-continue" disabled class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
@@ -232,6 +233,7 @@
             const enabled = {
                 start: ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
+                'start-vla': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 skip: ready && active && !!displayedTask?.can_skip,
                 pause: ready && active && (['running', 'verifying'].includes(state)
                     || (state === 'waiting_human' && !!displayedTask?.vla_confirmation)),
@@ -241,7 +243,8 @@
             for (const [name, allowed] of Object.entries(enabled)) {
                 const button = document.getElementById('task-' + name);
                 button.disabled = !allowed;
-                const descriptions = {start: '执行当前环境登记的接待 Skill', 'start-nav': '同一接待流程；导航真实，开门和抓可乐为模拟',
+                const descriptions = {start: '同一接待流程；导航与操控均为真机', 'start-nav': '同一接待流程；导航真实，开门和抓可乐为模拟',
+                    'start-vla': '同一接待流程；导航仅模拟，开门和抓可乐真实执行，需现场作业确认',
                     pause: '暂停整轮流程，并请求停止当前动作', continue: '继续当前环节；未完成则重新下发一次指令',
                     skip: '放弃当前环节并进入下一步，不记为成功', cancel: displayedTask?.control_recovery?.enabled
                         ? '取消本轮任务并请求停止，取消后可重新发布'
@@ -301,6 +304,10 @@
                 }
                 document.getElementById('task-command-feedback').textContent = (preflight.warnings || []).join('\n');
                 const payload = {task: task};
+                if (['开始接待（导航模拟＋操控真机）', '开始接待(导航模拟+操控真机)'].includes(task)) {
+                    if (!window.confirm('导航只在本地模拟，机器人不会自动走到冰箱前。\n请确认机器人已摆好冰箱作业姿态，人员和设备已准备好。\n开门和抓可乐将真实执行；这次现场准备确认有效期为 5 分钟。\n确认现场已就绪并发布任务？')) return;
+                    payload.worksite_confirmed = true;
+                }
                 if (options.forceNewTask) payload.force_new_task = true;
                 const resp = await fetch('/publish_task', {
                     method: 'POST',
@@ -330,7 +337,7 @@
         }
         // 会议接待:一键触发(填"开始接待"→ master 命中接待 skill → 复用 task_status 显示 🧠+子任务✓)
         function startReception(text) {
-            document.getElementById('task').value = text || '开始接待';
+            document.getElementById('task').value = text || '开始接待（导航真机＋操控真机）';
             sendTask({skipConfirm: true});
         }
         async function controlReception(action) {
@@ -501,6 +508,7 @@
                     statusCls = 'status-fail';
                 } else {
                     statusLabel = data.execution_backend === 'reception_protocol' ? '✓ 协议模拟完成'
+                        : data.execution_backend === 'reception_sim_navigation_real' ? '✓ 混合流程完成（导航为模拟，未实际运送）'
                         : ['reception_real_sim_manipulation', 'reception_ros_sim_manipulation'].includes(data.execution_backend) ? '✓ 混合流程完成（操控为模拟）'
                         : data.execution_backend === 'reception_simple' ? '✓ SIMPLE 物理仿真完成'
                         : wonSignal === true ? '✓ 任务成功(落点已验证)' : '✓ 任务成功';

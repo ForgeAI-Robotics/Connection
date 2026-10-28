@@ -69,6 +69,10 @@ def reception_preflight(config, task, *, client_factory=DreamClient):
             return report
         backend = select_backend(config, 'reception')
         report.update(task_type='reception', execution_backend=backend, skill_sha256=skill.snapshot()['sha256'])
+        if chosen['id'].endswith('.sim_navigation'):
+            report.update(execution_backend='reception_sim_navigation_real',
+                          scope='导航只在本地模拟；真实操控需现场作业确认及网关准入。')
+            return report
         if backend != 'reception_real' or chosen['id'].endswith('.ros_sim_manipulation'):
             report['warnings'] = ['本预检仅检查真机导航接口；仿真沿用原有实例与合同校验。']
             return report

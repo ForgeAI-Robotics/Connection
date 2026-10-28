@@ -15,7 +15,7 @@ SOPS = {
 }
 # Alternative SOPs of a package, reachable only by their exact triggers.
 VARIANTS = {"reception": (reception.NAV_ONLY_SOP, reception.SIM_MANIPULATION_SOP,
-                          reception.ROS_SIM_MANIPULATION_SOP)}
+                          reception.ROS_SIM_MANIPULATION_SOP, reception.SIM_NAVIGATION_SOP)}
 
 
 def reception_catalog(config, *, mock=False):
@@ -44,7 +44,12 @@ def reception_catalog(config, *, mock=False):
             real = False
         if real:
             primary = skill.real_sop
-    return dict(SOPS, reception=primary), {"reception": (variant, hybrid, ros_hybrid)}, skill
+    primary['triggers'] = list(primary.get('triggers', [])) + ['开始接待（导航真机＋操控真机）']
+    variants = [variant, hybrid, ros_hybrid]
+    if skill.real_sop:
+        variants.append(dict(reception.SIM_NAVIGATION_SOP, id=skill.real_sop['id']+'.sim_navigation',
+                             version=skill.real_sop['version']))
+    return dict(SOPS, reception=primary), {"reception": tuple(variants)}, skill
 
 
 def match_name(task) -> str:

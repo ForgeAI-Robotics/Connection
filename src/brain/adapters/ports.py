@@ -398,6 +398,8 @@ def target_identity(config, backend):
         return {'backend': 'camera', 'observation': profile['routes']['observation']}
     if backend == "reception_real_sim_manipulation":
         return {**target_identity(config, 'reception_real'), "vla": "local:simulated-manipulation/v1"}
+    if backend == 'reception_sim_navigation_real':
+        return {**target_identity(config, 'reception_real'), 'dream': 'local:simulated-navigation/v1'}
     if backend == "reception_real":
         real = config.get("reception_real") or {}
         identity = {"dream": real.get("dream_base_url"), "vla": real.get("vla_base_url")}
@@ -416,6 +418,11 @@ def target_identity(config, backend):
 
 def build_port(config, backend, *, agent=None, body_control=None):
     from brain.config_flags import kernel_enabled
+    if backend == 'reception_sim_navigation_real':
+        from brain.adapters.simulated_navigation import SimulatedNavigationAdapter
+        if ((config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is not True or body_control is None:
+            raise Rejected('操控真机必须启用大脑网关控制')
+        return MotionGate(SimulatedNavigationAdapter.from_config(config, body_control), kernel_enabled(config))
     if backend in {'body_real', 'reception_real'}:
         if ((config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is not True or body_control is None:
             raise Rejected('真机执行必须启用大脑网关控制；不回退旧 relay 或直接派发路径')
