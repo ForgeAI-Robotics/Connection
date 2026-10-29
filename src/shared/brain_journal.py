@@ -105,6 +105,16 @@ def _fmt_value(value, *, compact=True):
 
 
 def format_human(kind: str, event: str | None, fields: dict, *, moment=None, compact=True) -> str:
+    if fields.get('_human_suppressed'):
+        return ''
+    if kind == 'CALL':
+        from shared.task_text import readable_call_fields
+        fields = readable_call_fields(fields)
+    if kind == 'TASK' and event == 'reflection_completed':
+        # Keep the full result and original failure in JSONL, not in the reading view.
+        fields = {key: fields[key] for key in ('id', 'task_id') if key in fields}
+    if kind == 'TASK' and event == 'verdict':
+        fields = {key: fields[key] for key in ('id', 'task_id', 'state', 'cmd', 'command_id', 'step_id') if key in fields}
     stamp = _stamp(moment)
     clock = stamp.strftime("%Y-%m-%d %H:%M:%S.") + f"{stamp.microsecond // 1000:03d}"
     parts = [clock, f"{kind:<9}", event or "-"]
@@ -309,7 +319,8 @@ class BrainJournal:
         with self._lock:
             paths = self.paths(moment=moment)
             with paths["brain"].open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
+                if line:
+                    handle.write(line + "\n")
                 handle.flush()
             with paths["jsonl"].open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
@@ -324,8 +335,9 @@ class BrainJournal:
             elif kind_u in {"TASK", "CALL", "STEP"} and payload.get('state') != 'cancelled' and (
                 payload.get("ok") is False or event_l in {"fail", "failure"}
             ):
-                self._pin = line
-                paths["pin"].write_text(line + "\n", encoding="utf-8")
+                if line:
+                    self._pin = line
+                    paths["pin"].write_text(line + "\n", encoding="utf-8")
             if self.echo_process and kind_u != 'DIAGNOSTIC':
                 # Ordinary logging and uncaught exceptions already reach stderr.
                 # Business events also belong in the same readable process stream.
@@ -542,6 +554,8 @@ class OutboundCall:
         self._fields = dict(fields)
         self._started = time.monotonic()
         self._fp = None
+        self._last_error = None
+        self._terminal_receipt = None
         self._ended = False
         if emit_start:
             self._emit("start", **self._public())
@@ -574,22 +588,30 @@ class OutboundCall:
         if extra.get("state") is None and isinstance(payload, dict):
             extra["state"] = payload.get("state")
         if not self._ended:
+            if extra.get('state') in {'succeeded', 'failed', 'cancelled'}:
+                extra['duration_s'] = round(time.monotonic() - self._started, 3)
+                self._terminal_receipt = _json_ready(payload)
             self._emit("accepted", **extra)
+            self._last_error = _json_ready(extra.get('error'))
 
     def update(self, payload):
         if self._ended or payload is None:
             return False
         fp = fingerprint(payload)
-        if fp == self._fp:
+        extra = summarize_remote(payload)
+        if fp == self._fp and extra.get('error') == self._last_error:
             return False
         self._fp = fp
-        extra = summarize_remote(payload)
         extra["state"] = extra.get("state") or (
             payload.get("state") if isinstance(payload, dict) else None
         )
         if extra.get("path_m") is not None:
             self._fields["path_m"] = extra["path_m"]
+        if extra.get('state') in {'succeeded', 'failed', 'cancelled'}:
+            extra['duration_s'] = round(time.monotonic() - self._started, 3)
+            self._terminal_receipt = _json_ready(payload)
         self._emit("state", **extra)
+        self._last_error = _json_ready(extra.get('error'))
         return True
 
     def end(self, ok: bool, payload=None, error=None):
@@ -611,6 +633,11 @@ class OutboundCall:
             extra['result'] = payload['result']
         if extra.get("state") is None and isinstance(payload, dict):
             extra["state"] = payload.get("state")
+        if extra.get('error') and extra['error'] == self._last_error:
+            extra['error_already_logged'] = True
+        if (self._terminal_receipt is not None and payload == self._terminal_receipt
+                and error is None):
+            extra['_human_suppressed'] = True
         self._emit("end", **extra)
 
 

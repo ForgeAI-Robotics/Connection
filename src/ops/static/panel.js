@@ -455,9 +455,11 @@ async function loadLogs(reset) {
     const signature = JSON.stringify([current.id, body.text]);
     if (signature !== renderedLog) {
       const scroll = log.scrollTop;
+      const horizontalScroll = log.scrollLeft;
       log.textContent = (body.text || "暂无日志").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
       renderedLog = signature;
       if (!reset && !stick) log.scrollTop = scroll;
+      log.scrollLeft = reset ? 0 : horizontalScroll;
     }
     logPath = body.path || "";
     $("log-meta").textContent = logPath;

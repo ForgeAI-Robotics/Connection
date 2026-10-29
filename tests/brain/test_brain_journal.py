@@ -62,6 +62,37 @@ class BrainJournalTests(unittest.TestCase):
         self.assertEqual("INBOUND", record["kind"])
         self.assertEqual("abc", record["task_id"])
 
+    def test_reflection_notice_is_short_but_archive_keeps_original_details(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from shared.task_text import format_process_event
+
+        error = 'NATIVE_SAFETY_LATCHED ' + '原始诊断' * 500
+        result = {'summary': '复盘正文' * 500, 'new_rules': ['候选经验']}
+        self.journal.echo_process = True
+        output = StringIO()
+        with redirect_stdout(output):
+            self.journal.emit('TASK', event='reflection_completed', task_id='task-12345678',
+                              state='recovery_required', blocked_reason=error,
+                              diagnostic={'error': error}, result=result)
+        text = output.getvalue()
+        self.assertIn('任务复盘完成，详情已保存', text)
+        self.assertIn('task=task-123', text)
+        self.assertNotIn('ERROR', text)
+        self.assertLess(len(text), 150)
+        for view in (text, self._brain_text()):
+            self.assertNotIn('原始诊断', view)
+            self.assertNotIn('复盘正文', view)
+        record = json.loads(self.journal.paths()['jsonl'].read_text().splitlines()[-1])
+        self.assertEqual(record['result'], result)
+        self.assertEqual(record['diagnostic']['error'], error)
+        self.assertEqual(record['blocked_reason'], error)
+        # A real reflection failure still prints its own error.
+        failed = format_process_event({'kind': 'TASK', 'event': 'reflection_failed',
+                                       'error': 'model unavailable'})
+        self.assertIn('model unavailable', failed)
+        self.assertIn('ERROR', failed)
+
     def test_poll_updates_only_emit_on_fingerprint_change(self):
         call = OutboundCall(
             "dream", "navigate", command_id="nav-1", task_id="t1",
@@ -137,13 +168,93 @@ class BrainJournalTests(unittest.TestCase):
         self.assertEqual(records[-1]['error'], payload['error'])
         self.assertIn('Traceback (most recent call last)', records[-1]['exception'])
         text = output.getvalue()
-        for value in ('导航（dream）调用结束', '结果=未成功', 'state=failed', message, 'NAV_UNREACHABLE',
-                      'remote-stack-end', 'Remote result detail', ' - master - ERROR - ',
+        for value in ('导航调用更新｜失败', message, 'NAV_UNREACHABLE',
+                      'remote-stack-end', ' - master - ERROR - ',
                       'exception=RuntimeError: Transport error:'):
             self.assertIn(value, text)
         self.assertNotIn('Traceback (most recent call last)', text)
-        end_line = next(line for line in text.splitlines() if '调用结束' in line)
-        self.assertIn('exception=RuntimeError: Transport error:', end_line)
+        self.assertEqual(text.count('error='), 1)
+        self.assertEqual(records[-1]['result'], payload['result'])
+
+    def test_terminal_call_prints_error_once_and_archives_both_receipts(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        self.journal.echo_process = True
+        payload = {'state': 'failed', 'error': {'code': 'NATIVE_SAFETY_LATCHED',
+                   'message': 'planner reference expired', 'details': {'generation': 14}},
+                   'result': {'success': False, 'navigation_stopped': True,
+                              'message': 'planner reference expired'}}
+        output = StringIO()
+        with redirect_stdout(output):
+            call = OutboundCall('dream', 'navigate', command_id='nav-one', task_id='task-one')
+            call.update(payload)
+            call.end(False, payload=payload)
+        for text in (output.getvalue(), self._brain_text()):
+            self.assertEqual(text.count('error='), 1)
+            self.assertEqual(text.count('planner reference expired'), 1)
+            self.assertNotIn('reason=', text)
+            self.assertIn('duration_s=' if text == self._brain_text() else '耗时', text)
+        self.assertEqual(output.getvalue().count('调用更新｜失败'), 1)
+        self.assertNotIn('调用结束', output.getvalue())
+        records = [json.loads(line) for line in self.journal.paths()['jsonl'].read_text().splitlines()]
+        self.assertEqual(records[-2]['error'], payload['error'])
+        self.assertEqual(records[-1]['error'], payload['error'])
+        self.assertEqual(records[-1]['result'], payload['result'])
+
+    def test_new_error_details_and_end_without_update_are_not_hidden(self):
+        from copy import deepcopy
+        first = {'state': 'failed', 'error': {'code': 'FAULT', 'message': 'fault',
+                                            'details': {'stage': 'initial'}}}
+        changed = deepcopy(first)
+        changed['error']['details']['stage'] = 'changed'
+        call = OutboundCall('dream', 'navigate', command_id='one')
+        self.assertTrue(call.update(first))
+        self.assertTrue(call.update(changed))
+        changed['error']['details']['stage'] = 'final'
+        call.end(False, payload=changed)
+        OutboundCall('dream', 'navigate', command_id='two').end(False, payload=first)
+        text = self._brain_text()
+        self.assertEqual(text.count('error='), 4)
+        self.assertIn('final', text)
+
+    def test_terminal_success_and_cancellation_are_shown_once(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        self.journal.echo_process = True
+        for state, label in (('succeeded', '成功'), ('cancelled', '已取消')):
+            for method in ('accepted', 'update'):
+                with self.subTest(state=state, method=method):
+                    payload = {'state': state, 'result': {'success': state == 'succeeded'}}
+                    output = StringIO()
+                    with redirect_stdout(output):
+                        call = OutboundCall('vla', 'manipulate', command_id=state, emit_start=False)
+                        getattr(call, method)(payload)
+                        call.end(state == 'succeeded', payload=payload)
+                    self.assertEqual(output.getvalue().count('调用更新｜' + label), 1)
+                    self.assertIn('耗时', output.getvalue())
+
+    def test_timeout_is_named_and_verdict_does_not_repeat_downstream_error(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        from shared.task_text import format_process_event
+        self.journal.echo_process = True
+        output = StringIO()
+        with redirect_stdout(output):
+            call = OutboundCall('dream', 'navigate', command_id='uncertain', emit_start=False)
+            call.end(False, payload={'state': 'navigating'}, error=TimeoutError('query timed out'))
+        self.assertIn('调用更新｜超时', output.getvalue())
+        self.assertNotIn('结果未知', output.getvalue())
+        self.assertNotIn('调用更新｜失败', output.getvalue())
+        self.assertEqual(output.getvalue().count('query timed out'), 1)
+        for reason, text in (('fail', '未通过'), ('unknown', '结果待确认')):
+            line = format_process_event({'kind': 'TASK', 'event': 'verdict',
+                'state': 'recovery_required', 'blocked_reason': reason,
+                'task_id': 'task', 'command_id': 'uncertain',
+                'diagnostic': {'error': 'original downstream error'}})
+            self.assertIn('大脑核验｜' + text, line)
+            self.assertNotIn('original downstream error', line)
+        self.assertIn('大脑核验｜通过', format_process_event(
+            {'kind': 'TASK', 'event': 'verdict', 'state': 'running'}))
 
     def test_failure_pins_and_new_task_clears(self):
         self.journal.emit("TASK", event="fail", task_id="old", error="timeout", ok=False)
