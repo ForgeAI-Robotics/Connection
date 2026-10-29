@@ -443,7 +443,8 @@ def _started(raw, result):
     return None
 
 
-def interpret_observation(command_id, raw, request, *, allow_simulated=False, control_released=None) -> dict:
+def interpret_observation(command_id, raw, request, *, allow_simulated=False, control_released=None,
+                          vla_execution_mode=None) -> dict:
     """Turn one downstream payload into evidence. A foreign or incomplete payload stays unconfirmed."""
     if not isinstance(raw, dict):
         return {
@@ -466,6 +467,10 @@ def interpret_observation(command_id, raw, request, *, allow_simulated=False, co
     body = (request or {}).get("body") if isinstance((request or {}).get("body"), dict) else {}
     skill = (request or {}).get("skill")
     identity_ok = _identity_ok(command_id, raw, request, result)
+    direct_vla = vla_execution_mode == 'direct' and skill in NATIVE_OPERATIONS
+    if direct_vla:
+        identity_ok = (identity_ok and raw.get('execution_mode') == 'direct'
+                       and raw.get('simulated') is not True and result.get('simulated') is not True)
     if not identity_ok:
         return {
             "command_id": command_id,
@@ -489,6 +494,9 @@ def interpret_observation(command_id, raw, request, *, allow_simulated=False, co
     level = str(result.get("evidence_level") or result.get("evidence_grade") or "")
     hand_only = level == "hand_state_only"
     stopped, resources = _stop_flags(skill, result, control_released)
+    if direct_vla:
+        from contracts.vla_direct import stop_facts
+        stopped, resources = stop_facts(raw)
     simulated = (allow_simulated and raw.get('simulated') is True and result.get('simulated') is True
                  and result.get('physical_execution') is False and level == 'simulated_object')
     effect = _effect_supported(skill, result, dict(body, _verification_ready_at=raw.get('verification_ready_at')),

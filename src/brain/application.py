@@ -40,7 +40,13 @@ class BrainApplication:
         self._start_lock = threading.Lock()
         self.body_control = None
         control_settings = (self.config.get('reception_real') or {}).get('body_control') or {}
-        if control_settings.get('enabled') is True:
+        from brain.adapters.source_gate import source_gate_enabled
+        if control_settings.get('mode', 'unified') not in {'unified', 'source_gate'}:
+            raise ValueError('Unknown body_control.mode')
+        if source_gate_enabled(self.config):
+            from brain.kernel.source_gate import SourceGateControl
+            self.body_control = SourceGateControl(self.config, root, self.controls)
+        elif control_settings.get('enabled') is True:
             from brain.adapters.body_control import ControlDriver
             from brain.kernel.body_control import BodyControl
             for key in ('robot_serial', 'control_resource', 'action_endpoint', 'gateway_base_url', 'gateway_ca_file'):
@@ -206,7 +212,9 @@ class BrainApplication:
                 self.learning.enqueue(runtime.record)
             if action == 'cancel' and result.get('accepted') and self.body_control is not None:
                 result['control_recovery'] = self.body_control.cancel_task(result.get('task_id'))
-                result['message'] = '整轮任务已取消，可发布新任务；旧会话停止与撤权独立收尾'
+                result['message'] = ('整轮任务已取消；执行端停止与接收源全关分别记录，历史取消不阻止新任务'
+                    if getattr(self.body_control, 'mode', '') == 'source_gate' else
+                    '整轮任务已取消，可发布新任务；旧会话停止与撤权独立收尾')
             return result
         try:
             result = self.owner.call(apply, control=True)

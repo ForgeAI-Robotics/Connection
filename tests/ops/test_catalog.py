@@ -21,7 +21,7 @@ class CatalogTests(unittest.TestCase):
         )
         self.assertEqual(
             [item.id for item in items if item.layer == "robot"],
-            ["dream", "vla", "gateway"],
+            ["dream", "vla_camera", "vla", "gateway"],
         )
         robot = [item for item in items if item.layer == "robot"]
         self.assertTrue(all(not item.controllable for item in robot if item.id != 'gateway'))
@@ -32,10 +32,11 @@ class CatalogTests(unittest.TestCase):
         vla = next(item for item in robot if item.id == "vla")
         self.assertEqual(dream.remote_control, "ssh_dream")
         self.assertEqual(
-            dream.remote_actions, ("start", "stand-enter", "stop")
+            dream.remote_actions, ("stand-enter", "stop")
         )
         self.assertTrue(dream.confirm_start)
-        self.assertFalse(dream.disabled_action)
+        self.assertEqual(dream.disabled_action, "启动")
+        self.assertIn("导航入口待同步", dream.disabled_reason)
         self.assertIn("9882", dream.confirm_start_message)
         self.assertIn("肩带", dict(dream.action_confirms)["stand-enter"])
         self.assertEqual(vla.remote_control, "ssh_vla")

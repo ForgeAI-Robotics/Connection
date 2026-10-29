@@ -71,8 +71,13 @@ def _remote_script(action: str) -> tuple[str, float]:
 def ssh_argv(action: str) -> tuple[list[str], float, dict[str, str]]:
     if action not in ALLOWED_ACTIONS:
         raise ValueError(f"不支持的 VLA 远程操作: {action}")
-    cfg = settings()
     remote, timeout = _remote_script(action)
+    return command_argv(remote, timeout)
+
+
+def command_argv(remote: str, timeout: float) -> tuple[list[str], float, dict[str, str]]:
+    """Shared SSH authentication for VLA-owned service launchers."""
+    cfg = settings()
     argv = [
         "setsid",
         "-w",

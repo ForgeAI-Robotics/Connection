@@ -1,19 +1,37 @@
 # 接口说明：操控 VLA
 
-> **2026-10-28 当前源码：** 大脑已接入 VLA 统一网关候选及按需检查，准备／动作／退出和作业证据字段唯一维护在[网关 VLA 接入](接口说明_机器人统一网关.md#162-vla-按需接入候选2026-10-28代码与隔离联测未部署)。VLA 不再查询 NAV；大脑按业务需要提供到位／作业准备证据。大脑已于当日重载生效，真机尚未验收；下方 relay／acquire／恢复导航说明是带日期的旧链路记录，不用于当前网关候选。
+> **2026-10-28 当前源码：** source_gate 模式新增 VLA direct-v1 接入，见下节；原 unified 模式与带日期的 relay／acquire 记录保留。三个接待按钮分别绑定真实／模拟执行端，不静默回退。大脑源码适配、隔离验证及大脑／网页重载完成，已有真实操控失败回执；后续 VLA／O6 修订按下文注明来源，完整动作验收尚未完成。
+
+## direct-v1：直连操控与接收源选择
+
+本地交付 `/home/fq/workspace/sonic_wbc/g1_brain_vla_bridge/大脑调用接口.md` 与 contracts/direct_vla_v1.json 的修订为 20261028-direct-v1，业务版本 fq/reception-lan/v1。大脑选择 VLA 来源并确认实际生效后，直接 POST `/v1/vla/tasks`；不调用 NAV/VLA prepare、网关 permits、native/O6 操作，不检查模型、相机、身体模式和双手就绪。具体执行条件由 VLA 内部检查并通过原任务回报。大脑规划目录表示已接入的动作种类，不代表远端已经在线或允许真机动作。
+
+请求只发送 contract_version、task_id、command_id、operation、object_id、target_area；operation 支持 open_fridge／grasp_cola。原 Runtime 请求和导航业务关联仍保留在本地账本，不携带 control、旧授权会话、worksite_evidence 或 navigation_proof。连续操控保持 vla 选通；切源只在下一条真实命令派发时进行，不因 finish 或查询自动执行下一步。网关字段及原请求查询规则见[接收源开关](接口说明_机器人统一网关.md#sonic-接收源开关source_gate)。
+
+VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}` 路径族。任务调用使用 body_control.vla_token_env（空值沿用 token_env）；finish 使用原请求级 verifier Bearer，不写入任务账本。进入 running／waiting_result_confirmation 后沿原网页流程暂停、提交真实效果证据，再由人工“继续”推进。开门要求门打开且稳定、双手离门；抓取要求物体在手且 clear_of_fridge=true，不用手指闭合或程序退出冒充效果。大脑不发送 SONIC START／STOP 或 Planner 恢复命令；本轮不改 VLA 收尾策略，STOP 与实际姿态影响留待执行端对齐和真机验证。
+
+真实回执必须属于原 task_id／command_id／operation／object_id／target_area，并声明 execution_mode=direct。按 VLA 返回的 policy_stopped、publisher_stopped、body_stopped、hands_stopped、hold_verified 解释当前命令收尾，缺失、null、false 或相互矛盾不补成成功；不再要求 navigation_port_ready／authorization_released。准备前明确 action_started=false 且发布未生效的失败，只清除该命令执行槽，原 body_stopped=null 保留，不宣称身体停稳。明确 REAL_ACTIONS_DISABLED 且 action_started/action_state_uncertain 均为 false 的 503 是未受理拒绝；普通 503／断线／超时仍为未知，先查原命令。
+
+持物运送仍由原业务顺序约束。每条真实运送导航前读取 VLA 当前 holding_evidence，确认有效、物体及原抓取任务／命令身份匹配；不把历史抓取成功当作当前持物，不签发或续期旧 O6 授权证明。双手具体反馈、保持判断及证据失效由 VLA 负责。导航模拟模式只模拟路线，不据此生成真实到位证据；现场作业确认仍由按钮显式采集。
+
+整轮取消仍立即结束大脑编排，沿原控制账本与工作器向实际执行端请求 cancel，分别保存 NAV、VLA 停止和网关全关结果；VLA 取消后先有界查询原命令，再处理全关，不重复取消 POST。旧取消未确认不阻断新任务；旧收尾不能在新任务开始后再发停止或全关。真实 VLA 与 O6 的启动／部署由操控侧执行，不因大脑加载适配器自动触发。验证见[大脑直连接入](多端联调_操控与抓取.md#brain-vla-direct-integration)。
+
+2026-10-29 操控侧本地对接说明新增修订：撤销 O6 的 0.5 秒输入断流／5 秒首帧期限，静默时等待并保留目标，显式取消、实际反馈失效和 CAN 故障仍停止更新。该说明声明已同步 NX 并核对运行文件哈希；这是操控侧交付记录，本次文档整理未独立复核远端进程，也没有真实动作复验。不能只重启 HTTP 就假定其它机器／旧 O6 进程已更新。原 10-28 零首帧失败仍保留在[操控排障](多端联调_操控与抓取.md#direct-v1-进入-running-后-o6-零有效帧退出)。
 
 初版日期：2026-08-27  
 远端现场记录基线：2026-09-20；大脑调用规则核对：2026-10-09
 契约版本：`fq/reception-lan/v1`  
 适用范围：大脑到 VLA 的任务、原命令查询与核验。2026-10-22 起支持新 native `open_fridge/grasp_cola`；旧 `pick/place` 合同保留给原后端。
 
-> 新 native 动作以本页“新动作接入”及大脑接口为准；2026-10-09 及更早章节描述旧抓放链路。源码接入、运行实例更新和真机验收分别确认。
+> 当前 source_gate 以文首 direct-v1 和大脑接口为准；“新动作接入”保留业务效果及旧后端范围；2026-10-09 及更早章节描述旧抓放链路。源码接入、运行实例更新和真机验收分别确认。
 
 ## 大脑统一授权对接（2026-10-23，接口离线串联通过）
 
-本轮共同需求统一见[relay 控制权对接说明](接口说明_relay控制权对接.md)，请与导航侧审阅同一份正文。此前详细控制协议草案已撤回；本轮优先复用现有业务接口、acquire／release／查询及可靠性逻辑。
+> 历史 relay 接线，以下至“新动作接入”保留当时行为；当前 direct-v1 不执行这些交接。
 
-两端映射反馈已汇入[最小对接表](接口说明_relay控制权对接.md#收敛后的最小对接表)：保留客户端交接路径形式并更新大脑权威修订，采用操控侧建议的 stop 与 relay 管理入口；不新增整套 participant API。接口代码已实现，现场运行入口尚未切换。
+本轮共同需求统一见[relay 控制权对接说明](多端联调_大脑任务与恢复.md#relay-history)，请与导航侧审阅同一份正文。此前详细控制协议草案已撤回；本轮优先复用现有业务接口、acquire／release／查询及可靠性逻辑。
+
+两端映射反馈已汇入[最小对接表](多端联调_大脑任务与恢复.md#relay-history-收敛后的最小对接表)：保留客户端交接路径形式并更新大脑权威修订，采用操控侧建议的 stop 与 relay 管理入口；不新增整套 participant API。接口代码已实现，现场运行入口尚未切换。
 
 操控侧负责改接大脑授权、拆开本次退出与导航恢复，以及原 relay 的受控切换与状态查询。连续开门／抓取的起始检查也需去掉“导航转发已经恢复”的依赖，保留真实到位和作业条件核验。第一版沿用每任务独立 worker 生命周期；身体和双手的必要退出／保持检查仍由执行侧落实。具体最小入口和字段由操控侧对照代码提出，与大脑确认后在此维护。
 
@@ -32,7 +50,9 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 | `close_fridge`、旧 `pick/place` | 当前 native 配置不支持；整份计划在首个导航派发前检查，不以改名替代 |
 | 原后端 | 能力接口明确 404 时保留旧抓放兼容；网络错误、非法能力回包不当作旧后端 |
 
-`configured=true` 只表示执行器已配置。动作仍检查 `real_action_enabled`、`navigation_handoff_ready`、`recovery_required=false` 和 `policy_state_uncertain=false`；VLA 自身继续核查导航原命令、硬件与租约。新任务中的导航也检查 VLA 已停、无活动命令、导航通路就绪及无恢复要求，避免失败／取消后直接导航。仅导航接待变体不依赖 VLA 能力发现；真机许可关闭保持原门控行为。
+`configured=true` 只表示执行器已配置。2026-10-22 的旧接线中，动作仍检查 `real_action_enabled`、`navigation_handoff_ready`、`recovery_required=false` 和 `policy_state_uncertain=false`；VLA 自身继续核查导航原命令、硬件与租约。新任务中的导航也检查 VLA 已停、无活动命令、导航通路就绪及无恢复要求，避免失败／取消后直接导航。仅导航接待变体不依赖 VLA 能力发现；真机许可关闭保持原门控行为。
+
+当前 source_gate 不采用上一段的 NAV lease、旧恢复／端口门禁或远端 readiness 前置。大脑使用已支持动作目录编排，VLA 内部检查具体执行条件；direct-v1 请求与收尾见文首。
 
 ### 作业点与规划配置
 
@@ -65,11 +85,11 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 | 开门 | `door_open=true`、`door_stable_open=true`、`hands_clear_of_door=true` |
 | 抓可乐 | `object_grasped=true`、`holding` 等于请求物体 ID、`clear_of_fridge=true` |
 
-终态还必须满足原任务／命令／operation／目标／物体身份、完成时间、`success=true`、`policy_stopped=true`、`navigation_port_ready=true`；`effect_verified_by/evidence_level` 必须与原证据来源一致，`autonomous_effect_verification=false`。当前没有自动开门／抓稳的视觉判定接线，Planner 不能代写确认。
+终态还必须满足原任务／命令／operation／目标／物体身份、完成时间、`success=true`；旧后端另要求 `policy_stopped=true`、`navigation_port_ready=true`，direct-v1 则使用文首分别列明的策略／发布／身体／双手收尾字段；`effect_verified_by/evidence_level` 必须与原证据来源一致，`autonomous_effect_verification=false`。当前没有自动开门／抓稳的视觉判定接线，Planner 不能代写确认。
 
-新 `/pause` 只暂停策略推进，不是姿态冻结或急停。原大脑“暂停任务”仍走取消下游命令并核查停止；“取消任务”仍仅结束大脑编排。重复暂停／finish、丢失回包或重启后，已记录的核验意图只查询原命令，不自动重发 POST；明确的参数／权限拒绝允许修正后再次人工提交。不同证据不能覆盖已记录的确认。
+新 `/pause` 只暂停策略推进，不是姿态冻结或急停。原大脑“暂停任务”仍走取消下游命令并核查停止；source_gate 下“取消任务”先结束大脑编排，再异步请求 VLA 取消并记录全关，回执不代表身体已停。重复暂停／finish、丢失回包或重启后，已记录的核验意图只查询原命令，不自动重发 POST；明确的参数／权限拒绝允许修正后再次人工提交。不同证据不能覆盖已记录的确认。
 
-`recovery_required` 或未知策略状态保持阻断。VLA `/v1/vla/operator-state` 留给现场授权维护，本次不接入自动恢复按钮，不修改原失败账本。NAV 的 `fq/vla-handoff/v1` 租约交接由 VLA 调用，Connection 不接管共享 relay；NAV 未实现时不能执行新动作。当前在线部署与真机范围见[新接口验证](多端联调_操控与抓取.md#新-vla-接口离线接入验证)。
+以下为 2026-10-22 旧交接限制，不适用于 direct-v1：`recovery_required` 或未知策略状态保持阻断。VLA `/v1/vla/operator-state` 留给现场授权维护，本次不接入自动恢复按钮，不修改原失败账本。NAV 的 `fq/vla-handoff/v1` 租约交接由 VLA 调用，Connection 不接管共享 relay；NAV 未实现时不能执行新动作。当前在线部署与真机范围见[新接口验证](多端联调_操控与抓取.md#新-vla-接口离线接入验证)。
 
 ## 大脑调用与核验规则（2026-10-09）
 
@@ -103,6 +123,8 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 [完整调用演示](多端联调_操控与抓取.md#e-n1-s18)。
 
 ## 当前现场实现口径（2026-09-17）
+
+> 历史 pick/place／共享 5556 实现。以下至“操控侧检查与独立启停”保留原记录中的“当前”口径，不描述 2026-10-28 之后的 direct-v1。
 
 ### 正式链路
 
@@ -183,21 +205,21 @@ place 在 DREAM 凭证校验后进入 `waiting_operator_approval`。只有现场
 
 ## 操控侧检查与独立启停
 
-整理日期：2026-10-09。面板调用的 `check → live-dependencies → start → status` 和独立 `stop` 已对照本仓库 `src/ops/vla_remote.py`；安全门配置、远端状态字段、人工批准及自检行为沿用 2026-09-20 现场记录，本次未重新验证远端部署。远端版本变动时需在此更新，不能把这些记录视为本次真机验收。
+核对日期：2026-10-29。当前面板只调用官方 `run_agent_vla_runtime.sh start → status` 或 `stop`，依赖检查和受管 O6 准备归启动器；不再额外调用旧 phase-aware 检查或 relay。下面保留带日期的安全门／旧 place 操作供历史排障，不能当作新开门、抓取的必经步骤。
 
 三端冷启动与收工顺序见[控制面板接口说明](接口说明_控制面板.md#三端启动与任务发布)。以下 SSH 别名应事先配置；`<VLA_BRIDGE_ROOT>` 为桥接目录，`<VLA_PROJECT_ROOT>` 为其所属项目目录。面板使用当前网络的操控角色地址，桥接目录可用 `VLA_REMOTE_DIR` 覆盖。
 
-正常冷机流程由 DREAM 一键脚本依次启动 NX SONIC、相机、灵巧手、VLA HTTP/relay 和导航工作流。本节只用于单独核查或重启操控侧，不能代替冷机一键流程。
+当前独立 NAV 入口启动配套 NAV／SONIC；VLA 相机需另行启动，再启动 VLA HTTP 与其受管 O6。相机使用面板独立卡片，命令与停止范围见[相机入口](接口说明_控制面板.md#vla-三路相机卡片2026-10-29)。不能沿用旧 DREAM 三端一键脚本替代当前流程。
 
 ### 操控侧前提
 
 - 机器人有可靠支撑，急停由现场人员掌握；
 - SONIC 已进入稳定站立，是物理 `rt/lowcmd` 所有者并启用 persistent controller；
 - NX 相机 `:5555`、SONIC state `:5557` 和 LinkerHand 在线；
-- 当前没有正在执行或状态未核清的 VLA 任务；
-- 只允许一个合法发布者占用工作站 `:5556`。
+- 核对当前任务／输出占用与依赖，不因历史失败或未核清旧收尾永久拒绝新任务；
+- VLA 使用自己的发布连接，SONIC 按来源选通；不再要求取得旧 relay 共享发布端口。
 
-安全门控位于 `<VLA_PROJECT_ROOT>/sonic_safety_gate/config.env`。2026-09-20 现场记录中的默认值：
+以下配置为旧部署记录，当前执行条件以 VLA 启动器与实际回执为准；不得为接入新模式照抄关闭保护。历史安全门控位于 `<VLA_PROJECT_ROOT>/sonic_safety_gate/config.env`。2026-09-20 现场记录中的默认值：
 
 ```bash
 SONIC_SAFETY_GATE_MODE=automatic
@@ -212,14 +234,14 @@ ssh gpu4090
 cd <VLA_BRIDGE_ROOT>
 
 ./run_agent_vla_runtime.sh check
-./run_phase_aware_action_stack.sh live-dependencies
+./run_native_action_stack.sh live-dependencies
 ```
 
-两项检查均不执行 pick/place。实时检查必须确认 SONIC、状态、相机、LinkerHand、LowCmd 所有权和安全模式一致，并且没有第二个不受管的 `:5556` publisher。
+检查不提交业务任务。具体检查项由当前 VLA 版本实现，检查结果不代替动作效果；面板正式 start 将检查与 O6 准备交给启动器，不要求大脑逐项重复。
 
 ### 独立启动与状态
 
-只重启 VLA HTTP `:8091` 和受管导航 relay `:5556`：
+启动 VLA HTTP `:8091`，由官方启动器完成检查和受管 O6 准备；不启动导航 relay：
 
 ```bash
 cd <VLA_BRIDGE_ROOT>
@@ -239,12 +261,14 @@ curl --noproxy '*' -s \
 - `service_ready=true`；
 - `policy_running=false`；
 - `active_command_id` 为空；
-- 导航 relay 是常态所有者；
+- 当前来源通过独立网关查询；任务派发前由大脑选通 VLA，不要求 relay 存在；
 - 相机、SONIC 和灵巧手满足动作前置。
 
-`startup_safety_attested=true` 只证明启动时检查通过；每个 pick/place hook 在取得 `:5556` 前仍会重新检查实时依赖。
+`startup_safety_attested=true` 若存在，只证明对应启动检查；每次业务任务由 VLA 内部重新核对实际执行条件，不依靠历史绿灯。
 
 ### 现场批准操作
+
+以下仅为旧 place 的终端批准；当前开门／抓可乐按上文原命令 pause／finish 和真实效果证据处理。
 
 place 通过 DREAM 凭证校验后进入 `waiting_operator_approval`：
 
@@ -286,11 +310,13 @@ cd <VLA_BRIDGE_ROOT>
 ./run_agent_vla_runtime.sh stop
 ```
 
-该命令只停止 Brain HTTP 和受管 relay，不停止 SONIC、相机或灵巧手；任务执行中会拒绝停止。如果策略或 `:5556` 所有权未核清，先处理原任务，不能强杀进程伪造安全收尾。
+当前 direct-v1 的 stop 只停止 VLA HTTP；O6 反馈与保持服务继续运行，不停止 SONIC、相机，也不代表动作停止。任务执行中启动器可拒绝停服务，应按原任务 cancel／查询处理，不以杀进程伪造收尾。
 
 检查失败时先查看原始 blocker：HTTP 在线而 `service_ready=false` 不代表可执行；仅 `:5556` 空闲也不代表交接完成。独立停止被拒绝时保留原 `command_id`，核查操控端任务与控制权，按操控命令取消接口处理；不能用大脑“取消任务”冒充远端已停止。
 
 ## 1. VLA侧职责
+
+> **以下第 1—12 节统一保留旧 pick/place 与共享端口合同，属于历史／协议模拟参考。** 其中 NAV 回查、`navigation_proof`、恢复导航端口、旧取消语义不是 direct-v1 要求。当前真实开门／抓取只依文首 direct-v1 与“大脑调用接口”对接，不把旧字段混入新请求。
 
 VLA侧负责：
 

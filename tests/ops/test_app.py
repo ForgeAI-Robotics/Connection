@@ -33,20 +33,20 @@ class PanelAppTests(unittest.TestCase):
         ids = [item["id"] for group in ("brain", "environment", "support", "robot") for item in payload[group]]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(set(ids), {item.id for item in services.catalog()})
-        self.assertEqual([item["id"] for item in payload["robot"]], ["dream", "vla", "gateway"])
+        self.assertEqual([item["id"] for item in payload["robot"]], ["dream", "vla_camera", "vla", "gateway"])
         self.assertTrue(all(item["controllable"] for item in payload["brain"]))
         self.assertTrue(all(not item["controllable"] for item in payload["robot"] if item['id'] != 'gateway'))
         robot = {item["id"]: item for item in payload["robot"]}
         self.assertEqual(robot["vla"]["remote_actions"], ["start", "stop"])
         self.assertEqual(
             robot["dream"]["remote_actions"],
-            ["start", "stand-enter", "stop"],
+            ["stand-enter", "stop"],
         )
         self.assertIn("stand-enter", robot["dream"]["action_confirms"])
         self.assertIn(":9882", robot["dream"]["review_url"])
         self.assertIn(robot["dream"]["review_ok"], (True, False))
         self.assertNotIn("review_url", robot["vla"])
-        self.assertFalse(robot["dream"]["disabled_action"])
+        self.assertEqual(robot["dream"]["disabled_action"], "启动")
 
     def test_unknown_service_and_action(self):
         self.assertEqual(
@@ -56,14 +56,21 @@ class PanelAppTests(unittest.TestCase):
             self.client.post("/api/services/redis/explode").status_code, 400
         )
 
-    def test_dream_start_uses_ssh_and_does_not_touch_tmux(self):
+    def test_dream_start_and_restart_wait_for_navigation_sync(self):
         from unittest.mock import patch
 
-        with patch("ops.dream_remote.run", return_value="started") as mocked:
-            response = self.client.post("/api/services/dream/start")
-        self.assertEqual(response.status_code, 200, response.get_json())
-        self.assertTrue(response.get_json()["ok"])
-        mocked.assert_called_once_with("start")
+        with patch("ops.dream_remote.run") as remote, patch("ops.tmuxctl.stop_session") as stop:
+            for action in ("start", "restart"):
+                with self.subTest(action=action):
+                    response = self.client.post(f"/api/services/dream/{action}")
+                    self.assertEqual(response.status_code, 400)
+                    self.assertFalse(response.get_json()["ok"])
+                    self.assertIn("导航入口待同步", response.get_json()["error"])
+            remote.assert_not_called()
+            stop.assert_not_called()
+            response = self.client.post("/api/services/dream/stop")
+            self.assertEqual(response.status_code, 200)
+            remote.assert_called_once_with("stop")
 
     def test_vla_start_uses_ssh_and_does_not_touch_tmux(self):
         from unittest.mock import patch

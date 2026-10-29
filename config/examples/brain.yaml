@@ -81,10 +81,11 @@ reception_real:
   contract_version: fq/reception-lan/v1
   dream_base_url: ${DREAM_BASE_URL}
   vla_base_url: ${VLA_BASE_URL}
-  # 所有真实 NAV（含操控模拟）统一经网关；关闭时拒绝派发，不回退旧 relay。
-  # 真实 VLA 业务未接入，旧账本须显式迁移；未知占用保留阻断。
+  # source_gate：NAV/VLA 直连 SONIC，网关只选源；VLA 须部署 direct-v1。
+  # unified：保留原联合控制；关闭 enabled 时拒绝真实派发。
   body_control:
     enabled: false
+    mode: unified  # source_gate 使用新 /v1/input-source；不混用旧 prepare/permits。
     robot_serial: ""
     permit_mode: control_session
     control_resource: ""  # g1:<robot_serial>:body
@@ -97,6 +98,7 @@ reception_real:
     token_env: BRAIN_CONTROL_TOKEN
     # NAV HTTP 若使用独立 --api-token，可填保存该 token 的环境变量名；空值沿用上项。
     nav_token_env: ""
+    vla_token_env: ""  # 空值沿用 token_env；效果 finish 仍使用请求级 verifier 凭据。
     operation_timeout_sec: 10
     poll_interval_sec: 0.05
     evidence_max_age_sec: 10

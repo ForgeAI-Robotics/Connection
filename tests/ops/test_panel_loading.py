@@ -36,7 +36,7 @@ class PanelLoadingTests(unittest.TestCase):
             probe.reset_mock()
             self.client.get('/api/status?view=panel')
             self.assertEqual({call.args[0].id for call in probe.call_args_list},
-                             {'master', 'deploy', 'feishu', 'voice', 'simple_o7', 'dream', 'vla', 'gateway'})
+                             {'master', 'deploy', 'feishu', 'voice', 'simple_o7', 'dream', 'vla_camera', 'vla', 'gateway'})
             legacy = self.client.get('/api/status?layer=environment').get_json()
             self.assertIn('desk', [s['id'] for s in legacy['environment']])
 

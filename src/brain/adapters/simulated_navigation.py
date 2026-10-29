@@ -9,7 +9,7 @@ from brain.adapters.vla_client import VlaClient
 from contracts.body_control import stamp
 
 
-class SimulatedNavigationAdapter(ControlledBodyAdapter):
+class SimulatedNavigationMixin:
     def __init__(self, vla, authority):
         super().__init__(None, vla, authority)
         self._navigation = {}
@@ -86,3 +86,14 @@ class SimulatedNavigationAdapter(ControlledBodyAdapter):
 
     def observe_recovery(self):
         return dict(scope='vla_status_not_visual', manipulation=self.vla.control_status())
+
+
+class SimulatedNavigationAdapter(SimulatedNavigationMixin, ControlledBodyAdapter):
+    """Original unified-control backend, unchanged."""
+
+
+from brain.adapters.source_gate import SourceGateBodyAdapter
+
+
+class DirectSimulatedNavigationAdapter(SimulatedNavigationMixin, SourceGateBodyAdapter):
+    """Same local NAV receipts, direct-v1 VLA business calls."""

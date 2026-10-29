@@ -112,6 +112,7 @@ class BrainService:
                 raise Rejected("导航真机＋操控模拟仅支持真机接待环境")
             backend = "reception_real_sim_manipulation"
         if (chosen.get('sop') or {}).get('id', '').endswith('.sim_navigation'):
+            from brain.adapters.source_gate import source_gate_enabled
             if backend != 'reception_real':
                 raise Rejected('导航模拟＋操控真机需要真机接待环境')
             if options.get('worksite_confirmed') is not True:
@@ -119,18 +120,21 @@ class BrainService:
             authority = getattr(self, 'body_control', None)
             if authority is None:
                 raise Rejected('真实操控必须启用大脑网关控制')
-            status = authority.driver.status('gateway')
-            native = authority.driver.native_facts(status, vla=True)
             from brain.packages.reception_skill import from_snapshot
             areas = {step.target_area for step in from_snapshot(chosen['workflow']).phases(real=True)
                      if step.kind in {'open_fridge','grasp_cola'}}
             if len(areas) != 1:
                 raise Rejected('导航模拟模式只接受同一现场作业点的操控流程')
-            chosen = dict(chosen, worksite_confirmation=dict(
-                observed_at=options['worksite_confirmed_at'], robot_serial=authority.robot,
-                controller_instance_id=native['controller_instance_id'],
-                reference='operator-worksite:'+runtime.record['task_id'],
-                target_area=next(iter(areas)), ready=True, pose_verified=True))
+            confirmation = dict(observed_at=options['worksite_confirmed_at'],
+                reference='operator-worksite:'+runtime.record['task_id'], target_area=next(iter(areas)))
+            if source_gate_enabled(self.config):
+                confirmation.update(source='operator_confirmation', simulated_navigation=True)
+            else:
+                status = authority.driver.status('gateway')
+                native = authority.driver.native_facts(status, vla=True)
+                confirmation.update(robot_serial=authority.robot, controller_instance_id=native['controller_instance_id'],
+                                    ready=True, pose_verified=True)
+            chosen = dict(chosen, worksite_confirmation=confirmation)
             backend = 'reception_sim_navigation_real'
         if chosen.get("workflow"):
             from brain.packages.reception_skill import from_snapshot, validate_backend

@@ -266,7 +266,7 @@ def feishu_ready_from_text(text: str) -> bool:
 
 def catalog() -> list[Service]:
     _load_dotenv()
-    from ops import simple_remote, gateway_service
+    from ops import simple_remote, gateway_service, vla_camera
     from shared.networks import lan
 
     site = lan()
@@ -403,7 +403,9 @@ def catalog() -> list[Service]:
             controllable=False,
             log_service="dream",
             remote_control="ssh_dream",
-            remote_actions=("start", "stand-enter", "stop"),
+            remote_actions=("stand-enter", "stop"),
+            disabled_action="启动",
+            disabled_reason="导航入口待同步，暂不支持从面板启动",
             action_confirms=(
                 (
                     "stand-enter",
@@ -428,8 +430,16 @@ def catalog() -> list[Service]:
                 "停止只关 NAV 工作流，保留独立网关及 SONIC；任务退出须先核清。"
                 "确定继续？"
             ),
-            note="NAV 正式网关入口；不启动旧 relay 或 VLA；9882 需人工 Approve",
+            note="导航入口待同步，启动暂不可用；9882 仍需人工 Approve",
             health=_health_remote("dream", dream),
+        ),
+        Service(
+            id='vla_camera', name='VLA 相机', layer='robot', controllable=False,
+            log_service='vla_camera', remote_control='ssh_vla_camera', remote_actions=('start', 'stop'),
+            confirm_stop=True,
+            confirm_stop_message='将结束本面板启动的三路相机会话，操控会失去图像输入。请先结束操控任务；不停止 VLA 接口、O6 或 SONIC。确定继续？',
+            note='① 先启动头部＋左腕＋右腕相机，再启动 VLA 接口',
+            health=vla_camera.health,
         ),
         Service(
             id="vla",
@@ -442,14 +452,14 @@ def catalog() -> list[Service]:
             confirm_start=True,
             confirm_start_message=(
                 "将按操控工程的 run_agent_vla_runtime.sh 启动 VLA 运行时，"
-                "执行其检查与依赖准备。身体转发由 NX 独立网关管理。确认现场急停可用？"
+                "执行其检查与依赖准备。请先启动 VLA 相机。确认现场急停可用？"
             ),
             confirm_stop=True,
             confirm_stop_message=(
-                "将执行操控工程的 VLA 停止流程，包括其受管 O6 接收器；"
-                "NX 网关独立运行。若任务正在执行，远端会拒绝停止。确定继续？"
+                "将停止 VLA HTTP 接口，O6 反馈与保持服务继续运行；相机、NAV 和 SONIC 不受影响。"
+                "若任务正在执行，远端会拒绝停止。确定继续？"
             ),
-            note="VLA 运行时 · 网关业务接入尚未启用",
+            note="② 相机就绪后启动 VLA 接口；任务由大脑下发",
             health=_health_remote("vla", vla),
         ),
         Service(

@@ -259,7 +259,8 @@ class HybridReceptionAdapter(BodyAdapter):
         except HttpContractError as exc:
             answer.update(reason="control_status_unavailable", error=str(exc))
             return answer
-        ready_key = 'interface_online' if self.navigation is not None else 'navigation_transport_ready'
+        ready_key = ('interface_online' if self.navigation is not None
+                     and getattr(self.navigation.authority, 'mode', '') != 'source_gate' else 'navigation_transport_ready')
         idle = (nav.get(ready_key) is True
                 and "active_command_id" in nav and nav["active_command_id"] in (None, "")
                 and "active_command_state" in nav and nav["active_command_state"] is None)
