@@ -1,7 +1,7 @@
 """Process control and health; no Flask or task imports."""
 from ops.services import (by_id, catalog, display_log_path, feishu_ready_from_text,
     latest_log_file, port_open, start_shell, tail_file)
-from ops import dream_remote, tmuxctl, vla_remote, simple_remote
+from ops import dream_remote, tmuxctl, vla_remote, simple_remote, vla_camera
 
 def _tmux_name(service) -> str:
     return service.window or service.id
@@ -96,6 +96,8 @@ def _feishu_health(service, state: str) -> dict:
 
 
 def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None, str | None]:
+    if service.id == 'vla_camera':
+        return vla_camera.logs(lines)
     if service.id == "simple_o7":
         return simple_remote.logs(lines)
     selected = str(kind or "auto").strip().lower()
@@ -117,6 +119,9 @@ def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None
 
 
 def _start(service) -> None:
+    if service.remote_control == 'ssh_vla_camera':
+        vla_camera.run('start')
+        return
     if service.remote_control == "ssh_simple":
         simple_remote.run("start")
         return
@@ -124,6 +129,8 @@ def _start(service) -> None:
         vla_remote.run("start")
         return
     if service.remote_control == "ssh_dream":
+        if "start" not in service.remote_actions:
+            raise RuntimeError(service.disabled_reason)
         dream_remote.run("start")
         return
     if not service.controllable:
@@ -134,6 +141,9 @@ def _start(service) -> None:
 
 
 def _stop(service) -> None:
+    if service.remote_control == 'ssh_vla_camera':
+        vla_camera.run('stop')
+        return
     if service.remote_control == "ssh_simple":
         simple_remote.run("stop")
         return

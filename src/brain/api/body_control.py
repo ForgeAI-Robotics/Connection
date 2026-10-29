@@ -10,6 +10,8 @@ def register_body_control(app, application):
         control = getattr(application, 'body_control', None)
         if control is None:
             raise ControlError('HANDOFF_DISABLED', '大脑联合控制未启用', 501)
+        if getattr(control, 'mode', '') == 'source_gate':
+            raise ControlError('HANDOFF_DISABLED', '接收源开关模式不提供旧联合授权接口', 501)
         try:
             token = service_token(control.settings.get('token_env', 'BRAIN_CONTROL_TOKEN'))
         except ValueError as exc:

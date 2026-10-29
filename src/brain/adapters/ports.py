@@ -407,6 +407,8 @@ def target_identity(config, backend):
         if control.get('enabled') is True:
             identity['body_control'] = {key: control.get(key) for key in
                                        ('robot_serial', 'control_resource', 'action_endpoint', 'gateway_base_url')}
+            if control.get('mode') == 'source_gate':
+                identity['body_control'] = {'mode': 'source_gate', 'gateway_base_url': control.get('gateway_base_url')}
         return identity
     if backend == "desk" or backend.startswith("slaver:"):
         from execution.robot_api import client
@@ -418,6 +420,25 @@ def target_identity(config, backend):
 
 def build_port(config, backend, *, agent=None, body_control=None):
     from brain.config_flags import kernel_enabled
+    from brain.adapters.source_gate import source_gate_enabled, SourceGateNavigationAdapter, SourceGateBodyAdapter
+    if source_gate_enabled(config) and backend in {'body_real', 'reception_real', 'reception_real_sim_manipulation', 'reception_sim_navigation_real'}:
+        if body_control is None or getattr(body_control, 'mode', '') != 'source_gate':
+            raise Rejected('接收源开关须使用大脑应用的唯一管理实例')
+        if backend == 'reception_sim_navigation_real':
+            from brain.adapters.simulated_navigation import DirectSimulatedNavigationAdapter
+            return MotionGate(DirectSimulatedNavigationAdapter.from_config(config, body_control), kernel_enabled(config))
+        from brain.adapters.dream_client import DreamClient
+        real = config['reception_real']
+        dream = DreamClient(real['dream_base_url'], contract_version=real.get('contract_version') or 'fq/reception-lan/v1',
+                            request_timeout_sec=float(real.get('request_timeout_sec', 10)))
+        navigation = SourceGateNavigationAdapter(dream, body_control)
+        if backend == 'reception_real_sim_manipulation':
+            from brain.adapters.simulated_manipulation import HybridReceptionAdapter, SimulatedManipulationClient
+            return MotionGate(HybridReceptionAdapter(dream, SimulatedManipulationClient(dream), navigation=navigation), kernel_enabled(config))
+        from brain.adapters.vla_client import VlaClient
+        vla = VlaClient(real['vla_base_url'], contract_version=real.get('contract_version') or 'fq/reception-lan/v1',
+                        request_timeout_sec=float(real.get('request_timeout_sec', 10)))
+        return MotionGate(SourceGateBodyAdapter(dream, vla, body_control), kernel_enabled(config))
     if backend == 'reception_sim_navigation_real':
         from brain.adapters.simulated_navigation import SimulatedNavigationAdapter
         if ((config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is not True or body_control is None:

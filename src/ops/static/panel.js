@@ -319,7 +319,7 @@ function render(full) {
   $("layer-hint").textContent = {
     brain: "点击上方卡片查看对应服务的运行日志。",
     environment: "选择 SIMPLE 仿真或真机，应用后到任务网页开始测试。",
-    robot: "DREAM 导航、VLA 操控与机器人网关。动作由大脑授权；服务在线不代表机器人已就绪。",
+    robot: "先启动 VLA 相机，再启动 VLA 接口；导航与网关独立管理。服务在线不代表机器人已就绪。",
   }[selectedLayer];
   document.querySelector(".workspace").classList.toggle("environment", environment);
   $("execution-settings").hidden = !environment;

@@ -305,7 +305,10 @@
                 document.getElementById('task-command-feedback').textContent = (preflight.warnings || []).join('\n');
                 const payload = {task: task};
                 if (['开始接待（导航模拟＋操控真机）', '开始接待(导航模拟+操控真机)'].includes(task)) {
-                    if (!window.confirm('导航只在本地模拟，机器人不会自动走到冰箱前。\n请确认机器人已摆好冰箱作业姿态，人员和设备已准备好。\n开门和抓可乐将真实执行；这次现场准备确认有效期为 5 分钟。\n确认现场已就绪并发布任务？')) return;
+                    const preparationNote = displayedTask?.control_recovery?.mode === 'source_gate'
+                        ? '开门和抓可乐将真实执行，操控端会检查实际执行条件。'
+                        : '开门和抓可乐将真实执行；这次现场准备确认有效期为 5 分钟。';
+                    if (!window.confirm('导航只在本地模拟，机器人不会自动走到冰箱前。\n请确认机器人已摆好冰箱作业姿态，人员和设备已准备好。\n' + preparationNote + '\n确认现场已就绪并发布任务？')) return;
                     payload.worksite_confirmed = true;
                 }
                 if (options.forceNewTask) payload.force_new_task = true;
@@ -537,12 +540,13 @@
                 || data.handoff_observation?.idle_evidence?.vla;
             const holdingProof = holdingStatus?.holding_evidence || vla?.holding_evidence;
             if (holdingProof) {
-                const expired = !Number.isFinite(Date.parse(holdingProof.valid_until))
-                    || Date.parse(holdingProof.valid_until) <= Date.now();
+                const directHolding = data.control_recovery?.mode === 'source_gate' && !holdingProof.schema;
+                const expired = !directHolding && (!Number.isFinite(Date.parse(holdingProof.valid_until))
+                    || Date.parse(holdingProof.valid_until) <= Date.now());
                 html += '<div class="task-command-feedback">持物证据（最近核查快照）：'
                     + taskText(holdingStatus ? (holdingStatus.current_holding || '未知') : (holdingProof.holding || '未知'))
                     + '<br>观察时间：' + taskText(holdingProof.observed_at || '未提供')
-                    + ' · 有效至：' + taskText(holdingProof.valid_until || '未提供')
+                    + (directHolding ? ' · 有效性由 VLA 按当前保持情况报告' : ' · 有效至：' + taskText(holdingProof.valid_until || '未提供'))
                     + '<br>' + taskText(holdingProof.invalid_reason || (expired ? '证据已到期，须真实重新确认'
                         : holdingProof.valid === true ? '每段运送前重新核查当前证明，不自动续期' : '证明无效，等待核清'))
                     + '</div>';
@@ -622,6 +626,9 @@
                     + (unresolved ? '<div class="status-recovery">任务已取消；原命令仍需核清，暂不能开始新任务。</div>' : '')
                     + '<details data-task-detail="cancelled:' + encodeURIComponent(data.task_id || '')
                     + '"><summary>上一轮已取消 · 查看记录</summary>' + html + '</details>';
+            }
+            if (data.control_recovery?.mode === 'source_gate' && data.control_recovery?.pending) {
+                html += '<div class="status-recovery">原取消操作的结果尚未确认，记录已保留；不阻止发布新任务。</div>';
             }
             const expanded = new Set(Array.from(el.querySelectorAll?.('details[open][data-task-detail]') || [])
                 .map(node => node.dataset.taskDetail));

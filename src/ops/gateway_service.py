@@ -15,6 +15,14 @@ def health(service):
             raise ValueError('网关 HTTPS／受信任证书尚未配置')
         client = HttpClient(url, timeout_sec=.5, ca_file=settings['gateway_ca_file'])
         client.auth_token_env = settings.get('gateway_token_env', 'BRAIN_GATEWAY_TOKEN')
+        if settings.get('mode') == 'source_gate':
+            from brain.adapters.source_gate import SourceGateClient
+            gate = SourceGateClient(settings)
+            gate.http = client
+            value = gate.current()
+            return dict(ok=True, detail='接收源开关在线 · ' + {'navigation': 'NAV', 'vla': 'VLA', 'none': '全关'}[value['effective_source']],
+                        url=url+'/v1/input-source', receiver_instance_id=value['receiver_instance_id'],
+                        effective_source=value['effective_source'], physical_readiness_verified=False)
         value, _, _ = client.request_json('GET', '/v1/body-input/status')
         if (value.get('contract_version') != VERSION or value.get('coordination_revision') != REVISION
                 or not value.get('gateway_instance_id')):
@@ -37,4 +45,5 @@ def health(service):
                     permit_phase=permit.get('phase') if permit else None,
                     physical_readiness_verified=False)
     except Exception as exc:
-        return dict(ok=False, detail=str(exc), url=url+'/v1/body-input/status' if url else '')
+        path = '/v1/input-source' if locals().get('settings', {}).get('mode') == 'source_gate' else '/v1/body-input/status'
+        return dict(ok=False, detail=str(exc), url=url+path if url else '')

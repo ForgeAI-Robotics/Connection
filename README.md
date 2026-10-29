@@ -85,6 +85,8 @@ venv/core/bin/python -m execution.slaver
 
 ## 仿真与真机
 
+2026-10-28 新增 `reception_real.body_control.mode=source_gate`：NAV 直连 SONIC，网关只管理接收源；保留“导航真机＋操控模拟”和仅导航，并接入 direct-v1 的全真机／模拟导航＋真实操控；真实 VLA 需部署匹配版本。原目标、查询、取消与 Bearer 不变，不走旧 prepare／grant／allow_execute。配置已应用并完成大脑重载，已开展真机联调；完整真实接待尚未验收，当前进度见[大脑导航操控真机](docs/多端联调_大脑导航操控真机.md)；原联合模式以 unified 保留，下文的联合控制介绍仅适用于该模式。当前接口与取消边界见[接收源开关](docs/接口说明_机器人统一网关.md#sonic-接收源开关source_gate)。
+
 日常在运维面板「运行环境」选择 SIMPLE 仿真或真机并应用，任务入口与接待流程沿用现有实现。旧协议模拟保留为命令行维护能力：使用原 v1 Skill 和协议模拟预设，启动两个独立 NAV/VLA HTTP 进程，再从任务网页首页发布「开始接待」。共用大脑通过正式指令与结果查询完成流程；默认延时成功，不依赖真机或物理仿真器。接口边界、持久化、控制器凭证扩展和故障场景见[模拟真机接口说明](docs/接口说明_模拟真机.md)。
 
 接待已抽取为版本化 Skill：[v1 原流程](src/brain/packages/definitions/reception_single_can_v1.yaml) 保留四段基线，[v2 新流程](src/brain/packages/definitions/reception_single_can_v2.yaml) 使用新坐标并增加 relay1，根步骤保留原抓放；同文件 `real_workflow` 为真机登记开门／抓可乐流程，开门与抓取之间不重复导航，抓取核验后保留原运送路线。新任务校验并绑定定义快照，继续旧任务不重读文件。可用 `venv/core/bin/python scripts/reception_skill.py --config config/brain.yaml` 离线预览原步骤，添加 `--real` 预览真机分支；旧协议模拟仅支持 v1，SIMPLE O6 新房子需部署匹配的五段路线；配置、字段及 NAV/VLA 合同限制见[接待 Skill 定义](docs/接口说明_大脑%20Brain.md#111-接待-skill-定义与任务快照)。
@@ -100,9 +102,9 @@ venv/core/bin/python scripts/execution_mode.py apply
 
 `reception_real.kernel_enabled=false` 仍表示真机派发许可关闭，所有任务照常进入新 Runtime。DREAM/VLA HTTP 合同与 command_id 不变，交接能力未核实时不会假装接管成功。该开关的当前值以生效配置为准；工程替换、仿真成功和真机仅导航成功都不等于真机完整接待验收。
 
-大脑统一控制权接线通过 `reception_real.body_control` 选择，公开模板默认关闭。大脑向独立网关授权，NAV／VLA 经网关进入 SONIC，旧 relay 不参与。普通 NAV 只检查身体，不要求 VLA、相机或 O6 在线；混合模式的操控与持物仍为本地模拟。2026-10-28 新增 VLA 单动作候选，按当前步骤准备、核验、提交和退出，代码与隔离联测已完成，并于当日重载大脑生效；网关新模式也已启用，VLA 真实依赖及真机验收仍待完成，真实持物导航仍阻断。Runtime、命令身份及原账本保留。当前字段与限制见[网关 VLA 接入](docs/接口说明_机器人统一网关.md#162-vla-按需接入候选2026-10-28代码与隔离联测未部署)，此前 NAV 部署与迁移见[实际接线记录](docs/接口说明_机器人统一网关.md#15-nav-阶段实际大脑接线2026-10-27)。
+**保留的 unified 分支属于 2026-10-27—28 的历史接线：** 大脑经 prepare／许可组织身体控制，网关转发运动流；当前 source_gate 不使用这些前置。该分支的实现、阶段性部署、失败与验证完整保存在[网关历史正文](docs/接口说明_机器人统一网关.md#历史-unified-合同与部署记录)，旧任务与失败账本不删除。
 
-“开始接待（导航真机＋操控模拟）”已适配身体独立网关，可从网页第二个按钮发布；操控为本地模拟。
+“开始接待（导航真机＋操控模拟）”在当前 source_gate 模式使用独立 NAV，网关只确认接收源；从网页右上按钮发布，操控为本地模拟。相机卡片及服务启停见[控制面板](docs/接口说明_控制面板.md#vla-三路相机卡片2026-10-29)。
 开门、抓可乐及其核验仅返回本地模拟回执，页面明确标记；该模式不代表真实操控完成。操作及恢复边界见
 [大脑接待流程](docs/接口说明_大脑%20Brain.md#81-流程与请求身份)。
 
