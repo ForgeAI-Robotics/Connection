@@ -329,9 +329,46 @@ def format_plan(steps):
     return ' '.join(parts)
 
 
+def readable_call_fields(fields):
+    """Deduplicate the reading view without changing the archived call receipt."""
+    view = dict(fields)
+    repeated = view.pop('error_already_logged', False)
+    error = view.get('error')
+    if repeated:
+        for key in ('error', 'reason', 'result'):
+            view.pop(key, None)
+    elif isinstance(error, dict):
+        message = error.get('message')
+        if message and view.get('reason') == message:
+            view.pop('reason', None)
+        result = view.get('result')
+        if message and isinstance(result, dict) and result.get('message') == message:
+            view['result'] = {key: value for key, value in result.items() if key != 'message'}
+    return view
+
+
 def format_process_event(record):
     """One bilingual block for the process log. Empty means archive only."""
     kind, event = record.get('kind'), record.get('event')
+    if record.get('_human_suppressed'):
+        return ''
+    if kind == 'CALL':
+        record = readable_call_fields(record)
+    if kind == 'TASK' and event == 'reflection_completed':
+        task = str(record.get('task_id') or record.get('id') or '')
+        return beijing_block('INFO', '任务复盘完成，详情已保存' +
+                             (f' task={task[:8]}' if task else ''), moment=record.get('time'))
+    if kind == 'TASK' and event == 'verdict':
+        state = record.get('state')
+        reason = record.get('blocked_reason')
+        conclusion = ('未通过，任务等待处理' if reason == 'fail' or state == 'failed' else
+                      '结果待确认，任务等待处理' if reason or state == 'recovery_required' else
+                      '通过')
+        task = str(record.get('task_id') or record.get('id') or '')
+        command = record.get('command_id') or record.get('cmd') or ''
+        return beijing_block('INFO' if conclusion == '通过' else 'ERROR',
+                             f'大脑核验｜{conclusion} task={task[:8]} cmd={command}',
+                             moment=record.get('time'))
     advice = record.get('recovery_advice') or {}
     if kind == 'TASK' and event == 'recovery_advised' and not any((
             advice.get('error'), record.get('error'), record.get('exception'))):
@@ -418,23 +455,43 @@ def format_process_event(record):
             if route:
                 message += ' ' + route
     elif kind == 'CALL':
-        tag = '调用'
         peer_en = record.get('peer') or 'downstream'
         peer = {'dream': '导航', 'vla': '操控'}.get(peer_en, peer_en or '下游')
-        action = {'start': '开始调用', 'accepted': '已受理', 'state': '状态更新', 'end': '调用结束'}.get(event)
-        if action:
-            state = record.get('state')
-            state_text = ''
-            if state:
-                state_text = f"：{STATES.get(state, state)}"
-                if state in STATES:
-                    state_text += f'（{state}）'
-            message = f'{peer}（{peer_en}）{action}{state_text}'
-            route = ' '.join(str(record[key]) for key in ('method', 'path') if record.get(key))
-            if route:
-                message += ' ' + route
-            if record.get('ok') is not None:
-                message += '；结果=' + ('成功' if record['ok'] else '未成功')
+        state = record.get('state')
+        error = record.get('error')
+        error_body = error if isinstance(error, dict) else {}
+        if state == 'failed':
+            outcome = '失败'
+            explanation = failure_text(error_body.get('message'), error_body.get('code')).split('；原始错误：', 1)[0]
+            if error_body.get('code') == 'NATIVE_SAFETY_LATCHED':
+                explanation = '对端控制器保护已锁定'
+        elif state == 'cancelled':
+            outcome, explanation = '已取消', '对端报告命令已取消'
+        elif state == 'succeeded' and record.get('ok') is not False:
+            outcome, explanation = '成功', '对端报告命令成功，待大脑核验'
+        elif event == 'end' and record.get('ok') is not True:
+            failure = str(record.get('exception') or record.get('reason') or error_body.get('message') or '')
+            if re.search(r'超时|\b(?:timed out|timeout(?:error)?)\b', failure, re.IGNORECASE):
+                outcome, explanation = '超时', '请求或等待执行结果超过时限'
+            else:
+                outcome, explanation = '调用异常', '未取得有效回包，详情见原始错误'
+        else:
+            outcome = {'start': '开始', 'accepted': '已受理'}.get(event, STATES.get(state, state or '处理中'))
+            explanation = '等待执行结果' if event == 'accepted' else ''
+        message = f'{peer}调用更新｜{outcome}' + (f'｜{explanation}' if explanation else '')
+        if record.get('duration_s') is not None:
+            message += f"｜耗时 {record['duration_s']:.3f} 秒"
+        meta = ' '.join(f'{key}={record[key]}' for key in ('task_id', 'cmd', 'command_id', 'target', 'goal') if record.get(key))
+        lines = [message + (' ' + meta if meta else '')]
+        if error:
+            lines.append('error=' + _raw_value(error))
+        exception = record.get('exception')
+        if exception and not (error_body.get('message') and str(error_body['message']) in str(exception)):
+            lines.append('exception=' + _exception_summary(exception))
+        elif not exception and not error and record.get('reason'):
+            lines.append('reason=' + str(record['reason']))
+        return beijing_block('ERROR' if outcome in {'失败', '超时', '调用异常'} else 'INFO',
+                             '\n'.join(lines), moment=record.get('time'))
     if message is None:
         message = ' '.join(part for part in (str(kind or ''), str(event or '')) if part).strip()
     if not message:

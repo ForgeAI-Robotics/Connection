@@ -223,6 +223,7 @@ button.disabled:hover {
 #log-meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; margin-left: auto; }
 #log {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   margin: 0;
   padding: 10px 12px;
@@ -230,8 +231,9 @@ button.disabled:hover {
   border: 1px solid var(--line);
   border-radius: 10px;
   overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
   color: #c5d0e0;
   font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
 }
