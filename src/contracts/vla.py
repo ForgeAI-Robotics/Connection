@@ -39,7 +39,7 @@ def validate_evidence(operation, object_id, evidence, ready_at):
     except (ValueError, TypeError):
         valid = False
     if not valid:
-        raise ValueError('证据时间须带时区，且处于暂停确认之后、当前时间之前')
+        raise ValueError('证据时间须带时区，且处于本次执行／暂停确认的有效观察窗口内')
     if operation == 'open_fridge':
         valid = (all(evidence.get(k) is True for k in ('door_open', 'door_stable_open', 'hands_clear_of_door'))
                  and evidence.get('door_closed') is not True)

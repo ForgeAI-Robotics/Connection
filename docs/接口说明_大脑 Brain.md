@@ -374,7 +374,11 @@ Runtime 在保存建议、确认及应用时检查；当前方案引用的证据
 
 暂停的实现是结束当前下游命令、保留大脑流程；继续可能使用新命令重新执行未完成步骤，不要求导航具备同一命令的暂停／恢复状态。新 VLA 在 `waiting_human` 等待效果核验时，普通暂停同样取消原命令；专用 `/api/task_vla/pause` 才是保留命令的策略暂停。该等待阶段“继续”只查询原命令，未收到身份匹配的终态就拒绝推进，不生成新尝试。
 
-新动作的 `vla_confirmation` 包含 `command_id`、`operation`、VLA `state`、`pause_requested`、`verification_ready_at`、`finish_requested`，用于网页区分仍在执行、已暂停待核验、正在停止／归还、已到终态。它是 Runtime 保存的下游观察，不是另一套任务状态。请求受理、效果证据提交与大脑任务通过分别展示；普通状态轮询不主动查询或重发动作。
+暂停收到原命令查询回执后，Runtime 在同一次写入中保存当前尝试的原始回包，并分别更新 `command_unknown`、`stopped_confirmed`、`resources_cleared`；核对命令身份、时间和终态／明确未开始证据，不能仅凭取消请求受理或一个 stopped 字段确认。取消回包丢失时仍查询原 ID；停止未确认进入恢复处理，停止已确认也不推断资源释放。暂停期间查到成功仅保留待核验结果，不自动通过步骤、继续或重发。迟到查询不得覆盖已取消任务或另一命令。
+
+`paused` 下也允许既有 `query_original` 查询原命令、补齐旧版暂停记录的证据和状态；任务保持暂停、派发保持关闭，普通状态轮询不自动查询或修账。该修复已随 2026-10-29 16:48 大脑重载加载，具体暂停故障的真机复验仍待补；现场问题与复验见[暂停回执一致性](多端联调_大脑任务与恢复.md#pause-receipt-consistency)。
+
+新动作的 `vla_confirmation` 包含 `command_id`、`operation`、VLA `state`、`pause_requested`、`verification_ready_at`、`finish_requested`，用于网页区分仍在执行、已暂停待核验、正在停止／归还、已到终态。它是 Runtime 保存的下游观察，不是另一套任务状态。请求受理、效果证据提交与大脑任务通过分别展示；新增 execution_mode、object_id、execution_ready_at、completion、finish_intent／finish_rejection 供确认按钮显示，凭据不返回。普通状态轮询不主动查询或重发动作；已记录 auto_advance 的确认由后台工作器查询并经 Runtime 核验推进。
 
 请求规则：
 
@@ -584,6 +588,9 @@ AND result.navigation_stopped == true
 
 ### 8.1 流程与请求身份
 
+**2026-10-29 一次确认接入（大脑／网页已重载，VLA 应用由操控侧确认）：** 真实操控只在开门完成、抓取并后退撤离完成时各确认一次。网页发送原 finish API，附 auto_advance=true；Runtime 保存原观察与确认意图，复用既有 I/O 工作器查询 VLA 正式终态，经原 Verifier 通过后自动推进。等待、暂停完成和受理均不能替代成功；取消、暂停、换任务后的迟到结果不能驱动后续动作。模拟操控仍自动通过模拟步骤，不增加实物确认。具体字段与原接口兼容性见[完成确认](接口说明_操控VLA.md#暂停效果确认与大脑继续)。
+
+
 source_gate 模式三个按钮均已适配。左上“导航真机＋操控真机”走真实 NAV＋direct-v1 VLA；右上“导航真机＋操控模拟”保持本地模拟操控；左下“导航模拟＋操控真机”不访问真实 NAV，现场确认作业位置后调用真实 VLA。direct 业务与回执见[操控接口](接口说明_操控VLA.md#direct-v1直连操控与接收源选择)。整轮取消会按实际提交的原命令分别请求 NAV／VLA 取消，并记录接收源全关，页面保留未确认收尾提示，但历史未知不阻止新任务；不将关闸结果写成身体已停止。旧任务恢复遇到控制模式改变会拒绝，不换后端重跑。
 
 2026-10-28 网页提供三个明确入口，共用当前 real_workflow、任务身份和原有暂停／继续／取消／效果核验：
@@ -596,14 +603,14 @@ source_gate 模式三个按钮均已适配。左上“导航真机＋操控真�
 
 第三种模式发布前由现场人员确认机器人已摆好冰箱作业姿态；source_gate 仅记录此业务确认，具体执行条件由 VLA 内部检查。以下作业证据与 300 秒有效期规则仅适用于 unified 模式：网页向原 publish_task 入口附带布尔 worksite_confirmed=true。大脑确认当前身体保持、记录本任务的机器人／SONIC 实例、唯一作业点及确认时间，随后派生 kind=operator_ready 的 worksite_evidence 传给 VLA。该确认最多有效 300 秒，绑定原任务和当前动作，重试／重启不延长；过期、实例或作业点改变仍阻止真实动作。模拟导航回执不进入真实到位证据，也不请求任何身体许可。这个模式仅支持同一冰箱作业点上的开门与抓取，不新增点位或另建任务状态机。
 
-模拟导航步骤明确标记“（模拟）”，保存 simulated=true、physical_execution=false、evidence_level=simulated_navigation。仅从原 Runtime 回执恢复，缺失保持 UNKNOWN；不能凭原请求补造成功。操控仍需要原 pause／finish 真实效果确认，完成页面显示“导航为模拟，未实际运送”。第一种模式是真实执行路由，不表示全部下游能力已经验收；真实持物导航仍核验当前持物业务证据和接收源，不由网关检查持物，不能用第三种模式的模拟运送作为实物搬运成功。
+模拟导航步骤明确标记“（模拟）”，保存 simulated=true、physical_execution=false、evidence_level=simulated_navigation。仅从原 Runtime 回执恢复，缺失保持 UNKNOWN；不能凭原请求补造成功。真实操控使用一次 finish 完成确认；VLA 内部暂停／收尾，成功后自动推进，完成页面显示“导航为模拟，未实际运送”。第一种模式是真实执行路由，不表示全部下游能力已经验收；真实持物导航仍核验当前持物业务证据和接收源，不由网关检查持物，不能用第三种模式的模拟运送作为实物搬运成功。
 
 2026-10-22 起，当前 v2 Skill 的 `real_workflow` 为真机“开始接待”登记 `reception.fridge_pick` v2：
 
 ```text
 初始化 → 读取现场 → 导航到冰箱前
-→ open_fridge → 暂停、授权效果确认、继续核验
-→ grasp_cola → 暂停、授权效果确认、继续核验
+→ open_fridge → 人工确认门打开且双手离门 → 自动收尾、核验
+→ grasp_cola（抓取、收手、后退）→ 人工确认撤离完成且仍持物 → 自动收尾、核验
 → 中转点 1 → 中转点 2 → 横移到中转点 3 → 1 号桌 → 结束（仍持有可乐）
 ```
 

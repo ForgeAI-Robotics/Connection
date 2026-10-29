@@ -122,7 +122,10 @@ def create_app(application, *, facade=None):
         from contracts.tasks import KernelError
         data = request.get_json(silent=True)
         keys = {'task_id', 'command_id'} | ({'evidence'} if action == 'finish' else set())
-        if action not in {'query', 'pause', 'finish'} or not isinstance(data, dict) or set(data) != keys:
+        allowed = keys | ({'auto_advance'} if action == 'finish' else set())
+        if (action not in {'query', 'pause', 'finish'} or not isinstance(data, dict)
+                or not keys <= set(data) or set(data) - allowed
+                or type(data.get('auto_advance', False)) is not bool):
             return jsonify({'accepted': False, 'error': 'VLA 核验参数无效'}), 400
         try:
             task_id = _validated_task_id(data['task_id'])
@@ -130,7 +133,8 @@ def create_app(application, *, facade=None):
             if not task_id or not command_id:
                 raise ValueError('必须指定原 task_id 与 command_id')
             result = application.vla_effect(task_id, command_id, action,
-                evidence=data.get('evidence'), authorization=request.headers.get('Authorization', ''))
+                evidence=data.get('evidence'), authorization=request.headers.get('Authorization', ''),
+                **({'auto_advance': True} if data.get('auto_advance') else {}))
             return jsonify(result), 200
         except ValueError as exc:
             return jsonify({'accepted': False, 'error': str(exc)}), 400

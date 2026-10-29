@@ -8,7 +8,7 @@
 
 请求只发送 contract_version、task_id、command_id、operation、object_id、target_area；operation 支持 open_fridge／grasp_cola。原 Runtime 请求和导航业务关联仍保留在本地账本，不携带 control、旧授权会话、worksite_evidence 或 navigation_proof。连续操控保持 vla 选通；切源只在下一条真实命令派发时进行，不因 finish 或查询自动执行下一步。网关字段及原请求查询规则见[接收源开关](接口说明_机器人统一网关.md#sonic-接收源开关source_gate)。
 
-VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}` 路径族。任务调用使用 body_control.vla_token_env（空值沿用 token_env）；finish 使用原请求级 verifier Bearer，不写入任务账本。进入 running／waiting_result_confirmation 后沿原网页流程暂停、提交真实效果证据，再由人工“继续”推进。开门要求门打开且稳定、双手离门；抓取要求物体在手且 clear_of_fridge=true，不用手指闭合或程序退出冒充效果。大脑不发送 SONIC START／STOP 或 Planner 恢复命令；本轮不改 VLA 收尾策略，STOP 与实际姿态影响留待执行端对齐和真机验证。
+VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}` 路径族。任务调用使用 body_control.vla_token_env（空值沿用 token_env）；finish 使用原请求级 verifier Bearer，不写入任务账本。2026-10-29 新增 running-finish 扩展：在 running／waiting_result_confirmation 一次提交真实人工完成确认，VLA 内部暂停与收尾，大脑后台查询并核验后自动推进；旧未请求自动推进的 pause／finish 接口保留原语义。开门要求门打开且稳定、双手离门；抓取要求物体在手且 clear_of_fridge=true，不用手指闭合或程序退出冒充效果。大脑不发送 SONIC START／STOP 或 Planner 恢复命令；本轮不改 VLA 收尾策略，STOP 与实际姿态影响留待执行端对齐和真机验证。
 
 真实回执必须属于原 task_id／command_id／operation／object_id／target_area，并声明 execution_mode=direct。按 VLA 返回的 policy_stopped、publisher_stopped、body_stopped、hands_stopped、hold_verified 解释当前命令收尾，缺失、null、false 或相互矛盾不补成成功；不再要求 navigation_port_ready／authorization_released。准备前明确 action_started=false 且发布未生效的失败，只清除该命令执行槽，原 body_stopped=null 保留，不宣称身体停稳。明确 REAL_ACTIONS_DISABLED 且 action_started/action_state_uncertain 均为 false 的 503 是未受理拒绝；普通 503／断线／超时仍为未知，先查原命令。
 
@@ -69,11 +69,17 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 
 ### 暂停、效果确认与大脑继续
 
-1. 大脑保留原 `task_id/command_id` 提交动作，等待 `running` 或 `waiting_result_confirmation` 后在 Runtime 进入 `waiting_human`，状态带 `vla_confirmation`；此时动作可能仍运行。
-2. 现场判断适当时机后，通过大脑 `POST /api/task_vla/pause` 请求策略暂停，body 为 `{"task_id":"原任务ID","command_id":"原命令ID"}`。网页提供“暂停策略以核验”。请求受理不等于已经暂停。
-3. `POST /api/task_vla/query` 使用相同身份，只查询并记账。等到 `waiting_result_confirmation` 和 `verification_ready_at` 后，由真实现场人员或视觉核验模块采集证据。网页查询按钮调用此接口；普通任务状态轮询只读取账本。
-4. 授权核验方调用 `POST /api/task_vla/finish`，Header 为 `Authorization: Bearer <VLA verifier credential>`，body 为原身份加 `evidence`。凭据仅用于当前请求，不存配置、账本或普通任务日志；网页转发保留该 Header。也可由 VLA 原有 `confirm_effect.py` 直接确认，再让大脑查询原命令。
-5. 查询观察 VLA 经 `stopping_policy`、`restoring_navigation` 到终态。查询或 finish 回包不会自动推进下一步；点击已有“继续”，Runtime 再查原命令、核验效果与停止／归还证据后推进。终态未到时“继续”拒绝重发。
+2026-10-29 当前 source_gate 对接 `20261029-direct-running-finish-v1`；大脑／网页已于 2026-10-29 按用户要求重载，并核对实际页面；本轮未操作 VLA，操控侧须加载匹配版本，不能将大脑应用当作 VLA 已应用。
+
+1. VLA running 后，大脑 waiting_human 只等待完成确认，不主动暂停模型。开门、抓取及模型后退继续由 VLA 执行。
+2. 网页在真实操控时提供“确认冰箱已打开且双手离门”“确认后退撤离完成且可乐仍在手”两个阶段按钮。先填写原 verifier 凭据，输入只留在当前页面，不进配置、账本或浏览器持久存储。用户必须看到所述事实后点击；抓取刚抓住而尚未撤离时不确认。
+3. 点击只调用 `POST /api/task_vla/finish`，body 为原 task_id、command_id、evidence 与 `auto_advance=true`；Authorization 原样按请求转发给 VLA。evidence 的 source=operator_observation、reference 为该点击唯一引用、observed_at 为实际点击时间，程序不改成暂停后的时间。该标志只用于大脑推进，不转给 VLA。
+4. VLA 受理 finish 后内部暂停并收尾。大脑保存第一次确认意图，只通过原 GET 轮询终态；202、completion.accepted／pausing／paused 都不当成成功。完成回执的 completion.evidence 须匹配原确认；VLA 自行失败、取消、重启 interrupted、超时、身份不符或证据不完整都不推进。
+5. 成功后仍经原 Verifier 核对效果、身份、时间及停止事实，再按原业务顺序推进。开门后自动提交抓取，保持 VLA 选通；抓取后另查当前持物，选通 NAV 后下发目标。无需额外点击“继续”。不新增后退命令，也不改 STOP 策略或 NAV Planner 恢复。
+
+原 `/api/task_vla/pause` 和 `/query` 保留。未带 auto_advance 的调用兼容旧人工继续流程；旧 unified／非 direct 后端不因此接受运行中 finish。普通状态 GET 不驱动任务。已明确授权自动推进的确认可在大脑重启后恢复查询，但不重发 finish；暂停、取消或任务变化会阻止迟到结果推进。
+
+首次确认与重发意图保存在原 attempt.effect_controls.finish，不另建业务账本。重复相同确认只查询，不重复 POST；不同证据拒绝覆盖。明确参数／凭据拒绝可重新真实确认，COMPLETION_CONFLICT 与网络不确定保留原意图。客户端不能只因 HTTP 错误就换 reference／observed_at 补发；GET 原任务状态能看到 finish_intent 与 completion。凭据只在当前 HTTP 请求使用，不落盘。自动查询超时后保留原请求进入异常处理，不自动重新执行动作。
 
 效果证据字段：
 
@@ -81,7 +87,7 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 | --- | --- |
 | `source` | `operator_observation` 或 `visual_verifier` |
 | `reference` | 可追溯观察记录／图像记录 ID，不能编造 |
-| `observed_at` | 带时区，处于 `verification_ready_at` 之后至当前时间之间；终态证据时间不得晚于 `completed_at` |
+| `observed_at` | 带时区，running 确认处于本次 execution_ready_at 之后，原暂停流程处于 verification_ready_at 之后；不晚于当前时间；终态证据时间不得晚于 `completed_at` |
 | 开门 | `door_open=true`、`door_stable_open=true`、`hands_clear_of_door=true` |
 | 抓可乐 | `object_grasped=true`、`holding` 等于请求物体 ID、`clear_of_fridge=true` |
 

@@ -499,7 +499,14 @@ def interpret_observation(command_id, raw, request, *, allow_simulated=False, co
         stopped, resources = stop_facts(raw)
     simulated = (allow_simulated and raw.get('simulated') is True and result.get('simulated') is True
                  and result.get('physical_execution') is False and level == 'simulated_object')
-    effect = _effect_supported(skill, result, dict(body, _verification_ready_at=raw.get('verification_ready_at')),
+    window = raw.get('verification_ready_at')
+    if direct_vla:
+        from contracts.vla_direct import effect_window
+        try:
+            window = effect_window(raw, result.get('evidence'))
+        except ValueError:
+            window = None  # Invalid completion evidence must not pass effect verification.
+    effect = _effect_supported(skill, result, dict(body, _verification_ready_at=window),
                                simulated=simulated)
     if skill in NATIVE_OPERATIONS and (raw.get('simulated') is True or result.get('simulated') is True) and not simulated:
         effect = False
@@ -537,6 +544,10 @@ def interpret_observation(command_id, raw, request, *, allow_simulated=False, co
             'pause_requested': raw.get('pause_requested') is True,
             'verification_ready_at': raw.get('verification_ready_at'),
             'finish_requested': raw.get('finish_requested') is True,
+            'execution_ready_at': raw.get('execution_ready_at'),
+            'completion': raw.get('completion'),
+            'execution_mode': raw.get('execution_mode'),
+            'object_id': body.get('object_id'),
         }
     entry = by_id(str(skill or ""))
     if supports and entry is not None:

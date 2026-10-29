@@ -44,6 +44,7 @@ _FROZEN_TRANSITIONS = {
     ("running", "unknown"): "recovery_required",
     ("running", "gate"): "waiting_human",
     ("waiting_human", "human_continue"): "running",
+    ("waiting_human", "vla_completion_unconfirmed"): "recovery_required",
     ("waiting_human", "pause_ack"): "paused",
     ("waiting_human", "pause_nack"): "recovery_required",
     ("running", "pause_ack"): "paused",
@@ -111,7 +112,7 @@ class PackageTests(unittest.TestCase):
         self.assertTrue(desk_matches("收拾桌"))
         self.assertFalse(desk_matches("开始接待"))
 
-    def test_state_machine_is_unchanged(self):
+    def test_state_machine_matches_declared_transitions(self):
         self.assertEqual(_TRANSITIONS, _FROZEN_TRANSITIONS)
 
     def test_look_runs_on_the_same_runtime_without_a_body_command(self):

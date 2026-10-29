@@ -115,8 +115,10 @@ class SourceGateBodyAdapter(SourceGateNavigationAdapter):
 
     def capabilities(self):
         # Implemented business vocabulary, not a remote hardware preflight.
+        from contracts.vla_direct import FINISH_REVISION
         return dict(operations={op: {'configured': True} for op in NATIVE_OPERATIONS},
                     real_action_enabled=True, execution_mode='direct',
+                    finish_confirmation_revision=FINISH_REVISION,
                     readiness_checked_by_executor=True)
 
     def _dispatch(self, request):
@@ -164,13 +166,23 @@ class SourceGateBodyAdapter(SourceGateNavigationAdapter):
         if action == 'pause':
             raw = self.vla.pause(body['task_id'], command_id)
         elif action == 'finish':
-            if raw.get('state') != 'waiting_result_confirmation':
-                raise ValueError('须等待策略暂停确认后才能提交效果证据')
-            validate_evidence(body['operation'], body['object_id'], evidence, raw.get('verification_ready_at'))
+            if raw.get('state') not in {'running', 'waiting_result_confirmation'}:
+                raise ValueError('须等待 VLA 执行中或已暂停后才能提交效果证据')
+            window = raw.get('execution_ready_at') if raw['state'] == 'running' else raw.get('verification_ready_at')
+            validate_evidence(body['operation'], body['object_id'], evidence, window)
             raw = self.vla.finish(body['task_id'], command_id, evidence, authorization)
         else:
             raise ValueError('未知 VLA 核验操作')
         return self._view(command_id, raw, request)
+
+    def wait_completion(self, command_id, request):
+        """Poll the original task using the existing client; never re-send finish."""
+        try:
+            raw = self.vla.wait_task(command_id, timeout_sec=float(request.get('deadline_sec') or 30),
+                                    poll_interval_sec=float(request.get('poll_interval_sec') or .5))
+            return self._view(command_id, raw, request)
+        except HttpContractError as exc:
+            return _unconfirmed(command_id, str(exc), raw=exc.payload)
 
     def cancel(self, command_id, request):
         if request['skill'] == 'navigate':
@@ -216,6 +228,8 @@ class SourceGateBodyAdapter(SourceGateNavigationAdapter):
                 or not proof.get('receiver_instance_id')):
             raise ControlError('HOLDING_UNCONFIRMED', 'VLA 未确认当前仍持有本任务物体')
         try:
-            validate_evidence('grasp_cola', obj, proof, original['raw'].get('verification_ready_at'))
+            from contracts.vla_direct import effect_window
+            validate_evidence('grasp_cola', obj, proof,
+                              effect_window(original['raw'], original['raw']['result'].get('evidence')))
         except ValueError as exc:
             raise ControlError('HOLDING_UNCONFIRMED', str(exc)) from exc

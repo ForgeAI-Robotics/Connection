@@ -166,7 +166,7 @@ class TaskReasoner:
 def recovery_context(record):
     from brain.recovery import available_actions, planning_context
     allowed = ["wait", "request_help", "cancel"]
-    if record.get("open_command_id") and record.get("state") == "recovery_required":
+    if record.get("open_command_id") and record.get("state") in {"recovery_required", "paused"}:
         allowed.append("query_original")
     if ((record.get("state") in {"paused", "waiting_human"} and not record.get("command_unknown")) or (
             record.get("state") == "recovery_required" and record.get("stopped_confirmed")

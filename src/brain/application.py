@@ -182,10 +182,17 @@ class BrainApplication:
                 self._started = True
                 if record.get('task_id'):
                     emit('task_restored', record)
+                    if record.get('state') == 'waiting_human' and record.get('vla_confirmation'):
+                        self.owner.submit(self._resume_vla_confirmation)
             except Exception:
                 self.close()
                 raise
         return self
+
+    def _resume_vla_confirmation(self):
+        runtime = self.service.attach()
+        if runtime.pending_vla_completion():
+            self.service._drive(runtime)  # Query persisted intent only; no finish replay.
 
     def publish(self, task, task_id=None, **kwargs):
         self.start()
@@ -247,10 +254,10 @@ class BrainApplication:
         # Ordinary owner work keeps I/O cooperative: pause/cancel can preempt a query.
         return self.owner.call(self.service.confirm_advice, task_id, advice_id, expected_revision)
 
-    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization=''):
+    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization='', auto_advance=False):
         self.start()
         return self.owner.call(self.service.vla_effect, task_id, command_id, action,
-                               evidence=evidence, authorization=authorization, control=True)
+                               evidence=evidence, authorization=authorization, auto_advance=auto_advance, control=True)
 
     def health(self):
         return {'ready': self._started and not self._closing,

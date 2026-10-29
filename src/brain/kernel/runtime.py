@@ -48,6 +48,7 @@ _TRANSITIONS = {
     ("running", "unknown"): "recovery_required",
     ("running", "gate"): "waiting_human",
     ("waiting_human", "human_continue"): "running",
+    ("waiting_human", "vla_completion_unconfirmed"): "recovery_required",
     ("waiting_human", "pause_ack"): "paused",
     ("waiting_human", "pause_nack"): "recovery_required",
     ("running", "pause_ack"): "paused",
@@ -264,7 +265,10 @@ def status_from_record(record) -> dict:
         "plan_revisions": deepcopy((record or {}).get("plan_revisions", [])),
         "advice_confirmations": deepcopy((record or {}).get("advice_confirmations", [])),
         "handoff_observation": deepcopy((record or {}).get("handoff_observation")),
-        "vla_confirmation": deepcopy((record or {}).get('vla_confirmation'))
+        "vla_confirmation": dict(deepcopy((record or {}).get('vla_confirmation') or {}),
+                                 finish_intent=deepcopy((latest.get('effect_controls') or {}).get('finish')),
+                                 finish_rejection=next((deepcopy(r) for r in reversed(latest.get('effect_rejections') or [])
+                                                        if r.get('action') == 'finish'), None))
             if (record or {}).get('open_command_id') == ((record or {}).get('vla_confirmation') or {}).get('command_id')
             and not terminal else None,
     }
@@ -577,13 +581,13 @@ class TaskRuntime:
         with self._exclusive():
             self._reload_locked()
             command_id = self.record.get("open_command_id")
-            if self.state != "recovery_required" or not command_id:
+            if self.state not in {"recovery_required", "paused"} or not command_id:
                 raise Rejected("当前没有可查询的原命令")
             step = self._step_of_command(command_id)
             attempt = self._latest(step.step_id) if step else None
             if not attempt or attempt["command_id"] != command_id:
                 raise Rejected("原命令与步骤不匹配")
-            revision = self.record["revision"]
+            revision, state = self.record["revision"], self.state
             contract = self._contract(step, attempt["attempt_id"], command_id, deepcopy(attempt["request"]))
         observed = self.port.query(command_id, contract.request)
         if not isinstance(observed, dict) or observed.get("command_id") != command_id:
@@ -591,7 +595,7 @@ class TaskRuntime:
         progress = self.runner._progress(contract, observed)
         with self._exclusive():
             self._reload_locked()
-            if (self.record["revision"] != revision or self.state != "recovery_required"
+            if (self.record["revision"] != revision or self.state != state
                     or self.record.get("open_command_id") != command_id):
                 raise Rejected("查询期间任务已变化，未应用迟到结果")
             evidence = progress.evidence or {}
@@ -599,9 +603,13 @@ class TaskRuntime:
                      and evidence.get("identity_ok") is True and evidence.get("time_ok") is True
                      and progress.publisher_stopped is True and evidence.get("resources_released") is True
                      and (progress.terminal in {"succeeded", "failed", "cancelled"} or progress.started is False))
-            self.record.update(last_query_command_id=command_id, stopped_confirmed=known,
-                               resources_cleared=known, command_unknown=not known,
-                               advice_query=progress.as_dict())
+            if state == 'paused':
+                self._record_pause_query(step, contract, observed)
+                known = not self.record['command_unknown']
+            else:
+                self.record.update(stopped_confirmed=known, resources_cleared=known,
+                                   command_unknown=not known)
+            self.record.update(last_query_command_id=command_id, advice_query=progress.as_dict())
             self._save("advice_original_queried")
             return {"accepted": True, "query_only": True, "command_id": command_id,
                     "state": self.state, "result_known": known,
@@ -689,6 +697,31 @@ class TaskRuntime:
                 raise IllegalTransition("只有等待人工时可以继续等待")
             return self.state
 
+    def _record_pause_query(self, step, contract, observed):
+        """Keep the original command evidence and pause flags in one Runtime write."""
+        attempt = self._latest(step.step_id)
+        attempt['pause_query'] = deepcopy(observed)
+        progress = self.runner._progress(contract, observed)
+        evidence = progress.evidence
+        valid = (observed.get('command_id') == contract.command_id and not progress.timed_out
+                 and evidence.get('identity_ok') is True and evidence.get('time_ok') is True)
+        known = valid and (progress.terminal in {'succeeded', 'failed', 'cancelled'}
+                           or progress.started is False)
+        stopped = known and progress.publisher_stopped is True
+        self.record.update(command_unknown=not known, stopped_confirmed=stopped,
+                           resources_cleared=stopped and evidence.get('resources_released') is True,
+                           not_started_confirmed=known and progress.started is False)
+        self.record.pop('advice_query', None)  # An older query must not outrank this pause observation.
+        if valid:
+            self._stamp_attempt(step, progress, finished=bool(progress.terminal))
+            # A success observed while pausing still needs the ordinary Verifier
+            # after explicit continue. Cancellation is never step completion.
+            attempt['verdict'] = 'FAIL' if progress.terminal in {'failed', 'cancelled'} else ''
+            self.record['pending_progress'] = progress.as_dict()
+        else:
+            # Never let a preceding (possibly simulated) step describe this command.
+            self.record['pending_progress'] = None
+
     def request_pause(self, *, stop_acknowledged: bool | None = None, expected_step_id=None):
         with self._exclusive():
             self._reload_locked()
@@ -701,37 +734,49 @@ class TaskRuntime:
                 raise IllegalTransition("只有运行或核验中可以暂停")
             if self.record.get("control_request") == "cancel":
                 raise IllegalTransition("取消已开始，不能再暂停")
-            self.record["dispatch_closed"] = True
-            self.record["control_request"] = "pause"
-            resume_state = self.state
-            self.record["pause_resume_state"] = resume_state
+            task_id, resume_state = self.record['task_id'], self.state
             command_id = self.record.get("open_command_id")
-            request = self._request_of(command_id) if command_id else None
+            step = self._step_of_command(command_id) if command_id else None
+            attempt = self._latest(step.step_id) if step else None
+            if command_id and (not attempt or attempt.get('command_id') != command_id):
+                raise Rejected('原命令与暂停环节不匹配')
+            contract = self._contract(step, attempt['attempt_id'], command_id,
+                                      deepcopy(attempt['request'])) if command_id else None
+            self.record['dispatch_closed'] = True
+            self.record['control_request'] = 'pause'
+            self.record['pause_resume_state'] = resume_state
             self._save("pause_intent")
+        observed, cancel_error = {}, ''
         if command_id:
             try:
-                self.port.cancel(command_id, request)
-            except Exception:
-                stop_acknowledged = False
-            if stop_acknowledged is None:
-                try:
-                    viewed = self.port.query(command_id, request) or {}
-                except Exception:
-                    viewed = {}
-                stop_acknowledged = isinstance(viewed, dict) and viewed.get("stopped") is True
-        elif stop_acknowledged is None:
-            stop_acknowledged = True
-        if stop_acknowledged is None:
-            stop_acknowledged = False
+                self.port.cancel(command_id, contract.request)
+            except Exception as exc:
+                cancel_error = str(exc)
+            # A lost cancel acknowledgement does not prevent querying the original
+            # command; an accepted cancel alone is not proof that it stopped.
+            try:
+                observed = self.port.query(command_id, contract.request)
+                if not isinstance(observed, dict):
+                    observed = {'error': '暂停查询回执无效'}
+            except Exception as exc:
+                observed = {'error': str(exc)}
         with self._exclusive():
             self._reload_locked()
-            if self.record.get("control_request") != "pause" or self.state != resume_state:
+            current = self._latest(step.step_id) if step else None
+            if (self.record.get('task_id') != task_id
+                    or self.record.get('open_command_id') != command_id
+                    or self.record.get("control_request") != "pause" or self.state != resume_state
+                    or (contract and (not current or current.get('attempt_id') != contract.attempt_id))):
                 return self.state
+            if command_id:
+                self._record_pause_query(step, contract, observed)
+                if cancel_error:
+                    current['pause_cancel_error'] = cancel_error
+                stop_acknowledged = stop_acknowledged is not False and self.record['stopped_confirmed']
+            elif stop_acknowledged is None:
+                stop_acknowledged = True
             self.record["blocked_reason"] = "" if stop_acknowledged else "pause_without_stop_ack"
             self.apply("pause_ack" if stop_acknowledged else "pause_nack")
-            if not stop_acknowledged:
-                self.record["command_unknown"] = True
-                self.record["resources_cleared"] = False
             self._save("pause_requested")
         return self.state
 
@@ -927,10 +972,12 @@ class TaskRuntime:
                 self._save("resume_original_confirmed")
         return result
 
-    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization=''):
+    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization='', auto_advance=False):
         """Control only the original VLA command; queries never drive or retry a step."""
         if action not in {'query', 'pause', 'finish'}:
             raise Rejected('未知 VLA 效果核验操作')
+        if auto_advance and (action != 'finish' or not callable(getattr(self.port, 'wait_completion', None))):
+            raise Rejected('该执行模式不支持确认后自动推进')
         if action == 'finish' and (not isinstance(authorization, str) or not authorization.startswith('Bearer ')
                                    or not authorization[7:].strip()):
             raise Rejected('完成确认需要授权核验方的 Bearer 凭据')
@@ -957,7 +1004,8 @@ class TaskRuntime:
                 if prior:
                     sent_action = 'query'  # Lost replies/restarts never replay a mutation.
                 else:
-                    controls[action] = {'evidence': deepcopy(evidence), 'status': 'requested'}
+                    controls[action] = {'evidence': deepcopy(evidence), 'status': 'requested',
+                                        'auto_advance': auto_advance}
                     self._save('vla_effect_intent')
             revision = self.record.get('revision')
         try:
@@ -968,8 +1016,10 @@ class TaskRuntime:
             # Keep the durable intent if a POST may have been received. Explicit validation
             # rejections may be corrected by a new human request; never retry automatically.
             from brain.adapters.http_client import HttpContractError
+            rejection = exc.payload if isinstance(exc, HttpContractError) and isinstance(exc.payload, dict) else {}
             definite = isinstance(exc, ValueError) or (
-                isinstance(exc, HttpContractError) and exc.status_code in {400, 403, 409, 501})
+                isinstance(exc, HttpContractError) and exc.status_code in {400, 401, 403, 409, 501}
+                and (rejection.get('error') or {}).get('code') != 'COMPLETION_CONFLICT')
             with self._exclusive():
                 self._reload_locked()
                 if self.record.get('revision') == revision and self.record.get('open_command_id') == command_id:
@@ -994,11 +1044,64 @@ class TaskRuntime:
                 'verification_ready_at': raw.get('verification_ready_at'),
                 'finish_requested': raw.get('finish_requested') is True,
                 'holding_evidence': deepcopy((raw.get('result') or {}).get('holding_evidence')),
+                'execution_mode': raw.get('execution_mode'), 'object_id': request['body']['object_id'],
+                'execution_ready_at': raw.get('execution_ready_at'),
+                'completion': deepcopy(raw.get('completion')),
+                'finish_intent': deepcopy((self._latest(step.step_id).get('effect_controls') or {}).get('finish')),
             }
             self._save('vla_effect_observed')
             return {'accepted': True, 'query_only': sent_action == 'query', 'task_id': task_id,
                     'command_id': command_id, 'state': self.state,
                     'vla_confirmation': deepcopy(self.record['vla_confirmation'])}
+
+    def pending_vla_completion(self):
+        """Only a persisted human finish intent can authorize automatic progression."""
+        step = self._current_step()
+        if (self.state != 'waiting_human' or not step or step.kind not in NATIVE_OPERATIONS
+                or self.record.get('control_request') or self.record.get('dispatch_closed')):
+            return False
+        intent = ((self._latest(step.step_id) or {}).get('effect_controls') or {}).get('finish') or {}
+        return intent.get('auto_advance') is True
+
+    def await_vla_completion(self):
+        """Use existing cooperative I/O and Verifier, never a second task loop."""
+        with self._exclusive():
+            self._reload_locked()
+            if not self.pending_vla_completion():
+                return
+            step = self._current_step()
+            attempt = self._latest(step.step_id)
+            command_id = attempt['command_id']
+            request = deepcopy(attempt['request'])
+            intent = deepcopy(attempt['effect_controls']['finish'])
+            contract = self._contract(step, attempt['attempt_id'], command_id, request)
+        viewed = self.port.wait_completion(command_id, request)
+        progress = self.runner._progress(contract, viewed)
+        with self._exclusive():
+            self._reload_locked()
+            if (not self.pending_vla_completion() or self.record.get('open_command_id') != command_id
+                    or (self._latest(step.step_id).get('effect_controls') or {}).get('finish') != intent):
+                return  # Pause/cancel/new task wins over a late completion.
+            finish = self._latest(step.step_id)['effect_controls']['finish']
+            finish['auto_advance'] = False
+            finish['status'] = 'observed' if progress.terminal else 'unconfirmed'
+            completion = (viewed.get('raw') or {}).get('completion') or {}
+            if progress.terminal and ((viewed.get('raw') or {}).get('state') == 'succeeded'):
+                if (completion.get('status') != 'completed' or completion.get('evidence') != intent['evidence']):
+                    progress.evidence.update(supports=False, effect_verified=False,
+                                             detail='VLA 完成确认与原人工确认不匹配')
+                    progress.effect_ok = False
+            if not progress.terminal or progress.evidence.get('identity_ok') is not True:
+                self._stamp_attempt(step, progress, finished=bool(progress.terminal))
+                self.record.update(command_unknown=True, pending_progress=progress.as_dict(),
+                                   blocked_reason=progress.error or 'VLA 收尾结果未确认，请查询原命令')
+                self.apply('vla_completion_unconfirmed')
+                self._save('vla_completion_unconfirmed')
+                return
+            self.record['command_unknown'] = False
+            self.apply('human_continue')
+            self.record['blocked_reason'] = ''
+            self._consume_submit(step, progress)  # Original identity/effect/stop verification follows.
 
     def continue_current(self):
         """Human continue: verify completion or authorize one new attempt of this step."""

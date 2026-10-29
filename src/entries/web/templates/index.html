@@ -72,6 +72,10 @@
             <div class="task-progress" id="task-progress"></div>
             <div id="task-freshness" style="font-size:12px;color:#94a3b8" aria-live="polite"></div>
             <div id="task-command-feedback" style="white-space:pre-wrap;font-size:13px" aria-live="polite"></div>
+            <div id="vla-verifier-panel" hidden style="margin-top:8px">
+                <label for="vla-verifier">操控效果核验凭据（仅本页使用，不保存）</label>
+                <input id="vla-verifier" type="password" autocomplete="off" placeholder="输入原 VLA verifier token">
+            </div>
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
                 <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception('开始接待（导航真机＋操控真机）')">🤝 开始接待（导航真机＋操控真机）</button>
@@ -221,6 +225,45 @@
             } finally {
                 taskControlPending = false;
                 updateTaskButtons();
+                await refreshTaskStatus();
+            }
+        }
+
+        const vlaFinishIntents = new Map();
+        async function confirmVlaCompletion() {
+            const current = displayedTask, vla = current?.vla_confirmation;
+            if (!taskStatusKnown || taskControlPending || !vla || current.state !== 'waiting_human'
+                || current.pause_requested || vla.finish_intent || vla.finish_requested
+                || !['running', 'waiting_result_confirmation'].includes(vla.state)) return;
+            const key = current.task_id + ':' + vla.command_id;
+            if (vlaFinishIntents.has(key)) {
+                await vlaEffectControl('query'); // A lost reply never creates another confirmation.
+                return;
+            }
+            const token = document.getElementById('vla-verifier').value.trim();
+            const feedback = document.getElementById('task-command-feedback');
+            if (!token) { feedback.textContent = '请先填写操控效果核验凭据，再确认现场动作完成。'; return; }
+            const reference = Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, '0')).join('');
+            const evidence = {source:'operator_observation', reference:'web-confirm-' + reference,
+                observed_at:new Date().toISOString()};
+            if (vla.operation === 'open_fridge') Object.assign(evidence,
+                {door_open:true, door_stable_open:true, hands_clear_of_door:true});
+            else Object.assign(evidence, {object_grasped:true, holding:vla.object_id, clear_of_fridge:true});
+            const body = {task_id:current.task_id, command_id:vla.command_id, evidence, auto_advance:true};
+            vlaFinishIntents.set(key, body);
+            taskControlPending = true;
+            try {
+                const response = await fetch('/api/task_vla/finish', {method:'POST',
+                    headers:{'Content-Type':'application/json', Authorization:token.startsWith('Bearer ') ? token : 'Bearer ' + token},
+                    body:JSON.stringify(body)});
+                const result = await response.json();
+                if (displayedTask?.task_id === body.task_id) feedback.textContent = result.accepted
+                    ? '完成确认已提交，等待 VLA 收尾；成功后自动进入下一步。'
+                    : (result.error || '确认未完成，请查询原命令。');
+            } catch (error) {
+                if (displayedTask?.task_id === body.task_id) feedback.textContent = '完成确认回包未取得，将查询原命令，不重复发送。';
+            } finally {
+                taskControlPending = false;
                 await refreshTaskStatus();
             }
         }
@@ -536,6 +579,7 @@
                 任务 ID：${taskText(data.task_id)} · 任务环境：${taskText((TASK_LABELS.backends || {})[data.execution_backend] || data.execution_backend || '尚未选择')}</div>`;
 
             const vla = data.vla_confirmation;
+            document.getElementById('vla-verifier-panel').hidden = !(vla && vla.execution_mode === 'direct');
             const holdingStatus = data.failure_detail?.downstream?.error?.details?.holding_status
                 || data.handoff_observation?.idle_evidence?.vla;
             const holdingProof = holdingStatus?.holding_evidence || vla?.holding_evidence;
@@ -551,7 +595,25 @@
                         : holdingProof.valid === true ? '每段运送前重新核查当前证明，不自动续期' : '证明无效，等待核清'))
                     + '</div>';
             }
-            if (vla && !data.pause_requested) {
+            if (vla && vla.execution_mode === 'direct' && !data.pause_requested) {
+                const key = data.task_id + ':' + vla.command_id;
+                const pending = vlaFinishIntents.get(key);
+                if (!vla.finish_intent && pending && vla.finish_rejection?.evidence?.reference === pending.evidence.reference)
+                    vlaFinishIntents.delete(key);
+                const submitted = !!vla.finish_intent || vla.finish_requested || vlaFinishIntents.has(key);
+                const open = vla.operation === 'open_fridge';
+                const text = open ? '确认冰箱已打开且双手离门' : '确认后退撤离完成且可乐仍在手';
+                const canConfirm = taskStatusKnown && !taskControlPending && data.state === 'waiting_human'
+                    && !submitted && ['running', 'waiting_result_confirmation'].includes(vla.state);
+                const message = data.state === 'recovery_required' ? '操控结果需要处理，请查看原始原因；不会自动进入下一步。'
+                    : submitted ? '完成确认已记录，正在查询 VLA 收尾；成功后自动进入下一步。'
+                    : open ? '请观察门已打开且稳定、双手离门后确认。'
+                    : '请等待抓取、收手、后退全部完成，确认已退出冰箱接触区且可乐仍在手。';
+                html += '<div class="task-command-feedback">' + taskText(message)
+                    + '<button type="button" onclick="confirmVlaCompletion()" ' + (canConfirm ? '' : 'disabled') + '>' + text + '</button>'
+                    + '<button type="button" onclick="vlaEffectControl(\'query\')">查询操控原命令</button>'
+                    + '<details><summary>单独操作</summary><button type="button" onclick="vlaEffectControl(\'pause\')">暂停策略</button></details></div>';
+            } else if (vla && !data.pause_requested) {
                 const labels = {running:'策略运行中，请在现场确认适当时机后请求暂停',
                     waiting_result_confirmation:'策略已暂停，等待授权核验方提交暂停后的效果证据',
                     stopping_policy:'效果已提交，正在确认策略停止', restoring_navigation:'正在归还导航通路',

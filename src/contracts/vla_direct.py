@@ -4,7 +4,22 @@ from contracts.tasks import CONTRACT_VERSION
 from contracts.vla import NATIVE_OPERATIONS, machine_id
 
 REVISION = '20261028-direct-v1'
+FINISH_REVISION = '20261029-direct-running-finish-v1'
 FIELDS = ('contract_version', 'task_id', 'command_id', 'operation', 'object_id', 'target_area')
+
+
+def effect_window(raw, evidence):
+    """Use the executor's original observation window, never move the observation time."""
+    completion = raw.get('completion') or {}
+    if not isinstance(completion, dict):
+        raise ValueError('VLA 完成确认结构无效')
+    if completion.get('requested_from') != 'running':
+        return raw.get('verification_ready_at')
+    if (completion.get('evidence') != evidence or not raw.get('execution_ready_at')
+            or completion.get('evidence_window_start') != raw.get('execution_ready_at')
+            or (raw.get('state') == 'succeeded' and completion.get('status') != 'completed')):
+        raise ValueError('运行中确认的原始证据或时间窗口不匹配')
+    return raw['execution_ready_at']
 
 
 def business_request(body):

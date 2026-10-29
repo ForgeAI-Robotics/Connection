@@ -128,9 +128,9 @@ real_workflow:
       after_navigation: NAVIGATING_TO_FRIDGE
       command_prefix: vla-grasp-cola
       timeout_sec: 600
-      display_name: 抓取可乐
+      display_name: 抓取可乐并后退撤离
       verification_id: VERIFYING_COLA_GRASP
-      verification_display_name: 确认可乐已抓稳并离开冰箱接触区
+      verification_display_name: 确认后退撤离完成且可乐仍在手
     - id: NAVIGATING_TO_RELAY1
       action: navigate
       point: relay1

@@ -181,7 +181,7 @@ class BrainService:
             require_operations(result.steps, chosen.get('vla_capabilities'))
         return result
 
-    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization=''):
+    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization='', auto_advance=False):
         from shared.execution_profile import admission
         with admission(), _ADMISSION:
             existing = load_existing(runtime_dir(self.config)) or {}
@@ -189,8 +189,13 @@ class BrainService:
                 raise Rejected('任务或执行地址已变化，未操作原命令')
             if existing.get('execution_backend') not in {'body_real', 'reception_real', 'reception_sim_navigation_real'}:
                 raise Rejected('模拟操控不接受真实 VLA 的暂停或效果确认凭据')
-            return self.attach().vla_effect(task_id, command_id, action,
-                                           evidence=evidence, authorization=authorization)
+            runtime = self.attach()
+            try:
+                return runtime.vla_effect(task_id, command_id, action,
+                    evidence=evidence, authorization=authorization, auto_advance=auto_advance)
+            finally:
+                if runtime.pending_vla_completion():
+                    self._launch(runtime)  # Includes uncertain POST: query only, never replay finish.
 
     def _adopt(self, runtime):
         self.runtime = runtime
@@ -331,6 +336,7 @@ class BrainService:
             except Rejected:
                 return
             try:
+                runtime.await_vla_completion()
                 runtime.drive()
             except Exception as exc:
                 try:

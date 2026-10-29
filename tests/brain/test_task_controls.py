@@ -188,7 +188,8 @@ class PausingBody(FakeBody):
     def cancel(self, command_id, request):
         super().cancel(command_id, request)
         if not self.completed:
-            self.commands[command_id].update(terminal='cancelled', evidence={})
+            self.commands[command_id].update(terminal='cancelled', evidence={
+                'identity_ok': True, 'time_ok': True, 'identity': command_id})
         return {'accepted': True}
 
     def handoff(self, step_id, kind):
