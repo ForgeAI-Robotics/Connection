@@ -106,6 +106,33 @@ class SourceGateTests(unittest.TestCase):
             self.assertTrue(self.port.query(command, request)['stopped'])
         self.assertEqual(self.gate.puts, [])
 
+    def test_native_admission_refusal_after_source_check_is_not_unknown(self):
+        for code in ('NATIVE_SAFETY_LATCHED', 'NATIVE_SAFETY_STATE_UNAVAILABLE'):
+            request = nav_request(code)
+            self.schedule(request)
+            raw = {'success': False, 'error': {'code': code, 'details': {}}}
+            with patch.object(self.nav, 'submit_navigation', side_effect=HttpContractError(
+                    'HTTP 409', status_code=409, payload=raw)) as submit:
+                result = self.port.submit(code, request)
+            self.assertFalse(result['accepted'])
+            self.assertFalse(result['unclear'])
+            self.assertEqual(result['submission_rejected']['raw'], raw)
+            submit.assert_called_once_with(request['body'])
+        self.assertEqual(self.gate.puts, [])
+
+    def test_native_failure_after_acceptance_remains_execution_failure(self):
+        request = nav_request('nav-running')
+        self.schedule(request)
+        self.assertTrue(self.port.submit('nav-running', request)['accepted'])
+        self.nav.commands['nav-running'].update(state='failed', started_at=now(),
+            result=dict(success=False, reached=False, navigation_stopped=False),
+            error=dict(code='NATIVE_SAFETY_LATCHED', message='planner timing fault'))
+        result = self.port.query('nav-running', request)
+        self.assertEqual(result['terminal'], 'failed')
+        self.assertTrue(result['started'])
+        self.assertFalse(result['stopped'])
+        self.assertNotIn('submission_rejected', result['evidence'])
+
     def test_switch_from_none_is_pinned_and_only_once(self):
         self.gate.source = 'none'
         r = nav_request(); self.schedule(r)

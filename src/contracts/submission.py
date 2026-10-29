@@ -12,6 +12,12 @@ VALIDATION_REFUSALS = frozenset({
     "STOP_NOT_CONFIRMED",
 })
 
+# NAV checks these before creating a new command. Only its admission HTTP 409
+# proves refusal; the same code in a running command is an execution failure.
+NATIVE_ADMISSION_REFUSALS = frozenset({
+    "NATIVE_SAFETY_LATCHED", "NATIVE_SAFETY_STATE_UNAVAILABLE",
+})
+
 
 def submission_refusal(status_code, payload, *, command_id, task_id):
     # Admission checks reject before creation. A same-ID conflict, a bare 404
@@ -23,6 +29,12 @@ def submission_refusal(status_code, payload, *, command_id, task_id):
         return None
     details = error.get("details")
     details = details if isinstance(details, dict) else {}
+    native_refusal = error.get('code') in NATIVE_ADMISSION_REFUSALS and status_code == 409
+    if error.get('code') in NATIVE_ADMISSION_REFUSALS:
+        if not native_refusal or any(
+                item.get('action_started') is True or item.get('action_state_uncertain') is True
+                for item in (payload, details)):
+            return None
     unavailable = (error.get('code') == 'CAPABILITY_UNAVAILABLE'
                    and details.get('action_started') is False
                    and details.get('action_state_uncertain') is False)
@@ -37,7 +49,7 @@ def submission_refusal(status_code, payload, *, command_id, task_id):
                           and isinstance(details.get("active_command_id"), str)
                           and bool(details["active_command_id"])
                           and details["active_command_id"] != command_id)
-    if error.get("code") not in VALIDATION_REFUSALS and not busy_other_command and not unavailable and not disabled:
+    if error.get("code") not in VALIDATION_REFUSALS and not native_refusal and not busy_other_command and not unavailable and not disabled:
         return None
     for item in (payload, details):
         if any(item.get(key) not in (None, "", value)
