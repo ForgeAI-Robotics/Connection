@@ -272,7 +272,6 @@ def catalog() -> list[Service]:
     site = lan()
     dream = site.http("nav")
     vla = site.http("control")
-    review = site.review_url()
     return [
         Service(
             id="redis",
@@ -403,34 +402,8 @@ def catalog() -> list[Service]:
             controllable=False,
             log_service="dream",
             remote_control="ssh_dream",
-            remote_actions=("stand-enter", "stop"),
-            disabled_action="启动",
-            disabled_reason="导航入口待同步，暂不支持从面板启动",
-            action_confirms=(
-                (
-                    "stand-enter",
-                    "只向导航机 adapter 窗口发 1 个 Enter。"
-                    "第一次点是接管（等同手柄 A+X+B+Y），此时肩带必须还挂着；"
-                    "等 adapter 报 stage 1 稳定后再点第二次，那一次才进 POSE 站立。"
-                    "面板不会代解肩带、不会点 9882。"
-                    "确认现场有人扶住、急停在手？",
-                ),
-            ),
-            confirm_start=True,
-            confirm_start_message=(
-                f"将按导航组一键脚本在 {site.ip('nav')} 启动："
-                "g1_brain_navigation_only_oneclick.sh。"
-                "启动正式 NAV 网关链路和 DREAM 8001/9882；依导航脚本复用或初始化 SONIC。"
-                "面板只代填 READY，不会代按站立 Enter，也不会点 9882。"
-                f"之后仍需在 {review} 点初始位置/朝向并 Approve。"
-                "确认现场已支撑、肩带连接、急停人员就位？"
-            ),
-            confirm_stop=True,
-            confirm_stop_message=(
-                "停止只关 NAV 工作流，保留独立网关及 SONIC；任务退出须先核清。"
-                "确定继续？"
-            ),
-            note="导航入口待同步，启动暂不可用；9882 仍需人工 Approve",
+            disabled_reason="导航入口待同步，当前仅监控，不支持面板控制",
+            note="仅监控实时状态与日志；导航控制入口待同步，9882 由现场操作",
             health=_health_remote("dream", dream),
         ),
         Service(

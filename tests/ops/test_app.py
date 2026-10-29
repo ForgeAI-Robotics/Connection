@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from ops.app import create_app
 app = create_app()
@@ -17,6 +18,19 @@ class PanelAppTests(unittest.TestCase):
         self.addCleanup(os.environ.pop, "FQPLANNER_LOG_ROOT", None)
         services.PROBE_HISTORY.clear()
         services._LAST_MONITOR.clear()
+        # Catalog/status tests must not inspect live processes or create an SSH
+        # tunnel while checking the navigation card.
+        for target, value in (
+                ('ops.control.port_open', False),
+                ('ops.tmuxctl.session_alive', False),
+                ('ops.tmuxctl.unmanaged_pids', []),
+                ('ops.services._tcp_open', False),
+                ('ops.dream_remote.ensure_log_follower', None),
+                ('ops.dream_remote.review_ready', False),
+                ('ops.dream_remote.review_url_for_panel', 'http://127.0.0.1:9882')):
+            mocked = patch(target, return_value=value)
+            mocked.start()
+            self.addCleanup(mocked.stop)
         self.client = app.test_client()
 
     def test_status_lists_layers(self):
@@ -40,13 +54,13 @@ class PanelAppTests(unittest.TestCase):
         self.assertEqual(robot["vla"]["remote_actions"], ["start", "stop"])
         self.assertEqual(
             robot["dream"]["remote_actions"],
-            ["stand-enter", "stop"],
+            [],
         )
-        self.assertIn("stand-enter", robot["dream"]["action_confirms"])
+        self.assertFalse(robot["dream"]["action_confirms"])
         self.assertIn(":9882", robot["dream"]["review_url"])
         self.assertIn(robot["dream"]["review_ok"], (True, False))
         self.assertNotIn("review_url", robot["vla"])
-        self.assertEqual(robot["dream"]["disabled_action"], "启动")
+        self.assertFalse(robot["dream"]["disabled_action"])
 
     def test_unknown_service_and_action(self):
         self.assertEqual(
@@ -56,11 +70,11 @@ class PanelAppTests(unittest.TestCase):
             self.client.post("/api/services/redis/explode").status_code, 400
         )
 
-    def test_dream_start_and_restart_wait_for_navigation_sync(self):
+    def test_dream_controls_wait_for_navigation_sync(self):
         from unittest.mock import patch
 
         with patch("ops.dream_remote.run") as remote, patch("ops.tmuxctl.stop_session") as stop:
-            for action in ("start", "restart"):
+            for action in ("start", "restart", "stop", "stand-enter", "resume", "preflight"):
                 with self.subTest(action=action):
                     response = self.client.post(f"/api/services/dream/{action}")
                     self.assertEqual(response.status_code, 400)
@@ -68,9 +82,6 @@ class PanelAppTests(unittest.TestCase):
                     self.assertIn("导航入口待同步", response.get_json()["error"])
             remote.assert_not_called()
             stop.assert_not_called()
-            response = self.client.post("/api/services/dream/stop")
-            self.assertEqual(response.status_code, 200)
-            remote.assert_called_once_with("stop")
 
     def test_vla_start_uses_ssh_and_does_not_touch_tmux(self):
         from unittest.mock import patch

@@ -151,6 +151,8 @@ def _stop(service) -> None:
         vla_remote.run("stop")
         return
     if service.remote_control == "ssh_dream":
+        if "stop" not in service.remote_actions:
+            raise RuntimeError(service.disabled_reason)
         dream_remote.run("stop")
         return
     if not service.controllable:
@@ -161,6 +163,8 @@ def _stop(service) -> None:
 
 def _remote_extra(service, action: str) -> None:
     if service.remote_control == "ssh_dream":
+        if action not in service.remote_actions:
+            raise RuntimeError(service.disabled_reason)
         dream_remote.run(action)
         return
     raise RuntimeError(f"{service.name} 不支持 {action}")

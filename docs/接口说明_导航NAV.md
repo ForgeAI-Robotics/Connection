@@ -503,7 +503,10 @@ accepted
 | `COMMAND_NOT_FOUND` | command_id不存在；不能据此推断先前动作未执行 |
 | `BRAIN_CONTROL_DISABLED` | 独立入口收到旧联合授权字段 |
 | `NAVIGATION_INPUT_INTERRUPTED` | 导航输入中断／时效检查失败，查看具体源与样本年龄 |
-| `NATIVE_SAFETY_LATCHED` | SONIC 原生保护已锁存；本轮包含 `PLANNER_TIMING_REFERENCE_ANCHOR_MISSED`，重发 START／PLANNER 不能解除 |
+| `NATIVE_SAFETY_LATCHED` | SONIC 原生保护已锁存；历史实例包含 `PLANNER_TIMING_REFERENCE_ANCHOR_MISSED`，具体恢复方式以运行版本回包为准 |
+| `NATIVE_SAFETY_STATE_UNAVAILABLE` | 当前 SONIC 安全状态不可核验，导航拒绝准入 |
+
+上述两种 native 错误的受理前 HTTP 409 与执行中失败不能混同；大脑分类规则见[提交拒绝与不确定事务](接口说明_大脑%20Brain.md#92-提交拒绝与不确定事务)。
 
 错误按运行版本解释；旧 `INVALID_LEG_ORDER`、`VLA_ACTION_PORT_OWNED` 不代表当前独立模式仍强制旧握手。真实原错误与逐次参数见[导航联调](多端联调_导航与定位.md)。
 

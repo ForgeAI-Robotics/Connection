@@ -201,7 +201,7 @@ function card(item) {
     button.disabled = !item.review_ok;
     button.title = item.review_ok
       ? item.review_url
-      : "9882 还没起来（要等两次 Enter 进 POSE 站立之后）";
+      : "9882 当前不可达，请检查导航侧审核服务";
     if (!item.review_ok) button.classList.add("disabled");
     actions.append(button);
     hasActions = true;

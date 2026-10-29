@@ -125,8 +125,10 @@ def create_app(*, switch_pool=None):
             service = by_id(service_id)
         except KeyError:
             return jsonify({"error": "未知服务"}), 404
-        if service.remote_control == "ssh_dream" and action in {"start", "restart"} and "start" not in service.remote_actions:
-            return jsonify(ok=False, error=service.disabled_reason), 400
+        if service.remote_control == "ssh_dream":
+            required = {"start", "stop"} if action == "restart" else {action}
+            if not required.issubset(service.remote_actions):
+                return jsonify(ok=False, error=service.disabled_reason), 400
         allowed = {"start", "stop", "restart"} | set(service.remote_actions)
         if action not in allowed:
             return jsonify({"error": "不支持的操作"}), 400

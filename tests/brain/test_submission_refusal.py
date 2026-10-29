@@ -28,6 +28,58 @@ def adapter(error):
 
 
 class SubmissionRefusalTests(unittest.TestCase):
+    def test_native_admission_refusals_preserve_attempts_without_automatic_retry(self):
+        for code in ('NATIVE_SAFETY_LATCHED', 'NATIVE_SAFETY_STATE_UNAVAILABLE'):
+            raw = {'success': False, 'error': {'code': code, 'message': 'native unavailable',
+                   'details': {'automatic_rearm_allowed': False}}}
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as root:
+                port = adapter(HttpContractError('HTTP 409', status_code=409, payload=raw))
+                runtime = _runtime(root, port)
+                runtime.drive()
+                detail = runtime.public_status()['failure_detail']
+                self.assertEqual(detail['kind'], 'rejected')
+                self.assertEqual(detail['code'], code)
+                self.assertTrue(detail['not_started'])
+                original = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0])
+                runtime = TaskRuntime(runtime.store, port, config=runtime.config)
+                runtime.drive()
+                self.assertEqual(port.dream.submit_navigation.call_count, 1)
+                runtime.continue_current()
+                runtime.drive()
+                self.assertEqual(port.dream.submit_navigation.call_count, 2)
+                self.assertEqual(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0], original)
+                port.dream.command.assert_not_called()
+                port.dream.cancel.assert_not_called()
+
+    def test_native_refusal_requires_admission_status_and_unambiguous_identity(self):
+        from contracts.submission import submission_refusal
+        for code in ('NATIVE_SAFETY_LATCHED', 'NATIVE_SAFETY_STATE_UNAVAILABLE'):
+            raw = {'success': False, 'error': {'code': code, 'details': {}}}
+            cases = [(status, raw) for status in (200, 400, 404, 500, 503, None)]
+            for field, value in (('accepted', True), ('started', True), ('state', 'failed'),
+                                 ('action_started', True), ('action_state_uncertain', True),
+                                 ('command_id', 'foreign'), ('task_id', 'foreign')):
+                cases.append((409, dict(raw, **{field: value})))
+                nested = deepcopy(raw)
+                nested['error']['details'][field] = value
+                cases.append((409, nested))
+            for status, payload in cases:
+                with self.subTest(code=code, status=status, payload=payload):
+                    self.assertIsNone(submission_refusal(status, payload, command_id='cmd', task_id='task'))
+
+    def test_saved_native_refusal_reclassification_keeps_original_unknown(self):
+        raw = {'success': False, 'error': {'code': 'NATIVE_SAFETY_LATCHED', 'details': {}}}
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.legacy(root, payload=raw)
+            original = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]['progress'])
+            self.assertTrue(runtime.reconcile_submission_rejection())
+            attempt = runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]
+            self.assertEqual(attempt['original_unknown_progress'], original)
+            self.assertEqual(attempt['outcome'], 'rejected')
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            port.dream.command.assert_not_called()
+            port.dream.cancel.assert_not_called()
+
     def test_stop_refusal_is_not_unknown_and_only_manual_continue_resubmits(self):
         port = adapter(HttpContractError('HTTP 409', status_code=409, payload=STOP_REFUSAL))
         with tempfile.TemporaryDirectory() as root:
@@ -110,7 +162,8 @@ class SubmissionRefusalTests(unittest.TestCase):
     def test_admission_refusals_cancel_locally_and_allow_a_new_task(self):
         cases = [(code, {}) for code in (
             'MOTOR_HEALTH_NOT_READY', 'SAFETY_NOT_READY', 'VLA_ACTION_PORT_OWNED',
-            'NAVIGATION_STILL_ACTIVE', 'NAVIGATION_STATUS_UNVERIFIABLE')]
+            'NAVIGATION_STILL_ACTIVE', 'NAVIGATION_STATUS_UNVERIFIABLE',
+            'NATIVE_SAFETY_LATCHED', 'NATIVE_SAFETY_STATE_UNAVAILABLE')]
         cases += [(code, {'active_command_id': 'another-command'})
                   for code in ('NAVIGATION_BUSY', 'VLA_BUSY')]
         for code, details in cases:
