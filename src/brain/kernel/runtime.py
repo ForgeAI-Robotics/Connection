@@ -278,7 +278,8 @@ def status_from_record(record) -> dict:
                                  finish_intent=deepcopy((latest.get('effect_controls') or {}).get('finish')),
                                  finish_rejection=next((deepcopy(r) for r in reversed(latest.get('effect_rejections') or [])
                                                         if r.get('action') == 'finish'), None))
-            if (record or {}).get('open_command_id') == ((record or {}).get('vla_confirmation') or {}).get('command_id')
+            if (record or {}).get('open_command_id')
+            and (record or {}).get('open_command_id') == ((record or {}).get('vla_confirmation') or {}).get('command_id')
             and not terminal else None,
     }
 

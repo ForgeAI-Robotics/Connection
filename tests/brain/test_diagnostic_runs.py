@@ -11,7 +11,7 @@ from unittest.mock import patch
 from brain.observability.diagnostic_runs import DiagnosticRuns, run_id_for_task
 from brain.workers import RuntimeOwner
 from contracts.tasks import Rejected
-from contracts.diagnostic_reports import DiagnosticReportError, validate_request
+from contracts.diagnostic_reports import DiagnosticReportError, validate_report, validate_request
 
 
 STAMP = '2026-11-02T16:00:00+08:00'
@@ -261,6 +261,33 @@ class DiagnosticRunsTests(unittest.TestCase):
         self.runs.event('human_continue',record(revision=3));self.pool.drain()
         self.assertEqual(len([c for c in self.client.calls if c[0]=='begin']),1)
         self.assertIn('capture_timeout',self.runs.summary('task')['incomplete_reasons'])
+
+    def test_nullable_report_summary_does_not_block_successor_capture(self):
+        self.make()
+        self.client.example['quality']['external_summaries'] = [{
+            'source': 'brain', 'event_id': 'task-opened', 'at': STAMP,
+            'verification': 'source_declared', 'summary': {'event': 'task_opened'},
+            'command_id': None, 'source_instance_id': None}]
+        for name in ('begin_run', 'add_event', 'finish_run', 'get_report'):
+            original = getattr(self.client, name)
+            def checked(*args, _original=original, **kwargs):
+                reply = _original(*args, **kwargs)
+                return validate_report(reply, run_id=reply['run_id'], task_id=reply['task_id'],
+                                       event_id=reply.get('event_id'))
+            setattr(self.client, name, checked)
+        self.start('old')
+        self.client.poll_statuses = [('partial', 'finished')]
+        self.runs.event('task_opened', record('new', backend='unselected'))
+        self.runs.event('execution_selected', record('new', revision=2))
+        self.pool.drain()
+        self.advance()
+        old = self.runs.summary('old')
+        new = self.runs.summary('new')
+        self.assertTrue(old['report']['quality']['recorder_released'])
+        self.assertEqual(new['report']['task_id'], 'new')
+        self.assertIsNone(new['error'])
+        self.assertEqual(len([c for c in self.client.calls if c[0] == 'begin'
+                              and c[2]['task_id'] == 'new']), 1)
 
     def test_queue_overflow_and_transport_limit_are_explicit(self):
         self.make(event_queue_limit=2,max_attempts=2)

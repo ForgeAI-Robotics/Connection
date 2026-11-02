@@ -10,6 +10,37 @@ from brain.kernel.runtime import status_from_record
 
 
 class TaskFeedbackTests(unittest.TestCase):
+    def test_navigation_rejection_does_not_expose_vla_confirmation(self):
+        record = {'task_id': 'task', 'state': 'recovery_required', 'open_command_id': None,
+                  'phase_specs': [{'step_id': 'NAV', 'kind': 'navigate'}],
+                  'steps': {'NAV': {'attempts': [{'command_id': 'nav-command', 'verdict': 'FAIL',
+                      'progress': {'started': False, 'evidence': {'submission_rejected': {
+                          'code': 'NATIVE_SAFETY_LATCHED', 'message': 'MOTOR_TELEMETRY'}}}}]}}}
+        for confirmation in (None, {}, {'command_id': None}, {'command_id': 'old-vla'}):
+            with self.subTest(confirmation=confirmation):
+                record['vla_confirmation'] = confirmation
+                original = deepcopy(record)
+                status = status_from_record(record)
+                self.assertIsNone(status['vla_confirmation'])
+                self.assertEqual(status['current_command']['stage'], 'rejected')
+                self.assertEqual(status['failure_detail']['code'], 'NATIVE_SAFETY_LATCHED')
+                self.assertEqual(record, original)
+
+    def test_vla_confirmation_requires_current_command_and_nonterminal_task(self):
+        record = {'state': 'waiting_human', 'open_command_id': 'vla-command',
+                  'vla_confirmation': {'command_id': 'vla-command', 'state': 'running',
+                                       'execution_mode': 'direct'}}
+        status = status_from_record(record)
+        self.assertEqual(status['vla_confirmation']['command_id'], 'vla-command')
+        status['vla_confirmation']['state'] = 'failed'
+        self.assertEqual(record['vla_confirmation']['state'], 'running')
+        record['open_command_id'] = 'new-nav-command'
+        self.assertIsNone(status_from_record(record)['vla_confirmation'])
+        record['open_command_id'] = 'vla-command'
+        for state in ('succeeded', 'failed', 'cancelled'):
+            record['state'] = state
+            self.assertIsNone(status_from_record(record)['vla_confirmation'])
+
     def test_unknown_error_and_result_fields_survive_status_history_and_copy(self):
         raw = {'command_id': 'cmd', 'task_id': 'task', 'state': 'failed',
                'error': {'code': 'FUTURE_FAILURE', 'message': 'future cause',

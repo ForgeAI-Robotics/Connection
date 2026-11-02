@@ -210,6 +210,84 @@ class DiagnosticReportsTests(unittest.TestCase):
             with self.assertRaises(DiagnosticReportError):
                 validate_report(raw,run_id=raw['run_id'],task_id=raw['task_id'])
 
+    def test_external_summary_nullable_ids_preserve_unknown_and_release_evidence(self):
+        raw = json.loads(COMPLETE_FIXTURE.read_text())
+        entry = raw['quality']['external_summaries'][0]
+        for key in ('command_id', 'request_id', 'source_instance_id'):
+            entry[key] = None
+        original = deepcopy(raw)
+        result = validate_report(raw, run_id=raw['run_id'], task_id=raw['task_id'])
+        self.assertTrue(result['quality']['recorder_released'])
+        self.assertFalse(result['state_authority'])
+        for key in ('command_id', 'request_id', 'source_instance_id'):
+            self.assertIsNone(result['quality']['external_summaries'][0][key])
+            for invalid in ('', '../other', 0, False, []):
+                with self.subTest(key=key, invalid=invalid):
+                    bad = deepcopy(raw)
+                    bad['quality']['external_summaries'][0][key] = invalid
+                    with self.assertRaises(DiagnosticReportError):
+                        validate_report(bad, run_id=raw['run_id'], task_id=raw['task_id'])
+            event = {'event_id': 'event', 'task_id': self.task_id, 'at': raw['generated_at'],
+                     'source': 'brain', 'kind': 'task', key: None}
+            with self.assertRaises(DiagnosticReportError):
+                validate_request('event', event, run_id=self.run_id)
+        self.assertEqual(raw, original)
+
+    def test_gateway_native_evidence_report_preserves_partial_and_archive_scope(self):
+        raw = json.loads((FIXTURE.parent / 'robot_diagnostic_report_sonic.example.json').read_text())['reports']['copied']
+        raw['quality']['resources'] = {
+            'samples': 10, 'truncated': False, 'errors': 0,
+            'machine_cpu_avg_percent': 70.0, 'machine_cpu_peak_percent': 90.0,
+            'per_cpu_peak_percent': {'cpu0': 95.0},
+            'scope': 'local_sampled_counters_no_cpu_causality'}
+        self.http.request_json.return_value = (raw, 200, {})
+        result = self.client.get_report(raw['run_id'], task_id=raw['task_id'])
+        self.assertEqual(result['status'], 'partial')
+        self.assertTrue(result['quality']['recorder_released'])
+        self.assertFalse(result['quality']['whole_robot_complete'])
+        self.assertFalse(result['state_authority'])
+        self.assertEqual(result['quality']['resources'], raw['quality']['resources'])
+        for key in ('capture', 'archive'):
+            self.assertEqual(result['quality'][key]['sonic'], raw['quality'][key]['sonic'])
+        self.assertEqual(result['evidence_refs'], raw['evidence_refs'])
+        self.assertTrue(result['quality']['archive']['sonic']['manifest_sealed'])
+        self.assertIn('sonic:full_task_window_unverified', result['quality']['missing_evidence'])
+        self.assertTrue(next(ref for ref in result['evidence_refs']
+                             if ref['evidence_id'] == 'sonic-native-log')['available'])
+        self.http.request_json.assert_called_once()
+        self.assertEqual(self.http.request_json.call_args.args[0], 'GET')
+
+    def test_gateway_generated_native_failure_cases_keep_evidence_gaps(self):
+        fixture = json.loads((FIXTURE.parent / 'robot_diagnostic_report_sonic.example.json').read_text())
+        for name, raw in fixture['reports'].items():
+            with self.subTest(case=name):
+                result = validate_report(raw, run_id=raw['run_id'], task_id=raw['task_id'])
+                self.assertEqual(result['status'], 'partial')
+                self.assertTrue(result['quality']['recorder_released'])
+                self.assertFalse(result['quality']['whole_robot_complete'])
+                self.assertFalse(result['state_authority'])
+                self.assertEqual(result['quality']['capture']['sonic'], raw['quality']['capture']['sonic'])
+                self.assertEqual(result['quality']['archive']['sonic'], raw['quality']['archive']['sonic'])
+                self.assertEqual(result['quality']['missing_evidence'], raw['quality']['missing_evidence'])
+                self.assertEqual(result['evidence_refs'], raw['evidence_refs'])
+                native = result['quality']['archive']['sonic']
+                if name in ('identity_changed', 'reference_only'):
+                    self.assertEqual(native['files_copied'], 0)
+                    self.assertFalse(any(ref['available'] for ref in result['evidence_refs']
+                                         if ref['kind'] in ('native_trace', 'native_log')))
+                elif name == 'budget_truncated':
+                    self.assertTrue(native['budget_exceeded'])
+                    self.assertTrue(native['truncated'])
+
+    def test_resource_summary_rejects_raw_or_unbounded_measurements(self):
+        for resources in ([], {'raw': [1]}, {'samples': float('nan')},
+                          {'per_cpu_peak_percent': {str(i): 1 for i in range(65)}}):
+            with self.subTest(resources=resources):
+                raw = example()
+                raw['quality']['resources'] = resources
+                with self.assertRaises(DiagnosticReportError):
+                    validate_report(raw, run_id=raw['run_id'], task_id=raw['task_id'])
+
     def test_request_ids_keep_leading_punctuation_without_relaxing_business_ids(self):
         body=self.begin();body['request_ids']=['_gateway-original',':gateway-original']
         self.client.begin_run(body)

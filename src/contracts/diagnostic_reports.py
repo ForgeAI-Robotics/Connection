@@ -268,7 +268,7 @@ def validate_report(value, *, run_id, task_id, event_id=None):
                 'summary': _scalar_object(external.get('summary'), 'external summary', count=16, length=256)}
             for key in ('command_id', 'request_id', 'source_instance_id'):
                 if key in external:
-                    item[key] = identifier(external[key], key)
+                    item[key] = None if external[key] is None else identifier(external[key], key)
             summaries.append(item)
         q['external_summaries'] = summaries
     for key in ('required_topics', 'optional_topics', 'missing_evidence'):
@@ -282,6 +282,10 @@ def validate_report(value, *, run_id, task_id, event_id=None):
         if not isinstance(quality.get(key), dict):
             raise DiagnosticReportError('INVALID_REPORT', f'Diagnostic {key} must be a summary object')
         q[key] = _quality_summary(quality[key], key)
+    if 'resources' in quality:
+        if not isinstance(quality['resources'], dict):
+            raise DiagnosticReportError('INVALID_REPORT', 'Diagnostic resources must be a summary object')
+        q['resources'] = _quality_summary(quality['resources'], 'resources')
     _enum(q['analysis'].get('state'), {'pending', 'running', 'finished', 'failed'}, 'analysis state')
     if type(q['analysis'].get('truncated')) is not bool:
         raise DiagnosticReportError('INVALID_REPORT', 'Diagnostic analysis state/truncation is missing')

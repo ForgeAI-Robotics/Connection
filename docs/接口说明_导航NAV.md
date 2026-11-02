@@ -11,6 +11,27 @@
 
 > 本文维护导航对外合同。本次仅核准大脑调用与核验规则，不代表远端实现已全量核实。部署地址按当前 `config/networks.yaml` 与生效配置解析；下文旧网段属于历史现场示例，不作为当前连接地址。
 
+<a id="sonic-writer-rollout"></a>
+
+## SONIC 发送线程修复的一键启动（2026-11-02）
+
+本轮改动已安装到原入口。用户关机／换电后重新开机，在新终端中仍只需执行：
+
+```bash
+cd /home/dev/g1_navigation_migration_20260930
+./g1_nx_control.sh brain-navigation-start
+```
+
+入口默认 `SONIC_WRITER_FIFO_PRIORITY=2`，无需手工添加环境变量或先运行 activate。原启动锁内先校验固定新版 release、源码及二进制哈希，再对齐 selected 路径、NAV pin 和发布清单；随后由新子进程重新读取版本进入原预检／现场 `READY` 确认，保留单发布者、LowState、定位与保护门禁。完整启动入口的 234 项隔离测试和 80 项发布完整性检查通过，测试未启动真实控制器。
+
+冷启动仅在当前 boot_id 与原实例不同、且没有任何旧 SONIC／NAV 实例时，将内核重启作为旧进程已退出的依据；这不代表物理站稳。相同 boot 下仍需原停止链回执，不能仅凭进程消失放行；旧实例仍运行、版本漂移或证据缺失时明确拒绝，不强杀、不并行启动。已对齐的新版本重复启动不重复发布，现有会话／实例复用仍按原入口检查。
+
+2026-11-02 换电后，Brain 已在新 boot `295f555f-9b9a-49d6-97f4-db5373a36ad3` 完成本次软件激活；selected 为 `/home/dev/sonic/releases/g1-writer-recovery-20261102-17a4093a/gear_sonic_deploy`，二进制 SHA256=`17a4093a95c2bdc11958ffaa6fc62f90961cf32ffdec146570c0cb34e5fb285c`，NAV pin 匹配，新 SSH 会话实时限额为 0/2。20:50 只读复核无 SONIC 进程，原 `brain-navigation-preflight` 全部通过；没有执行真实 start 或机器人动作，实际频率待启动后复验。证据见[调度与恢复记录](多端联调_导航与定位.md#nav-thermal-recovery)。
+
+维护场景仍保留 `brain-navigation-activate`，不是日常冷启动的额外步骤。同一次开机需人工换版时，应先依次核验原 `brain-navigation-stop` 和 `bash dream/tools/g1_fixed_map_relocalize_navigation_workflow.sh shutdown-sonic` 的结果，再维护激活、运行原 start；任一步失败均不能继续，不绕过原所有权或停止回执。stop／status 不依赖新的 RT 参数。legacy／0 显式覆盖只供维护，native exec 前会取消该变量；正常入口默认导出 2，仅提升 writer，不提升整个进程或绑核。
+
+激活复用原维护工具和启动锁，不采用旧 unified 前置、不新增执行循环。可处理异常会恢复原值；断电或强杀不保证软链／pin／清单三个路径同时提交，中间不一致由版本门禁拒绝，需要依据已保存快照恢复。旧阶段的人工四步方案已由上述一键入口取代，历史交付保留在 NAV `runtime/nav_standalone_activation_20261102/`；最终冷启动验证位于 `runtime/nav_oneclick_coldboot_20261102/`。
+
 ## 大脑统一授权对接（2026-10-23，接口离线串联通过）
 
 > 历史 relay 阶段。以下至“大脑调用规则”保留当时合同与离线验证，不是当前独立 NAV 的接入要求。
@@ -515,6 +536,8 @@ accepted
 | `NATIVE_SAFETY_STATE_UNAVAILABLE` | 当前 SONIC 安全状态不可核验，导航拒绝准入 |
 
 上述两种 native 错误的受理前 HTTP 409 与执行中失败不能混同；大脑分类规则见[提交拒绝与不确定事务](接口说明_大脑%20Brain.md#92-提交拒绝与不确定事务)。
+
+2026-11-02 NAV 源码修复增加原生观察字段 `thermal_handoff_ready_pending`：温度保护的预检 `AUTOMATIC_READY` 只表示等待原生恢复回执，不单独表示永久失格或恢复成功。`thermal_recovery` 在等待阶段对应原因 `NATIVE_RECOVERY_RECEIPT_REQUIRED_AFTER_READY`；真实交接／其他故障仍进入人工处理。只有同一原生实例和温度事件代次的明确 `COOLED_TO_STANDBY`，配合完整保持回执、无真实交接及其他故障，才能核对恢复，之后仍须重新准备并通过导航准入。此修复尚未部署，运行态仍以实际版本为准；复验与未通过范围见[冷却恢复核查](多端联调_导航与定位.md#nav-thermal-recovery)。
 
 错误按运行版本解释；旧 `INVALID_LEG_ORDER`、`VLA_ACTION_PORT_OWNED` 不代表当前独立模式仍强制旧握手。真实原错误与逐次参数见[导航联调](多端联调_导航与定位.md)。
 

@@ -19,6 +19,10 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 
 2026-11-02 新增可选整轮诊断协调，配置位于 `brain.diagnostics`，公开模板默认关闭，复用原网关 HTTPS／CA／Bearer。仅新建真机任务后端选定后登记诊断 run，任务终态后有界收尾；恢复任务和 GET 只查原 run，不重开录制。recovery_required 仍属于同任务，诊断窗口预算和新任务替代独立标记缺项，不代表业务终态。队列、重试、缓存及对端最终小索引补查均有界，诊断异常不阻塞原动作控制。`/health.diagnostic_runs` 显示本端协调状态，与 Runtime 状态和日志 writer 状态分开。完整合同与实际启用记录见[整轮归档与报告服务](多端联调_大脑日志与跨端诊断.md#rosbag-report-service)。
 
+诊断报告 `quality.external_summaries` 中可选的 `command_id`／`request_id`／`source_instance_id` 允许 null，保留为未知关联；非空值仍严格验证。必填 task_id／run_id 及 POST 事件输入校验不变。2026-11-02 修复了报告端空关联被误拒绝、无法观察上一轮录制器释放的问题；源码、离线验证及本机大脑重载已完成，历史未录制窗口不能补造。现场证据见[报告空关联故障](多端联调_大脑日志与跨端诊断.md#diagnostic-null-association)。
+
+同一报告保留有界的 `quality.resources` 资源摘要，以及 `quality.capture.sonic`／`quality.archive.sonic` 与原生附件引用；不下载原生大文件，CPU 采样值不自动成为故障因果结论。实际消费者验证和缺项语义见[SONIC 证据覆盖](多端联调_大脑日志与跨端诊断.md#sonic-evidence-coverage)。
+
 | 接口 | 行为 |
 | --- | --- |
 | `POST /publish_task` | 保留 task、task_id、refresh、resume 与 accepted 等现有字段；一次只接受一个顶层任务，拒绝时不自动重发 |
@@ -387,6 +391,8 @@ Runtime 在保存建议、确认及应用时检查；当前方案引用的证据
 `paused` 下也允许既有 `query_original` 查询原命令、补齐旧版暂停记录的证据和状态；任务保持暂停、派发保持关闭，普通状态轮询不自动查询或修账。该修复已随 2026-10-29 16:48 大脑重载加载，具体暂停故障的真机复验仍待补；现场问题与复验见[暂停回执一致性](多端联调_大脑任务与恢复.md#pause-receipt-consistency)。
 
 新动作的 `vla_confirmation` 包含 `command_id`、`operation`、VLA `state`、`pause_requested`、`verification_ready_at`、`finish_requested`，用于网页区分仍在执行、已暂停待核验、正在停止／归还、已到终态。它是 Runtime 保存的下游观察，不是另一套任务状态。请求受理、效果证据提交与大脑任务通过分别展示；新增 execution_mode、object_id、execution_ready_at、completion、finish_intent／finish_rejection 供确认按钮显示，凭据不返回。普通状态轮询不主动查询或重发动作；已记录 auto_advance 的确认由后台工作器查询并经 Runtime 核验推进。
+
+`vla_confirmation` 仅在任务未终结、`open_command_id` 非空且与该观察的 `command_id` 一致时返回；没有 VLA 观察、导航受理前拒绝后已无在途命令或旧观察与当前命令不符时返回 null，不显示操控确认／查询区。2026-11-02 修复了两个缺失命令 ID 相等而误生成空确认对象的问题；本机大脑已重载并确认该导航拒绝返回 null，验证见[准入拒绝与展示核查](多端联调_大脑任务与恢复.md#stop-refusal-and-handoff-reasons)。
 
 **等待确认期间的执行端终态同步：** Runtime 主线程在空闲时使用现有 I/O 工作器查询原 VLA command_id，每次查询结束至少间隔约 1 秒，不依赖网页是否打开，也不新建任务循环。匹配任务／尝试／命令身份和完成时间的 failed／cancelled 回包写入原尝试并进入 recovery_required，停止、资源释放分别按原证据更新；查询错误或无效回包保留未知并继续只读查询，页面停用完成确认。查询到 succeeded 仅保存待核验结果，不自动通过或推进；已提交人工 finish 意图的收尾仍由原完成确认工作器负责。暂停、取消、换命令或新的 finish 意图使迟到查询失效。重复 running 或相同查询错误不反复追加账本；大脑重启后恢复该只读同步。验证见[等待确认终态同步](多端联调_大脑任务与恢复.md#vla-terminal-observation)。
 
