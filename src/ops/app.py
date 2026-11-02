@@ -28,6 +28,7 @@ def create_app(*, switch_pool=None):
     app.extensions["switch"] = switch_state
     import threading
     _SWITCH_GUARD = threading.Lock()
+    _DIAGNOSTIC_GUARD = threading.BoundedSemaphore(2)
 
 
     @app.get("/api/execution")
@@ -117,6 +118,31 @@ def create_app(*, switch_pool=None):
     def brain_overview():
         from ops.brain_view import overview
         return jsonify(overview())
+
+
+    @app.get('/api/brain/diagnostics')
+    @app.get('/api/brain/diagnostics/export')
+    def brain_diagnostics():
+        # Fixed local log root only. Remote imports and filesystem paths belong to
+        # the explicitly invoked CLI, never an unauthenticated HTTP file reader.
+        from brain.observability.diagnostics import query_diagnostics
+        allowed = {'task_id', 'command_id', 'request_id', 'date_from', 'date_to', 'limit'}
+        if set(request.args) - allowed or any(len(request.args.getlist(k)) != 1 for k in request.args):
+            return jsonify(error='不支持的诊断查询参数'), 400
+        if not _DIAGNOSTIC_GUARD.acquire(blocking=False):
+            return jsonify(error='诊断查询正在进行，请稍后重试'), 429
+        try:
+            result = query_diagnostics(**request.args.to_dict())
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        finally:
+            _DIAGNOSTIC_GUARD.release()
+        response = jsonify(result)
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        if request.path.endswith('/export'):
+            response.headers['Content-Disposition'] = 'attachment; filename="brain-diagnostics.json"'
+        return response
 
 
     @app.post("/api/services/<service_id>/<action>")

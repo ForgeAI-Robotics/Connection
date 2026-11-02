@@ -4,9 +4,11 @@ import hashlib
 import json
 from pathlib import Path
 import threading
+import uuid
 from contracts.episode import episode_from_steps
 from brain.storage.files import write_json
 from brain.storage.tasks import KernelStore
+from shared.diagnostic_context import diagnostic_context, task_fields, diagnostic_event, report_exception
 
 
 def episode_from_record(record):
@@ -81,27 +83,35 @@ class ReflectionWorker:
                 if self.stop.is_set():
                     break
                 job = {}
-                try:
-                    job = json.loads(path.read_text())
-                    if job['state'] != 'pending' or job['job_id'] in self.failed:
-                        continue
-                    episode = episode_from_record(job['record'])
-                    episode['_work_id'] = job['job_id']
-                    if self.processor is None:
-                        from brain.learning.reflection import maybe_reflect
-                        result = maybe_reflect(episode, config=self.config, quiet=True, write_sop=False)
-                    else:
-                        result = self.processor(episode)
-                    job.update(state='completed', result=result)
-                    write_json(path, job)
-                    if self.emit:
-                        self.emit('reflection_completed', job['record'], result=result)
-                except Exception as exc:
-                    self.last_error = str(exc)
-                    self.failed.add(job.get("job_id"))
-                    # Retain the pending input; retry after restart or the next wakeup.
-                    if self.emit:
-                        self.emit('reflection_failed', job.get('record') or {}, error=str(exc))
+                with diagnostic_context(replace=True, trace_id=uuid.uuid4().hex, job_id=path.stem):
+                    try:
+                        job = json.loads(path.read_text())
+                        if job['state'] != 'pending' or job['job_id'] in self.failed:
+                            continue
+                        with diagnostic_context(**task_fields(job['record'])):
+                            diagnostic_event('WORKER', 'started', worker='brain-reflection',
+                                operation='reflect', revision=job['record'].get('revision'),
+                                _human_suppressed=True)
+                            episode = episode_from_record(job['record'])
+                            episode['_work_id'] = job['job_id']
+                            if self.processor is None:
+                                from brain.learning.reflection import maybe_reflect
+                                result = maybe_reflect(episode, config=self.config, quiet=True, write_sop=False)
+                            else:
+                                result = self.processor(episode)
+                            job.update(state='completed', result=result)
+                            write_json(path, job)
+                            if self.emit:
+                                self.emit('reflection_completed', job['record'], result=result)
+                    except Exception as exc:
+                        with diagnostic_context(**task_fields(job.get('record') or {})):
+                            report_exception(exc, component='brain-reflection', operation='reflect')
+                            self.last_error = str(exc)
+                            self.failed.add(job.get("job_id"))
+                            # Retain the pending input; do not turn this failure into
+                            # a mutation of the original Runtime task.
+                            if self.emit:
+                                self.emit('reflection_failed', job.get('record') or {}, error=str(exc))
             self.wakeup.wait(1)
             self.wakeup.clear()
 

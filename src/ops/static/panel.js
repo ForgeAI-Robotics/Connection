@@ -519,6 +519,64 @@ function refresh() {
   refreshOverview();
 }
 
+// Historical diagnostics are an explicit read, independent of live log polling.
+function installDiagnosticSearch() {
+  const form = $("diagnostic-form");
+  if (!form) return;
+  let result = null;
+  let pending = false;
+  let revision = 0;
+  const output = $("diagnostic-results"), status = $("diagnostic-status");
+  const download = $("diagnostic-export"), submit = $("diagnostic-submit");
+  form.addEventListener("input", () => { revision++; result = null; download.disabled = true; });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (pending) return;
+    const params = new URLSearchParams();
+    for (const [key, id] of [["task_id", "diagnostic-task"], ["command_id", "diagnostic-command"],
+      ["request_id", "diagnostic-request"], ["date_from", "diagnostic-from"], ["date_to", "diagnostic-to"]]) {
+      const value = $(id).value.trim();
+      if (value) params.set(key, value);
+    }
+    if (!params.size) { status.textContent = "请填写任务、命令、请求 ID 或日期范围。"; return; }
+    params.set("limit", "500");
+    pending = true; result = null; submit.disabled = true; download.disabled = true;
+    const requestedRevision = revision;
+    status.textContent = "正在只读检索历史记录…";
+    output.textContent = "";
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(`/api/brain/diagnostics?${params}`, {cache: "no-store", signal: controller.signal});
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "诊断查询失败");
+      if (requestedRevision !== revision) { status.textContent = "查询条件已变化，请重新查询。"; return; }
+      result = body;
+      const coverage = body.coverage || {};
+      const missing = (body.missing_evidence || []).map(item => item.service).join("、");
+      status.textContent = `找到 ${coverage.returned || 0} 条记录` +
+        (coverage.incomplete ? "；扫描不完整，请查看限制。" : "；在本次扫描范围内查询完成。") +
+        (missing ? ` 缺少匹配对端证据：${missing}。` : "") + " 这是历史证据，不是当前状态。";
+      output.textContent = JSON.stringify({coverage, missing_evidence: body.missing_evidence,
+        peer_evidence: body.peer_evidence, records: body.records, startup_sources: body.startup_sources}, null, 2);
+      download.disabled = false;
+    } catch (error) {
+      status.textContent = error.name === "AbortError" ? "诊断查询超时，可缩小日期范围后重试。" : String(error);
+    } finally {
+      clearTimeout(deadline); pending = false; submit.disabled = false;
+    }
+  });
+  download.addEventListener("click", () => {
+    if (!result) return;
+    // Export exactly the reviewed result; do not silently re-query changing logs.
+    const url = URL.createObjectURL(new Blob([JSON.stringify(result, null, 2)], {type: "application/json"}));
+    const anchor = document.createElement("a");
+    anchor.href = url; anchor.download = "brain-diagnostics.json"; anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
+}
+installDiagnosticSearch();
+
 document.querySelectorAll(".layer").forEach((button) => {
   button.onclick = () => selectLayer(button.dataset.layer);
 });

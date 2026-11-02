@@ -1,0 +1,100 @@
+{
+  "synthetic": true,
+  "source": "NAV-provided isolated regression fixture; no robot I/O",
+  "events": [
+    {
+      "log_schema_version": 1,
+      "event_id": "00000000000000000000000000000001",
+      "time": "2026-11-02T12:00:00.000+08:00",
+      "recorded_at": "2026-11-02T12:00:00.000+08:00",
+      "service": "nav",
+      "component": "agent_api",
+      "level": "WARNING",
+      "service_instance_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "code_revision": "sha256:97f23cef83b0f814d0fb816310768d74347cd111ca9b8dcf605cfd3b5dd1732a",
+      "event": "command_updated",
+      "event_sequence": 1,
+      "observed_monotonic": 100,
+      "diagnostic_loss": {
+        "queue_dropped": 0,
+        "write_errors": 0,
+        "build_errors": 0
+      },
+      "task_id": "synthetic-task",
+      "command_id": "nav-synthetic-command",
+      "state": "failed",
+      "previous_state": "navigating",
+      "error": {
+        "code": "NAVIGATION_LOCALIZATION_LOST",
+        "message": "synthetic localization failure",
+        "retryable": false
+      },
+      "execution_error_code": "NAVIGATION_LOCALIZATION_LOST",
+      "first_error_code": "NAVIGATION_LOCALIZATION_LOST",
+      "stop_error": null,
+      "result": {
+        "success": false,
+        "reached": false,
+        "navigation_stopped": false,
+        "failure_scope": "safety",
+        "next_command_allowed": false
+      },
+      "evidence": {
+        "success": false,
+        "reached": false,
+        "navigation_stopped": false,
+        "failure_scope": "safety",
+        "next_command_allowed": false
+      },
+      "completed_at": "2026-11-02T12:00:00.000+08:00",
+      "updated_at": "2026-11-02T12:00:00.000+08:00"
+    },
+    {
+      "log_schema_version": 1,
+      "event_id": "00000000000000000000000000000002",
+      "time": "2026-11-02T12:00:00.080+08:00",
+      "recorded_at": "2026-11-02T12:00:00.080+08:00",
+      "service": "nav",
+      "component": "agent_api",
+      "level": "WARNING",
+      "service_instance_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "code_revision": "sha256:97f23cef83b0f814d0fb816310768d74347cd111ca9b8dcf605cfd3b5dd1732a",
+      "event": "command_updated",
+      "event_sequence": 2,
+      "observed_monotonic": 100.08,
+      "diagnostic_loss": {
+        "queue_dropped": 0,
+        "write_errors": 0,
+        "build_errors": 0
+      },
+      "task_id": "synthetic-task",
+      "command_id": "nav-synthetic-command",
+      "state": "failed",
+      "previous_state": "failed",
+      "error": {
+        "code": "NAVIGATION_LOCALIZATION_LOST",
+        "message": "synthetic localization failure",
+        "retryable": false
+      },
+      "execution_error_code": "NAVIGATION_LOCALIZATION_LOST",
+      "first_error_code": "NAVIGATION_LOCALIZATION_LOST",
+      "stop_error": null,
+      "result": {
+        "success": false,
+        "reached": false,
+        "navigation_stopped": true,
+        "failure_scope": "safety",
+        "next_command_allowed": false
+      },
+      "evidence": {
+        "success": false,
+        "reached": false,
+        "navigation_stopped": true,
+        "failure_scope": "safety",
+        "next_command_allowed": false
+      },
+      "completed_at": "2026-11-02T12:00:00.000+08:00",
+      "updated_at": "2026-11-02T12:00:00.080+08:00"
+    }
+  ]
+}

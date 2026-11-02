@@ -4,6 +4,9 @@ from typing import Dict
 import logging
 import time
 import threading
+import uuid
+from shared.diagnostic_context import (context_fields, diagnostic_context,
+                                       diagnostic_event, report_exception)
 
 
 def _purpose(messages):
@@ -20,6 +23,8 @@ def _purpose(messages):
         return '异常建议（recovery_advice）'
     if '选择任务业务包' in text:
         return '业务包选择（package_select）'
+    if '事后反思' in text:
+        return '任务复盘（reflection）'
     return '模型调用（llm）'
 
 
@@ -54,7 +59,10 @@ class ModelClient:
 
     def display_profiling_info(self, description, message):
         if self.profiling:
-            logging.getLogger("model").debug("%s: %s", description, message)
+            # Never dump full prompts, response objects or internal credentials.
+            diagnostic_event('MODEL', 'profiling', component='brain.model',
+                             description=description, value_chars=len(str(message)),
+                             _human_suppressed=True)
 
     def _get_model_info_from_config(self, config: Dict) -> tuple:
         """Get the model info from config."""
@@ -82,11 +90,7 @@ class ModelClient:
         raise ValueError(f"Unsupported model: {config['model_select']}")
 
     def _call_llm(self, messages: list) -> str:
-        """调用 LLM 并返回文本结果。"""
-        self.display_profiling_info("messages", messages)
-
-        from datetime import datetime
-        start_inference = datetime.now()
+        """Record lifecycle metadata while preserving model request semantics."""
         started = time.perf_counter()
         base = str(getattr(self.global_model, 'base_url', '') or '').rstrip('/')
         endpoint = base + ('' if base.endswith('/chat/completions') else '/chat/completions')
@@ -101,48 +105,35 @@ class ModelClient:
         for key in ("presence_penalty", "extra_body"):
             if key in settings:
                 generation[key] = settings[key]
-        try:
-            response = self.global_model.chat.completions.create(
-                model=self.model_name,
-                messages=messages,
-                **generation,
-            )
-        except Exception as exc:
-            self._log_forward(purpose, endpoint, started, request_text=_excerpt(messages), error=exc)
-            raise
-        end_inference = datetime.now()
-
-        self.display_profiling_info(
-            "inference time",
-            f"inference start:{start_inference} end:{end_inference} during:{end_inference-start_inference}",
-        )
-        self.display_profiling_info("response", response)
-        self.display_profiling_info("response.usage", response.usage)
-
-        raw = response.choices[0].message.content
-        if raw is None:
-            raw = ""
-        elif isinstance(raw, list):
-            raw = "".join(
-                part.get("text", "") if isinstance(part, dict) else getattr(part, "text", "")
-                for part in raw
-            )
-        elif not isinstance(raw, str):
-            raw = str(raw)
-        self._log_forward(purpose, endpoint, started, request_text=_excerpt(messages),
-                          result=raw, status=200)
-        return raw
+        parent_call = context_fields().get('call_id')
+        with diagnostic_context(call_id=uuid.uuid4().hex, parent_call_id=parent_call):
+            diagnostic_event('MODEL', 'started', component='brain.model', purpose=purpose,
+                method='POST', endpoint=endpoint, model=self.model_name,
+                timeout_sec=settings.get('timeout_sec', 60))
+            try:
+                response = self.global_model.chat.completions.create(
+                    model=self.model_name, messages=messages, **generation)
+                raw = response.choices[0].message.content
+                if raw is None:
+                    raw = ''
+                elif isinstance(raw, list):
+                    raw = ''.join(part.get('text', '') if isinstance(part, dict)
+                                  else getattr(part, 'text', '') for part in raw)
+                elif not isinstance(raw, str):
+                    raw = str(raw)
+            except Exception as exc:
+                self._log_forward(purpose, endpoint, started, error=exc)
+                report_exception(exc, component='brain.model', purpose=purpose)
+                raise
+            self._log_forward(purpose, endpoint, started, result=raw, status=200)
+            return raw
 
     def _log_forward(self, purpose, endpoint, started, **fields):
-        # 正常的异常建议留在账本，不把提示词和 JSON 打进进程日志。
-        if str(purpose).startswith('异常建议') and 'error' not in fields:
-            return
-        if str(purpose).startswith('异常建议'):
-            fields.pop('request_text', None)
-            fields.pop('result', None)
-        try:
-            from shared.log_setup import log_forward
-            log_forward(purpose, 'POST', endpoint, model=self.model_name,
-                        duration_s=time.perf_counter() - started, **fields)
-        except Exception:
-            logging.getLogger('model').debug('forward log failed', exc_info=True)
+        error = fields.get('error')
+        diagnostic_event('MODEL', 'failed' if error is not None else 'completed',
+            component='brain.model', purpose=purpose, method='POST', endpoint=endpoint,
+            model=self.model_name, duration_s=round(time.perf_counter() - started, 6),
+            http_status=fields.get('status'), level='ERROR' if error is not None else 'INFO',
+            error=str(error) if error is not None else None,
+            exception_type=type(error).__name__ if error is not None else None,
+            response_chars=len(fields['result']) if isinstance(fields.get('result'), str) else None)

@@ -147,8 +147,10 @@ class VlaClient:
 
     def task(self, command_id):
         quoted = urllib.parse.quote(str(command_id), safe="")
-        return self.http.request_json(
+        body = self.http.request_json(
             "GET", f"/v1/vla/tasks/{quoted}")[0]
+        self.calls.observe(command_id, body)
+        return body
 
     def _bounded_lookup(self, command_id, *, attempts=4, interval_sec=1.0):
         for attempt in range(max(1, int(attempts))):

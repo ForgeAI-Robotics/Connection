@@ -1,0 +1,55 @@
+{
+  "schema": "g1/rosbag-evidence-manifest/v1",
+  "session_id": "synthetic-session",
+  "session_path": "/synthetic/session",
+  "run_id": "synthetic-task-001",
+  "host": "synthetic-nx",
+  "boot_id": "synthetic-boot",
+  "started_at": "2026-11-02T12:00:00+08:00",
+  "ended_at": "2026-11-02T12:00:30+08:00",
+  "started_monotonic": 100,
+  "ended_monotonic": 130,
+  "recording_status": "stopped",
+  "active": false,
+  "data_available": true,
+  "resource_samples": 6,
+  "bag": {
+    "topics": {
+      "/synthetic/odom": {
+        "type": "nav_msgs/msg/Odometry",
+        "messages": 300
+      }
+    },
+    "total_messages": 300,
+    "missing_topics": [],
+    "metadata_present": true,
+    "errors": []
+  },
+  "files": [
+    {
+      "path": "bag/metadata.yaml",
+      "bytes": 123
+    },
+    {
+      "path": "bag/bag_0.db3",
+      "bytes": 40960
+    },
+    {
+      "path": "monitor.jsonl",
+      "bytes": 1000
+    },
+    {
+      "path": "session.json",
+      "bytes": 1000
+    }
+  ],
+  "snapshot_at": "2026-11-02T12:00:31+08:00",
+  "snapshot_consistent": true,
+  "task_authority": false,
+  "scope": "synthetic attachment example only",
+  "limitations": [
+    "No automatic task/command/request association",
+    "No remote VLA/O6/full SONIC logs",
+    "Counts do not prove lossless recording; CPU samples are approximately 5 seconds"
+  ]
+}

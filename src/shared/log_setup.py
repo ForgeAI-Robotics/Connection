@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -14,6 +16,7 @@ PROCESS_LOG_ENV = "FQPLANNER_PROCESS_LOG"
 LOG_ROOT_ENV = "FQPLANNER_LOG_ROOT"
 RECEPTION_RUNTIME_ENV = "FQPLANNER_RECEPTION_RUNTIME"
 _ATTACHED = False
+_PROCESS_WRITER = None
 
 
 def project_root() -> Path:
@@ -59,12 +62,13 @@ def write_process_note(line: str) -> None:
     if not os.environ.get(PROCESS_LOG_ENV):
         return
     text = str(line).rstrip("\n")
-    print(text, flush=True)
+    _safe_print(text)
 
 
 def print_beijing(level, name, body):
     from shared.task_text import beijing_block
-    print(beijing_block(level, body, name=name), flush=True)
+    from shared.diagnostic_io import clip_text, redact
+    _safe_print(clip_text(redact(beijing_block(level, body, name=name)), 8192))
 
 
 def log_forward(purpose, method, url, *, status=None, duration_s=None, request_text=None,
@@ -109,92 +113,167 @@ def note_task_request(kind: str, task: str, **fields) -> None:
         elif isinstance(value, bool):
             value = "true" if value else "false"
         parts.append(f"{key}={compact_log_text(value, 240)}")
-    print(" ".join(parts), flush=True)
+    _safe_print(" ".join(parts))
+
+
+def _safe_print(text):
+    from shared.diagnostic_io import redact
+    try:
+        print(redact(text), flush=True)
+    except Exception as exc:
+        if _PROCESS_WRITER is not None:
+            _PROCESS_WRITER.failure(exc)
+
+
+def process_log_health():
+    return _PROCESS_WRITER.health() if _PROCESS_WRITER is not None else {'enabled': False, 'degraded': False}
+
+
+def close_process_log(timeout=1.):
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, _Tee):
+            stream.finish_line()
+    return _PROCESS_WRITER.close(timeout) if _PROCESS_WRITER else True
+
+
+class _ProcessFile:
+    """Retain size segments and continue the same process in the new day folder."""
+    def __init__(self, path, max_bytes=16 * 1024 * 1024):
+        self.path, self.max_bytes = path, max_bytes
+        self.root, self.service, self.filename = path.parents[2], path.parent.name, path.name
+
+    def write(self, text):
+        from shared.diagnostic_io import append_rotating
+        day = datetime.now().astimezone().strftime('%Y-%m-%d')
+        target = self.root / day / self.service / self.filename
+        append_rotating(target, text, max_bytes=self.max_bytes)
+
+    def flush(self):
+        pass  # append_rotating opens and flushes each bounded queued batch.
 
 
 class _BytesTee:
-    def __init__(self, original_buffer, file_obj):
-        self._original = original_buffer
-        self._file = file_obj
+    def __init__(self, parent):
+        self.parent = parent
 
     def write(self, data):
-        if not data:
-            return 0
-        if isinstance(data, str):
-            data = data.encode("utf-8", "replace")
-        elif isinstance(data, bytes):
-            data = _ANSI.sub('', data.decode("utf-8", "replace")).encode("utf-8")
-        self._original.write(data)
-        self._file.write(data.decode("utf-8", "replace"))
-        self._file.flush()
+        text = data.decode('utf-8', 'replace') if isinstance(data, bytes) else str(data)
+        self.parent.write(text)
         return len(data)
 
     def flush(self):
-        self._original.flush()
-        self._file.flush()
+        self.parent.flush()
 
 
 class _Tee:
-    encoding = "utf-8"
-    errors = "replace"
+    encoding = 'utf-8'
+    errors = 'replace'
 
-    def __init__(self, original, file_obj):
-        self._original = original
-        self._file = file_obj
-        self.buffer = _BytesTee(getattr(original, "buffer", original), file_obj)
+    def __init__(self, original, file_obj, writer=None):
+        from shared.diagnostic_io import DiagnosticWriter
+        self._original, self._file = original, file_obj
+        self._writer = writer or DiagnosticWriter()
+        self._pending = ''
+        self._lock = threading.Lock()
+        self.buffer = _BytesTee(self)
+
+    def _output(self, text):
+        errors = []
+        for stream in (self._original, self._file):
+            try:
+                stream.write(text)
+                stream.flush()
+            except Exception as exc:
+                errors.append(exc)
+        if errors:
+            raise OSError('; '.join(str(e) for e in errors))
 
     def write(self, data):
+        from shared.diagnostic_io import clip_text, redact
         if not data:
             return 0
         if isinstance(data, bytes):
             return self.buffer.write(data)
-        data = _ANSI.sub('', data)
-        self._original.write(data)
-        self._file.write(data)
-        self._file.flush()
-        return len(data)
+        length = len(data)
+        try:
+            with self._lock:
+                self._pending += _ANSI.sub('', data)
+                while '\n' in self._pending:
+                    line, self._pending = self._pending.split('\n', 1)
+                    text = clip_text(redact(line), 8192) + '\n'
+                    self._writer.submit(self._output, text, critical=('ERROR' in text or 'Traceback' in text))
+                if len(self._pending) > 65536:
+                    # Do not flush an arbitrary prefix which could leak a split secret.
+                    self._pending = '[diagnostic truncated: unterminated output line]'
+        except Exception as exc:
+            self._writer.failure(exc)
+        return length
+
+    def finish_line(self):
+        from shared.diagnostic_io import clip_text, redact
+        with self._lock:
+            if self._pending:
+                text, self._pending = self._pending, ''
+                self._writer.submit(self._output, clip_text(redact(text), 8192) + '\n')
 
     def flush(self):
-        self._original.flush()
-        self._file.flush()
+        # A partial line stays buffered so print('Authorization:', secret) is
+        # sanitized as one record. Closing drains any final partial line.
+        if not self._writer.asynchronous:
+            self._writer.flush(.1)
 
     def isatty(self):
-        return self._original.isatty()
+        try:
+            return self._original.isatty()
+        except Exception:
+            return False
 
     def fileno(self):
         return self._original.fileno()
 
 
 def attach_process_log(service: str) -> Path:
-    """Create today's start-time log, tee stdout/stderr, and export the path."""
-
-    global _ATTACHED
+    """Attach fail-isolated, bounded output; business state never depends on it."""
+    from shared.diagnostic_io import DiagnosticWriter, process_metadata, redact
+    global _ATTACHED, _PROCESS_WRITER
+    service = str(service or '').strip().lower()
+    if not service or any(sep in service for sep in ('/', '\\', '..')):
+        raise ValueError(f'invalid log service name: {service!r}')
     if _ATTACHED and os.environ.get(PROCESS_LOG_ENV):
         return Path(os.environ[PROCESS_LOG_ENV])
-    path = create_process_log_path(service)
-    handle = path.open("a", encoding="utf-8", buffering=1)
-    started = datetime.now().astimezone().isoformat(timespec="seconds")
-    handle.write(
-        f"# service={service}\n# started_at={started}\n"
-        f"# pid={os.getpid()}\n# argv={sys.argv!r}\n\n"
-    )
-    handle.flush()
+    _PROCESS_WRITER = DiagnosticWriter(asynchronous=True, name='brain-process-log')
+    try:
+        path = create_process_log_path(service)
+    except Exception as exc:
+        # Preserve a diagnosable destination even when the directory cannot be made.
+        stamp = datetime.now().astimezone()
+        path = log_root() / stamp.strftime('%Y-%m-%d') / service / (stamp.strftime('%H-%M-%S') + '.log')
+        _PROCESS_WRITER.failure(exc)
+    handle = _ProcessFile(path)
+    metadata = process_metadata()
+    header = (f'# service={service}\n# started_at={datetime.now().astimezone().isoformat(timespec="seconds")}\n'
+              f'# pid={os.getpid()}\n# service_instance_id={metadata["service_instance_id"]}\n'
+              f'# code_revision={metadata["code_revision"]}\n')
+    # argv can include credentials; log only the executable/script identifier.
+    _PROCESS_WRITER.submit(handle.write, redact(header), critical=True)
     os.environ[PROCESS_LOG_ENV] = str(path)
-    if service == "master":
-        archive = reception_runtime_dir()
-        os.environ[RECEPTION_RUNTIME_ENV] = str(archive)
-    sys.stdout = _Tee(sys.stdout, handle)
-    sys.stderr = _Tee(sys.stderr, handle)
+    if service == 'master':
+        try:
+            os.environ[RECEPTION_RUNTIME_ENV] = str(reception_runtime_dir())
+        except Exception as exc:
+            _PROCESS_WRITER.failure(exc)
+    sys.stdout = _Tee(sys.stdout, handle, _PROCESS_WRITER)
+    sys.stderr = _Tee(sys.stderr, handle, _PROCESS_WRITER)
     _ATTACHED = True
+    atexit.register(close_process_log, 1.)
     from shared.quiet_http_log import configure_process_logging
     configure_process_logging(service)
-    if service == "master":
+    if service == 'master':
         print_beijing('INFO', 'master', f'大脑进程已启动（master boot）\n  pid={os.getpid()}\n  log={path}')
         from shared.brain_journal import attach_master_journal
-
         attach_master_journal()
     else:
-        print(f"[log] {service} -> {path}", flush=True)
+        _safe_print(f'[log] {service} -> {path}')
     return path
 
 

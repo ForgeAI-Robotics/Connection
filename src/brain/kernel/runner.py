@@ -10,14 +10,18 @@ from contracts.submission import submission_refusal, refusal_observation
 
 class Runner:
     def execute(self, contract: SkillContract, port, *, requery: bool = False) -> ProgressEvent:
-        try:
-            return self._execute(contract, port, requery=requery)
-        except Exception as exc:
-            # A transport exception is not evidence that an action failed to start.
-            return self._progress(contract, {
-                "command_id": contract.command_id, "terminal": "",
-                "started": None, "stopped": False, "evidence": {}, "error": str(exc),
-            })
+        from shared.diagnostic_context import diagnostic_context, report_exception
+        with diagnostic_context(task_id=contract.task_id, step_id=contract.step_id,
+                                attempt_id=contract.attempt_id, command_id=contract.command_id):
+            try:
+                return self._execute(contract, port, requery=requery)
+            except Exception as exc:
+                report_exception(exc, component='runner')
+                # A transport exception is not evidence that an action failed to start.
+                return self._progress(contract, {
+                    "command_id": contract.command_id, "terminal": "",
+                    "started": None, "stopped": False, "evidence": {}, "error": str(exc),
+                })
 
     def _execute(self, contract: SkillContract, port, *, requery: bool = False) -> ProgressEvent:
         if contract.failure_budget != 0:

@@ -161,8 +161,10 @@ class DreamClient:
 
     def command(self, command_id):
         quoted = urllib.parse.quote(str(command_id), safe="")
-        return self.http.request_json(
+        body = self.http.request_json(
             "GET", f"/v1/commands/{quoted}")[0]
+        self.calls.observe(command_id, body)
+        return body
 
     def _bounded_lookup(self, command_id, *, attempts=3, interval_sec=0.5):
         for attempt in range(max(1, int(attempts))):

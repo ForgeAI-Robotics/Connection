@@ -7,15 +7,19 @@ state actually changes, and once more when the call or task ends.
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from contextvars import ContextVar
 import json
 import logging
 import sys
 import threading
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
 from shared.log_setup import compact_log_text, log_root
+from shared.diagnostic_io import DiagnosticWriter, append_rotating, bound_record, clip_text, process_metadata, redact
 
 SOURCE_HEADER = "X-FQ-Source"
 CLIENT_HEADER = "X-FQ-Client"
@@ -75,15 +79,7 @@ def _stamp(moment: datetime | None = None) -> datetime:
 
 
 def _json_ready(value):
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {str(key): _json_ready(item) for key, item in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_ready(item) for item in value]
-    return compact_log_text(value, 240)
+    return bound_record(value) if isinstance(value, dict) else redact(value)
 
 
 def _fmt_value(value, *, compact=True):
@@ -137,6 +133,56 @@ def format_human(kind: str, event: str | None, fields: dict, *, moment=None, com
     return " ".join(parts)
 
 
+def critical_evidence(payload):
+    """Keep meaningful proof changes separate from poll clocks and telemetry arrays."""
+    if not isinstance(payload, dict):
+        return {}
+    result = payload.get('result') if isinstance(payload.get('result'), dict) else {}
+    exit_state = payload.get('exit_state') if isinstance(payload.get('exit_state'), dict) else {}
+    result_exit = result.get('exit_state') if isinstance(result.get('exit_state'), dict) else {}
+    keys = ('navigation_stopped', 'policy_stopped', 'publisher_stopped', 'body_stopped',
+            'hands_stopped', 'hold_verified', 'resources_released', 'action_port_released',
+            'output_fenced', 'action_started', 'action_state_uncertain', 'business_outcome',
+            'holding', 'holding_known', 'holding_unknown', 'object_grasped', 'released',
+            'success', 'reached', 'effect_verified', 'effect', 'supports', 'identity_ok', 'time_ok')
+    evidence = {}
+    for prefix, item in (('response', payload), ('result', result), ('exit_state', exit_state),
+                         ('result.exit_state', result_exit)):
+        if isinstance(item, dict):
+            for key in keys:
+                if key in item:
+                    evidence[prefix + '.' + key] = item[key]
+            if isinstance(item.get('runtime'), dict):
+                for key in keys:
+                    if key in item['runtime']:
+                        evidence[prefix + '.runtime.' + key] = item['runtime'][key]
+    completion = payload.get('completion')
+    if isinstance(completion, dict):
+        for key in ('status', 'evidence', 'error', 'verified', 'requested'):
+            if key in completion:
+                evidence['completion.' + key] = completion[key]
+    for key in ('finish_requested', 'pause_requested', 'stop_requested', 'receiver_instance_id',
+                'controller_instance_id', 'input_session_id', 'robot_serial', 'holding_evidence'):
+        if key in payload:
+            evidence[key] = payload[key]
+    handoff = payload.get('handoff') if isinstance(payload.get('handoff'), dict) else {}
+    for key in ('original_execution_failure', 'o6_execution_failure'):
+        if key in handoff:
+            evidence['handoff.' + key] = handoff[key]
+    execution = handoff.get('execution') if isinstance(handoff.get('execution'), dict) else {}
+    for key in ('receiver_instance_id', 'source_gate_receiver_instance_id',
+                'controller_instance_id', 'input_session_id', 'robot_serial'):
+        if key in execution:
+            evidence['handoff.execution.' + key] = execution[key]
+    for prefix, item in (('result', result), ('exit_state', exit_state), ('result.exit_state', result_exit)):
+        for key in ('feedback_fault', 'holding_evidence'):
+            if key in item:
+                evidence[prefix + '.' + key] = item[key]
+            if isinstance(item.get('runtime'), dict) and key in item['runtime']:
+                evidence[prefix + '.runtime.' + key] = item['runtime'][key]
+    return evidence
+
+
 def fingerprint(payload) -> tuple:
     """Stable identity of a remote command. Timestamps and motor arrays ignored."""
 
@@ -159,6 +205,7 @@ def fingerprint(payload) -> tuple:
         str(result.get("object_grasped")),
         str(result.get("released")),
         str(plan.get("path_length_m") or ""),
+        json.dumps(redact(critical_evidence(payload)), sort_keys=True, ensure_ascii=False),
         str((payload.get("dispatch") or {}).get("goal_dispatched")
             if isinstance(payload.get("dispatch"), dict) else ""),
     )
@@ -229,6 +276,13 @@ def summarize_remote(payload) -> dict:
     # Error codes, nested detail and remote tracebacks must survive the summary.
     if payload.get("error"):
         fields["error"] = payload["error"]
+    proof = critical_evidence(payload)
+    if proof:
+        fields['evidence_changes'] = proof
+    if payload.get('state') in {'failed', 'cancelled', 'succeeded'}:
+        # Evidence is detached and redacted before journal output; raw business
+        # return values are never changed by diagnosis.
+        fields['downstream'] = payload
     return {key: value for key, value in fields.items() if value is not None}
 
 
@@ -245,23 +299,27 @@ def summarize_vla_request(payload) -> dict:
 
 
 class BrainJournal:
-    def __init__(self, *, service: str = "master", enabled: bool = True, echo_process=False):
+    def __init__(self, *, service: str = "master", enabled: bool = True, echo_process=False,
+                 asynchronous=False, queue_capacity=512, max_file_bytes=16 * 1024 * 1024):
         self.service = service
         self.enabled = enabled
         self.echo_process = echo_process
         self._lock = threading.RLock()
-        self._current_task_id = None
+        self._current_task = ContextVar("brain_journal_task_" + uuid.uuid4().hex, default=None)
+        self._writer = DiagnosticWriter(asynchronous=asynchronous, capacity=queue_capacity)
+        self.max_file_bytes = max(1024, int(max_file_bytes))
+        self._metadata = process_metadata()
         self._day = None
         self._dir = None
         self._pin = None
 
     def set_current_task(self, task_id):
         with self._lock:
-            self._current_task_id = str(task_id or "") or None
+            self._current_task.set(str(task_id or "") or None)
 
     def current_task_id(self):
         with self._lock:
-            return self._current_task_id
+            return self._current_task.get()
 
     def _ensure_day(self, moment: datetime):
         day = moment.strftime("%Y-%m-%d")
@@ -293,86 +351,133 @@ class BrainJournal:
         inherit_task: bool = True,
         **fields,
     ):
-        # inherit_task=False for inbound requests that carry no task identity of
-        # their own (standalone preflight, chat). Without it they inherit the
-        # previous task's id and pollute per-task greps.
         if not self.enabled:
             return None
-        moment = _stamp()
-        carried = self.current_task_id() if inherit_task else None
-        known_task = str(task_id or fields.get("id") or carried or "")
-        payload = {
-            key: _json_ready(value)
-            for key, value in fields.items()
-            if value is not None and value != ""
-        }
-        if known_task:
-            payload.setdefault("id", known_task)
-        record = {
-            "time": now_iso(),
-            "kind": str(kind).upper(),
-            "event": event,
-            "task_id": known_task or None,
-            **payload,
-        }
-        line = format_human(record["kind"], event, payload, moment=moment)
+        try:
+            from shared.diagnostic_context import context_fields
+            context = context_fields()
+            explicit = task_id or fields.get('id')
+            if explicit and context.get('task_id') != explicit:
+                for key in ('task_id', 'step_id', 'attempt_id', 'command_id', 'cmd', 'request_id'):
+                    context.pop(key, None)
+            carried = self.current_task_id() if inherit_task else None
+            known_task = str(explicit or context.get('task_id') or carried or '')
+            context.pop('task_id', None)
+            payload = {key: value for key, value in {**context, **fields}.items()
+                       if value is not None and value != ''}
+            if known_task:
+                payload['id'] = known_task
+            delivery = self._writer.health()
+            if delivery['degraded']:
+                # The next delivered event preserves the loss notice even after
+                # the process exits and its in-memory health counters disappear.
+                payload['diagnostic_delivery'] = {key: delivery[key] for key in
+                    ('write_errors', 'dropped', 'lost_event_ids', 'last_error')}
+            kind_u = str(kind).upper()
+            level = payload.pop('level', None) or ('ERROR' if (
+                payload.get('ok') is False or payload.get('state') == 'failed'
+                or payload.get('error') or payload.get('exception')
+                or (payload.get('diagnostic') or {}).get('error')
+                or (payload.get('recovery_advice') or {}).get('error')
+                or (payload.get('blocked_reason') and payload.get('blocked_reason') != 'vla_effect_confirmation')
+                or (kind_u == 'PREFLIGHT' and payload.get('ready') is False)) else 'INFO')
+            moment = _stamp()
+            record = bound_record({**payload, **self._metadata,
+                'time': moment.isoformat(timespec='milliseconds'), 'event_id': uuid.uuid4().hex,
+                'service': self.service, 'component': payload.get('component') or self.service,
+                'level': level, 'kind': kind_u, 'event': event, 'task_id': known_task or None})
+            critical = (level in {'ERROR', 'CRITICAL', 'WARNING', 'WARN'}
+                        or record.get('state') in {'failed', 'succeeded', 'cancelled', 'recovery_required'})
+            self._writer.submit(self._write_record, record, moment,
+                                event_id=record['event_id'], critical=critical)
+            return record
+        except Exception as exc:
+            self._writer.failure(exc)
+            return None
+
+    def _write_record(self, record, moment):
+        # Record is an immutable-by-convention bounded copy prepared by the emitter.
+        payload = {key: value for key, value in record.items() if key not in {
+            'time', 'kind', 'event', 'task_id', 'service', 'component', 'level',
+            'log_schema_version', 'service_instance_id', 'code_revision', 'pid', 'code_dirty', 'downstream'}}
+        line = format_human(record['kind'], record.get('event'), payload, moment=moment)
+        failures = []
         with self._lock:
-            paths = self.paths(moment=moment)
-            with paths["brain"].open("a", encoding="utf-8") as handle:
-                if line:
-                    handle.write(line + "\n")
-                handle.flush()
-            with paths["jsonl"].open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
-                handle.flush()
-            kind_u = record["kind"]
-            event_l = str(event or "").lower()
-            if kind_u == "TASK" and (event_l in {"start", "task_opened"}
-                                    or payload.get('state') in {'succeeded', 'cancelled'}):
-                self._pin = None
-                if paths["pin"].exists():
-                    paths["pin"].unlink()
-            elif kind_u in {"TASK", "CALL", "STEP"} and payload.get('state') != 'cancelled' and (
-                payload.get("ok") is False or event_l in {"fail", "failure"}
-            ):
-                if line:
-                    self._pin = line
-                    paths["pin"].write_text(line + "\n", encoding="utf-8")
-            if self.echo_process and kind_u != 'DIAGNOSTIC':
-                # Ordinary logging and uncaught exceptions already reach stderr.
-                # Business events also belong in the same readable process stream.
-                from shared.task_text import format_process_event
-                rendered = format_process_event(record)
-                if rendered is None:
-                    rendered = format_human(kind_u, event, payload, moment=moment, compact=False)
-                if rendered:
-                    print(rendered, flush=True)
-        return record
+            try:
+                paths = self.paths(moment=moment)
+            except Exception as exc:
+                paths = None
+                failures.append(exc)
+            if paths:
+                outputs = ((paths['jsonl'], json.dumps(record, ensure_ascii=False, separators=(',', ':')) + '\n'),
+                           (paths['brain'], clip_text(line, 8192) + '\n' if line else ''))
+                for path, text in outputs:
+                    try:
+                        append_rotating(path, text, max_bytes=self.max_file_bytes)
+                    except Exception as exc:
+                        failures.append(exc)
+                try:
+                    kind, event = record['kind'], str(record.get('event') or '').lower()
+                    if kind == 'TASK' and (event in {'start', 'task_opened'} or record.get('state') in {'succeeded', 'cancelled'}):
+                        self._pin = None
+                        paths['pin'].unlink(missing_ok=True)
+                    elif kind in {'TASK', 'CALL', 'STEP'} and record.get('state') != 'cancelled' and (record.get('ok') is False or event in {'fail', 'failure'}):
+                        if line:
+                            self._pin = clip_text(line, 8192)
+                            paths['pin'].write_text(self._pin + '\n', encoding='utf-8')
+                except Exception as exc:
+                    failures.append(exc)
+            if self.echo_process and not record.get('_process_already_logged'):
+                try:
+                    from shared.task_text import format_process_event
+                    rendered = format_process_event(record)
+                    if rendered is None:
+                        rendered = format_human(record['kind'], record.get('event'), payload,
+                                                moment=moment, compact=False)
+                    if rendered:
+                        rendered = clip_text(rendered, 8192)
+                        if '[diagnostic truncated:' in rendered:
+                            rendered += ' event_id=' + record['event_id'] + ' (structured record in brain.jsonl)'
+                        print(rendered, flush=True)
+                except Exception as exc:
+                    failures.append(exc)
+        if failures:
+            raise OSError('; '.join(str(error) for error in failures))
 
     def append_http_access(self, line: str):
         if not self.enabled:
             return
-        text = str(line).rstrip("\n")
-        if not text:
-            return
+        try:
+            text = clip_text(redact(str(line).rstrip('\n')), 8192)
+            if text:
+                self._writer.submit(self._write_http, text, _stamp())
+        except Exception as exc:
+            self._writer.failure(exc)
+
+    def _write_http(self, text, moment):
         with self._lock:
-            path = self.paths()["http"]
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(text + "\n")
-                handle.flush()
+            append_rotating(self.paths(moment=moment)['http'], text + '\n', max_bytes=self.max_file_bytes)
 
     def pin_text(self) -> str | None:
+        self.flush(.2)
         with self._lock:
             if self._pin:
                 return self._pin
             try:
-                path = self.paths()["pin"]
+                path = self.paths()['pin']
+                return path.read_text(encoding='utf-8').strip() or None if path.exists() else None
             except Exception:
                 return None
-            if not path.exists():
-                return None
-            text = path.read_text(encoding="utf-8").strip()
-            return text or None
+
+    def health(self):
+        from shared.log_setup import process_log_health
+        return {**self._writer.health(), **self._metadata, 'process_output': process_log_health()}
+
+    def flush(self, timeout=1.):
+        return self._writer.flush(timeout)
+
+    def close(self, timeout=1.):
+        return self._writer.close(timeout)
 
 
 class NullJournal:
@@ -395,6 +500,15 @@ class NullJournal:
 
     def paths(self, *, moment=None):
         return {}
+
+    def health(self):
+        return {"enabled": False, "degraded": False, "queued": 0, "dropped": 0, "write_errors": 0}
+
+    def flush(self, timeout=1.):
+        return True
+
+    def close(self, timeout=1.):
+        return True
 
 
 _JOURNAL: BrainJournal | NullJournal = NullJournal()
@@ -424,7 +538,9 @@ def _install_exception_hooks(journal):
         try:
             journal.emit('DIAGNOSTIC', event='exception', inherit_task=False,
                          component=component, level='CRITICAL', message=str(value),
+                         _process_already_logged=True,
                          exception=logging.Formatter().formatException((kind, value, tb)))
+            journal.flush(.5)
         except Exception:
             pass
 
@@ -462,7 +578,7 @@ def attach_master_journal() -> BrainJournal:
     """Create today's journal files and capture Werkzeug access logs."""
 
     global _JOURNAL, _ATTACHED
-    journal = BrainJournal(service="master", enabled=True, echo_process=True)
+    journal = BrainJournal(service="master", enabled=True, echo_process=True, asynchronous=True)
     _JOURNAL = journal
     _redirect_werkzeug(journal)
     root = logging.getLogger()
@@ -470,13 +586,13 @@ def attach_master_journal() -> BrainJournal:
     root.addHandler(_JournalDiagnosticHandler(journal))
     _install_exception_hooks(journal)
     _ATTACHED = True
-    journal.paths()
     journal.emit("PREFLIGHT", event="boot", note="Master指挥日志已就绪")
     return journal
 
 
 def reset_journal_for_tests(journal=None):
     global _JOURNAL, _ATTACHED
+    _JOURNAL.close(1.)
     _JOURNAL = journal if journal is not None else NullJournal()
     _ATTACHED = False
     _restore_exception_hooks()
@@ -502,6 +618,7 @@ class _JournalDiagnosticHandler(logging.Handler):
             self.journal.emit('DIAGNOSTIC', event='exception' if record.exc_info else 'log',
                               inherit_task=False, task_id=getattr(record, 'task_id', None),
                               component=record.name, level=record.levelname,
+                              _process_already_logged=True,
                               message=record.getMessage(),
                               exception=logging.Formatter().formatException(record.exc_info)
                               if record.exc_info else None)
@@ -552,7 +669,15 @@ class OutboundCall:
         self.command_id = command_id
         self.task_id = task_id
         self._fields = dict(fields)
+        from shared.diagnostic_context import context_fields
+        self._context = context_fields()
+        if self.task_id and self._context.get('task_id') not in (None, self.task_id):
+            self._context = {}
+        self.task_id = self.task_id or self._context.get('task_id')
         self._started = time.monotonic()
+        self._last_summary = self._started
+        self._unchanged = 0
+        self.wait_summary_sec = float(self._fields.pop('wait_summary_sec', 30.))
         self._fp = None
         self._last_error = None
         self._terminal_receipt = None
@@ -568,19 +693,29 @@ class OutboundCall:
             **self._fields,
         }
         if extra:
+            observed_command = extra.get('cmd')
             payload.update(extra)
+            if observed_command and self.command_id and observed_command != self.command_id:
+                payload['observed_command_id'] = observed_command
+                payload['identity_match'] = False
+        payload['cmd'] = self.command_id
         return payload
 
     def _emit(self, event, **extra):
-        emit(
-            "CALL",
-            event=event,
-            task_id=self.task_id,
-            **self._public(extra),
-        )
+        from shared.diagnostic_context import diagnostic_context
+        with diagnostic_context(replace=True, **self._context):
+            emit('CALL', event=event, task_id=self.task_id, **self._public(extra))
+
+    def _summary(self, payload):
+        extra = summarize_remote(payload)
+        if isinstance(payload, dict) and payload.get('task_id'):
+            if payload['task_id'] != self.task_id:
+                extra['observed_task_id'] = payload['task_id']
+                extra['identity_match'] = False if self.task_id else None
+        return extra
 
     def accepted(self, payload=None):
-        extra = summarize_remote(payload) if payload is not None else {}
+        extra = self._summary(payload) if payload is not None else {}
         if payload is not None:
             self._fp = fingerprint(payload)
             if extra.get("path_m") is not None:
@@ -598,8 +733,15 @@ class OutboundCall:
         if self._ended or payload is None:
             return False
         fp = fingerprint(payload)
-        extra = summarize_remote(payload)
-        if fp == self._fp and extra.get('error') == self._last_error:
+        extra = self._summary(payload)
+        if fp == self._fp and _json_ready(extra.get('error')) == self._last_error:
+            self._unchanged += 1
+            if time.monotonic() - self._last_summary >= self.wait_summary_sec and extra.get('state') not in {'failed', 'succeeded', 'cancelled'}:
+                self._emit('waiting', **extra, unchanged_polls=self._unchanged,
+                           duration_s=round(time.monotonic() - self._started, 3))
+                self._last_summary = time.monotonic()
+                self._unchanged = 0
+                return True
             return False
         self._fp = fp
         extra["state"] = extra.get("state") or (
@@ -610,6 +752,9 @@ class OutboundCall:
         if extra.get('state') in {'succeeded', 'failed', 'cancelled'}:
             extra['duration_s'] = round(time.monotonic() - self._started, 3)
             self._terminal_receipt = _json_ready(payload)
+        extra['unchanged_polls'] = self._unchanged
+        self._unchanged = 0
+        self._last_summary = time.monotonic()
         self._emit("state", **extra)
         self._last_error = _json_ready(extra.get('error'))
         return True
@@ -618,7 +763,7 @@ class OutboundCall:
         if self._ended:
             return
         self._ended = True
-        extra = summarize_remote(payload)
+        extra = self._summary(payload)
         extra["ok"] = bool(ok)
         extra["duration_s"] = round(time.monotonic() - self._started, 3)
         reason = call_reason(payload, error=error)
@@ -633,19 +778,26 @@ class OutboundCall:
             extra['result'] = payload['result']
         if extra.get("state") is None and isinstance(payload, dict):
             extra["state"] = payload.get("state")
-        if extra.get('error') and extra['error'] == self._last_error:
+        if extra.get('error') and _json_ready(extra['error']) == self._last_error:
             extra['error_already_logged'] = True
-        if (self._terminal_receipt is not None and payload == self._terminal_receipt
+        if (self._terminal_receipt is not None and _json_ready(payload) == self._terminal_receipt
                 and error is None):
             extra['_human_suppressed'] = True
         self._emit("end", **extra)
+        if isinstance(payload, dict):
+            self._fp = fingerprint(payload)
+            self._last_error = _json_ready(payload.get('error'))
+            if payload.get('state') in {'failed', 'succeeded', 'cancelled'}:
+                self._terminal_receipt = _json_ready(payload)
 
 
 class CallBook:
     def __init__(self, peer: str):
         self.peer = peer
-        self._calls: dict[str, OutboundCall] = {}
-        self._lock = threading.Lock()
+        self._calls: dict[str, OutboundCall] = OrderedDict()
+        self._history: dict[str, OutboundCall] = OrderedDict()
+        self._limit = 512
+        self._lock = threading.RLock()
 
     def start(self, op: str, *, command_id=None, task_id=None, **fields) -> OutboundCall:
         fields.pop("op", None)
@@ -656,6 +808,8 @@ class CallBook:
         if key:
             with self._lock:
                 self._calls[key] = call
+                while len(self._calls) > self._limit:
+                    self._calls.popitem(last=False)
         return call
 
     def get(self, command_id) -> OutboundCall | None:
@@ -678,6 +832,36 @@ class CallBook:
         if call is None:
             return
         call.end(ok, payload=payload, error=error)
+        with self._lock:
+            self._history[key] = call
+            while len(self._history) > self._limit:
+                self._history.popitem(last=False)
+
+    def observe(self, command_id, payload, *, task_id=None, operation='query'):
+        """Log reads of an original command, including after restart or completion."""
+        key = str(command_id or '')
+        if not key:
+            return False
+        with self._lock:
+            call = self._calls.get(key) or self._history.get(key)
+            if call is None:
+                call = self.start(operation, command_id=key, task_id=task_id, emit_start=False)
+            elif task_id and call.task_id and task_id != call.task_id:
+                # Do not reuse diagnostic state from a different task, even if a
+                # malformed peer reuses a command ID. Keep both associations explicit.
+                call = self.start(operation, command_id=key, task_id=task_id, emit_start=False)
+            if call._ended:
+                fp = fingerprint(payload)
+                error = _json_ready(summarize_remote(payload).get('error'))
+                if fp == call._fp and error == call._last_error:
+                    return False
+                call._ended = False
+            changed = call.update(payload)
+            if isinstance(payload, dict) and payload.get('state') in {'failed', 'cancelled', 'succeeded'}:
+                self._history[key] = call
+                while len(self._history) > self._limit:
+                    self._history.popitem(last=False)
+            return changed
 
 
 def inbound_from_flask(request) -> dict:

@@ -1,5 +1,7 @@
 # 接口说明：操控 VLA
 
+跨端日志专项见大脑维护的[实施约定](多端联调_大脑日志与跨端诊断.md#alignment-table)与[VLA 交付映射](多端联调_大脑日志与跨端诊断.md#vla-delivery)。2026-11-02 VLA2 报告日志增强及 97 项定向回归通过；未部署，不改变 direct-v1 请求、效果确认或停止核验规则。
+
 > **2026-10-28 当前源码：** source_gate 模式新增 VLA direct-v1 接入，见下节；原 unified 模式与带日期的 relay／acquire 记录保留。三个接待按钮分别绑定真实／模拟执行端，不静默回退。大脑源码适配、隔离验证及大脑／网页重载完成，已有真实操控失败回执；后续 VLA／O6 修订按下文注明来源，完整动作验收尚未完成。
 
 ## direct-v1：直连操控与接收源选择
@@ -25,6 +27,27 @@ VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}
 
 > 当前 source_gate 以文首 direct-v1 和大脑接口为准；“新动作接入”保留业务效果及旧后端范围；2026-10-09 及更早章节描述旧抓放链路。源码接入、运行实例更新和真机验收分别确认。
 
+<a id="vla-diagnostic-field-scope"></a>
+
+### 日志对齐中的身份、时间与效果范围（2026-11-02）
+
+来源为 VLA2 对 `e9ce1e4` 及本轮工作区代码的核对；生产实例未核验。诊断只读投影这些字段，不替执行端裁决冲突。
+
+| 原字段路径 | 含义／边界 |
+| --- | --- |
+| 诊断事件顶层 service_instance_id | VLA API 日志进程本次启动身份，不是 worker 内部令牌 |
+| handoff.execution.receiver_instance_id | O6 实例 |
+| handoff.execution.source_gate_receiver_instance_id | SONIC source_gate 接收实例，不能与 O6 同名字段混用 |
+| handoff.execution.controller_instance_id／input_session_id | SONIC 控制器身份／该次执行输入会话 |
+| 查询回包顶层 observed_at | 查询回包生成时间，会刷新；不是原效果观察时间 |
+| completion.evidence.observed_at | 已提交的原效果观察时间，不能因查询或日志记录刷新 |
+| completed_at | 任务终态记录时间，不等同于某一物理停止瞬间；执行准备与暂停完成时间分别保留 execution_ready_at／verification_ready_at |
+| state／result.business_outcome／exit_state | 任务结果、效果结论与收尾事实分别表达；效果已核验后仍可能因停止或持物保持未确认而最终 failed |
+
+direct 正常执行异常路径在 handoff.original_execution_failure 保留首因，失败时可投影到 error.details.original_execution_failure；收尾错误可成为顶层 error。服务重启可将未完成任务标为 VLA_SERVICE_RESTARTED 并保留旧 handoff，不能假定所有异常／重启后的首因都固定在 error.details 同一路径。多个路径内容冲突时保留原值和来源，不静默合成停止或成功。
+
+命令和 finish 意图保存在 current_state.json；现有代码没有命令 TTL 清理，也没有固定保存时长保证。新诊断事件有独立轮转边界，不能用事件文件存在代替完整历史。O6 首因匹配沿执行端现有选择规则，不能据本轮日志增强宣称已新增对所有字段的核验。
+
 ## O6 反馈故障首因（兼容新增）
 
 2026-10-29 对齐操控侧《大脑调用接口》的 `fq/o6-feedback-fault/v1`。查询原命令的失败／取消回包可带 `result.feedback_fault` 和 `error.details.feedback_fault`，两处内容相同。原始快照也可能位于 `handoff.o6_execution_failure.feedback_fault` 或 `exit_state.runtime.feedback_fault`。旧任务缺省不补造；没有字段不代表没有故障。
@@ -47,6 +70,8 @@ VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}
 离线示例来自操控侧 `contracts/o6_feedback_fault.example.json`，本仓库测试副本使用合成机器人身份，见 [O6 故障字段夹具](../tests/contracts/o6_feedback_fault.example.json)。首次记录冻结和进程退出持久化由 VLA／O6 负责，大脑不为旧任务合成记录；联调验证见[操控故障字段接入](多端联调_操控与抓取.md#brain-o6-feedback-fault)。
 
 ## 大脑统一授权对接（2026-10-23，接口离线串联通过）
+
+> 当前日志与证据字段补充统一见上方交付映射；下节为历史 relay 接线。
 
 > 历史 relay 接线，以下至“新动作接入”保留当时行为；当前 direct-v1 不执行这些交接。
 

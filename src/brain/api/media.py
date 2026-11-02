@@ -8,6 +8,7 @@ import requests
 from brain.storage.files import write_json
 from brain.workers import WorkerPool
 from shared.paths import workspace_root
+from shared.diagnostic_context import diagnostic_context, diagnostic_event, report_exception, task_fields
 
 
 def observation_url():
@@ -34,6 +35,8 @@ class MediaService:
         self.pool = WorkerPool('brain-media', 1, capacity=8)
         self.dropped = 0
         self.errors = 0
+        self.last_error = None
+        self.last_skip_reason = None
         self.lock = threading.Lock()
 
     def event(self, event, record):
@@ -41,9 +44,17 @@ class MediaService:
             return
         try:
             url = observation_url()
-            self.pool.submit(self.capture, event, record, url)
-        except Exception:
+            with diagnostic_context(**task_fields(record)):
+                self.pool.submit(self.capture, event, record, url)
+            self.last_skip_reason = None
+        except Exception as exc:
             self.dropped += 1
+            reason = str(exc)
+            if reason != self.last_skip_reason:
+                with diagnostic_context(**task_fields(record)):
+                    diagnostic_event('MEDIA', 'capture_skipped', reason=reason,
+                                     level='WARNING', dropped=self.dropped)
+                self.last_skip_reason = reason
 
     def capture(self, event, record, url):
         task_id = record['task_id']
@@ -70,8 +81,15 @@ class MediaService:
             write_json(manifest, previous)
             if self.status().get('task_id') == task_id:
                 write_json(self.root / 'timeline.json', previous)
-        except Exception:
+        except Exception as exc:
             self.errors += 1
+            self.last_error = str(exc)
+            report_exception(exc, component='media.capture', **task_fields(record))
+
+    def health(self):
+        from shared.diagnostic_io import redact
+        return {'dropped': self.dropped, 'errors': self.errors,
+                'last_error': redact(self.last_error), 'last_skip_reason': redact(self.last_skip_reason)}
 
     def timeline(self):
         task_id = self.status().get('task_id')

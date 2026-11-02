@@ -13,6 +13,7 @@ from brain.learning.worker import ReflectionWorker
 from brain.service_support import runtime_dir
 from brain.storage.tasks import load_existing
 from brain.observability.events import emit
+from shared.diagnostic_context import diagnostic_context, task_fields, report_exception
 
 
 class BrainApplication:
@@ -72,16 +73,22 @@ class BrainApplication:
 
         service.port_factory = port_factory
         service.runtime_factory = runtime
-        service.plan_call = lambda rt, options: self.owner.wait(self.planner.submit(service.planning.plan, rt, options))
+        service.plan_call = lambda rt, options: self.owner.wait(
+            self._submit_runtime(self.planner, service.planning.plan, rt, options))
         service.select_call = lambda task, options: self.owner.wait(self.planner.submit(service.reasoner.select, task, options))
         # Advice reads immutable evidence off-thread; only the owner applies its result.
         # It must never occupy the planner or the owner's cooperative wait path.
         service._advise = self._schedule_advice
-        service._launch = lambda rt: self.owner.submit(service._drive, rt)
-        service.refresh_advice = lambda rt: self.owner.submit(service._advise, rt)
+        service._launch = lambda rt: self._submit_runtime(self.owner, service._drive, rt)
+        service.refresh_advice = lambda rt: self._submit_runtime(self.owner, service._advise, rt)
         service.reflection = self.learning.enqueue
         self._next_vla_observation = 0.
         self.owner.on_idle = self._observe_waiting_vla
+
+    @staticmethod
+    def _submit_runtime(pool, fn, runtime, *args, **kwargs):
+        with diagnostic_context(**task_fields(runtime.record)):
+            return pool.submit(fn, runtime, *args, **kwargs)
 
     def _observe_waiting_vla(self):
         """One read-only observation on the existing owner, with cooperative I/O."""
@@ -92,11 +99,12 @@ class BrainApplication:
             record = load_existing(runtime_dir(self.config)) or {}
             if record.get('state') != 'waiting_human' or not record.get('vla_confirmation'):
                 return
-            runtime = self.service.attach()
-            if runtime.observe_waiting_vla():
-                if runtime.state == 'recovery_required':
-                    self.learning.enqueue(runtime.record)
-                    self._schedule_advice(runtime)
+            with diagnostic_context(trace_id=uuid.uuid4().hex, **task_fields(record)):
+                runtime = self.service.attach()
+                if runtime.observe_waiting_vla():
+                    if runtime.state == 'recovery_required':
+                        self.learning.enqueue(runtime.record)
+                        self._schedule_advice(runtime)
         except Rejected:
             pass  # A concurrent control or changed task owns the next decision.
         finally:
@@ -124,7 +132,8 @@ class BrainApplication:
             return
         self._advice_inflight = key
         self._advice_log('started', context)
-        future = self.adviser.submit(self.service.compute_advice, context)
+        with diagnostic_context(**task_fields(context)):
+            future = self.adviser.submit(self.service.compute_advice, context)
 
         def completed(result):
             if not self._closing:
@@ -219,7 +228,10 @@ class BrainApplication:
         self.start()
         if self._closing:
             raise Rejected('大脑正在关闭，停止接受新任务')
-        return self.owner.call(self.service.publish, task, task_id, **kwargs)
+        # A request without a task identity stays unbound until the original
+        # service admission allocates it; later events bind the saved snapshot.
+        with diagnostic_context(task_id=task_id, step_id=None, attempt_id=None, command_id=None):
+            return self.owner.call(self.service.publish, task, task_id, **kwargs)
 
     def control(self, action, *, task_id=None, step_id=None, expected_command_id=None):
         self.start()
@@ -229,7 +241,6 @@ class BrainApplication:
             journal('CONTROL', event=event, inherit_task=False, action=action,
                     control_id=control_id, task_id=task_id, step_id=step_id,
                     command_id=expected_command_id, **details)
-        log('received')
         def apply():
             log('processing')
             result = self.service.control(action, task_id=task_id,
@@ -244,14 +255,17 @@ class BrainApplication:
                     if getattr(self.body_control, 'mode', '') == 'source_gate' else
                     '整轮任务已取消，可发布新任务；旧会话停止与撤权独立收尾')
             return result
-        try:
-            result = self.owner.call(apply, control=True)
-        except Exception as exc:
-            log('rejected', error=str(exc))
-            raise
-        log('accepted' if result.get('accepted') else 'rejected', state=result.get('state'),
-            detail=result.get('message'), error=result.get('error'))
-        return result
+        with diagnostic_context(task_id=task_id, step_id=step_id, command_id=expected_command_id,
+                                attempt_id=None, control_id=control_id):
+            log('received')
+            try:
+                result = self.owner.call(apply, control=True)
+            except Exception as exc:
+                log('rejected', error=str(exc))
+                raise
+            log('accepted' if result.get('accepted') else 'rejected', state=result.get('state'),
+                detail=result.get('message'), error=result.get('error'))
+            return result
 
     def status(self):
         # Atomic read only: health/status do not wait behind any remote call.
@@ -267,25 +281,33 @@ class BrainApplication:
 
     def recover_control(self, task_id, expected_lease_id, *, new_exit_check=False):
         self.start()
-        return self.body_control.request_cleanup(task_id, expected_lease_id,
-            **({'new_exit_check': True} if new_exit_check else {}))
+        with diagnostic_context(task_id=task_id, step_id=None, attempt_id=None, command_id=None):
+            return self.body_control.request_cleanup(task_id, expected_lease_id,
+                **({'new_exit_check': True} if new_exit_check else {}))
 
     def confirm_advice(self, task_id, advice_id, expected_revision):
         self.start()
         # Ordinary owner work keeps I/O cooperative: pause/cancel can preempt a query.
-        return self.owner.call(self.service.confirm_advice, task_id, advice_id, expected_revision)
+        with diagnostic_context(task_id=task_id, step_id=None, attempt_id=None, command_id=None):
+            return self.owner.call(self.service.confirm_advice, task_id, advice_id, expected_revision)
 
     def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization='', auto_advance=False):
         self.start()
-        return self.owner.call(self.service.vla_effect, task_id, command_id, action,
-                               evidence=evidence, authorization=authorization, auto_advance=auto_advance, control=True)
+        with diagnostic_context(task_id=task_id, command_id=command_id, step_id=None, attempt_id=None):
+            return self.owner.call(self.service.vla_effect, task_id, command_id, action,
+                                   evidence=evidence, authorization=authorization, auto_advance=auto_advance, control=True)
 
     def health(self):
+        from shared.brain_journal import get_journal
+        from shared.diagnostic_io import redact
         return {'ready': self._started and not self._closing,
                 'state': 'stopping' if self._closing else 'healthy' if self._started else 'created',
                 'runtime_thread': bool(self.owner.thread and self.owner.thread.is_alive()),
+                'runtime_work': self.owner.health(),
                 'workers': [p.health() for p in (self.planner, self.adviser, self.io, self.controls)],
-                'reflection_error': self.learning.last_error}
+                'reflection_error': redact(self.learning.last_error),
+                'media': self.media.health() if callable(getattr(self.media, 'health', None)) else {},
+                'diagnostics': get_journal().health()}
 
     def _checkpoint(self):
         if not (load_existing(runtime_dir(self.config)) or {}).get('task_id'):
@@ -307,8 +329,9 @@ class BrainApplication:
         if self.owner.thread and self.owner.thread.is_alive():
             try:
                 self.owner.submit(self._checkpoint, control=True).result(timeout=max(0, deadline-time.monotonic()))
-            except Exception:
-                pass  # Durable command identities remain unresolved; never fabricate a stop.
+            except Exception as exc:
+                report_exception(exc, component='brain.shutdown', operation='checkpoint')
+                # Durable command identities remain unresolved; never fabricate a stop.
         remaining = lambda: max(0, deadline - time.monotonic())
         stopped = self.owner.close(remaining())
         stopped = self.learning.close(remaining()) and stopped
@@ -323,4 +346,8 @@ class BrainApplication:
             fcntl.flock(self._lease, fcntl.LOCK_UN)
             os.close(self._lease)
             self._lease = None
+        from shared.brain_journal import get_journal
+        # A flush timeout is a diagnostic health issue, not evidence of an unsafe
+        # task transition; do not change the existing worker-stop return contract.
+        get_journal().close(timeout=remaining())
         return stopped

@@ -151,6 +151,14 @@ EVENTS = {
     'submit_intent': '准备下发动作指令', 'observe_intent': '准备读取现场状态',
     'action_finished': '已收到动作返回，等待核验', 'step_passed': '当前步骤核验通过',
     'vla_effect_waiting': '操控执行中，动作效果尚未确认；继续查询原命令',
+    'vla_terminal_observed': '已查询到原操控终态，停止与效果按各自证据核对',
+    'vla_status_observed': '原操控状态或确认信息已更新',
+    'vla_status_unconfirmed': '原操控状态暂未核清，保留原命令继续查询',
+    'vla_effect_observed': '原操控效果确认查询已更新',
+    'vla_effect_intent': '已保存原操控完成确认或暂停意图',
+    'vla_effect_rejected': '原操控效果控制请求被明确拒绝',
+    'vla_effect_uncertain': '原操控效果控制回包未确认，只查询原命令',
+    'vla_completion_unconfirmed': '原操控收尾或完成确认尚未核清',
     'task_succeeded': '任务完成', 'task_finished_with_skips': '流程结束，含人工跳过的步骤',
     'execution_error': '执行异常', 'unconfirmed': '执行结果尚未确认',
     'submission_rejected': '指令被下游拒绝，未开始执行',
@@ -350,6 +358,43 @@ def readable_call_fields(fields):
     return view
 
 
+def _receipt_summary(diagnostic):
+    """A readable evidence summary; original paths and conflicts stay in JSONL."""
+    raw = diagnostic.get('downstream') or {}
+    if not isinstance(raw, dict):
+        return []
+    result = raw.get('result') if isinstance(raw.get('result'), dict) else {}
+    error = raw.get('error') if isinstance(raw.get('error'), dict) else {}
+    details = error.get('details') if isinstance(error.get('details'), dict) else {}
+    handoff = raw.get('handoff') if isinstance(raw.get('handoff'), dict) else {}
+    exit_state = raw.get('exit_state') if isinstance(raw.get('exit_state'), dict) else {}
+    parts = []
+    if raw:
+        parts.append('最近保存的对端回包（不代替当前停止证明）')
+    if error:
+        parts.append('原始错误=' + str(error.get('code') or '未提供错误码') + ': ' + str(error.get('message') or '未提供原因'))
+    for path, value in [('error.details.original_execution_failure', details.get('original_execution_failure')),
+                        ('handoff.original_execution_failure', handoff.get('original_execution_failure'))]:
+        if isinstance(value, dict):
+            parts.append(path + '=' + str(value.get('code') or '') + ': ' + str(value.get('message') or ''))
+    facts = []
+    for path, value in [('result', result), ('exit_state', exit_state)]:
+        for key in ('navigation_stopped', 'policy_stopped', 'publisher_stopped', 'body_stopped',
+                    'hands_stopped', 'hold_verified', 'resources_released', 'business_outcome'):
+            if key in value:
+                facts.append(path + '.' + key + '=' + json.dumps(value[key], ensure_ascii=False))
+    completion = raw.get('completion')
+    if isinstance(completion, dict) and 'status' in completion:
+        facts.append('completion.status=' + str(completion['status']))
+    if facts:
+        parts.append('对端分别报告：' + ' '.join(facts))
+    if diagnostic.get('identity_ok') is False or diagnostic.get('time_ok') is False:
+        parts.append('回包身份或时间核验未通过，不据此确认动作结果')
+    if 'resources_cleared' in diagnostic:
+        parts.append('Runtime resources_cleared=' + json.dumps(diagnostic['resources_cleared']))
+    return parts
+
+
 def format_process_event(record):
     """One bilingual block for the process log. Empty means archive only."""
     kind, event = record.get('kind'), record.get('event')
@@ -393,6 +438,38 @@ def format_process_event(record):
                    'queued': '异常建议后台繁忙，保留最新待分析状态；任务推进不等待',
                    'completed': '异常建议已更新',
                    'discarded': '任务状态已变化，丢弃迟到异常建议'}.get(event, '后台异常建议')
+    elif kind == 'MODEL':
+        message = {'started': '模型调用开始', 'completed': '模型调用完成',
+                   'failed': '模型调用失败', 'profiling': '模型诊断统计'}.get(event, '模型调用记录')
+        if record.get('purpose'):
+            message += '：' + str(record['purpose'])
+    elif kind == 'HTTP':
+        message = {'started': '下游 HTTP 请求开始', 'completed': '下游 HTTP 请求完成或通信恢复',
+                   'failed': '下游 HTTP 请求异常'}.get(event, '下游 HTTP 记录')
+        message += '（通信结果与动作结果分别核对）'
+    elif kind == 'WORKER':
+        message = {'waiting': '仍在等待后台作业', 'queue_full': '后台工作队列已满',
+                   'failed': '后台作业失败', 'cancelled': '后台作业已取消'}.get(event, '后台作业记录')
+    elif kind == 'DIAGNOSTIC':
+        message = '程序异常诊断' if event == 'exception' else '进程诊断'
+        if record.get('component'):
+            message += '：' + str(record['component'])
+    elif kind == 'MEDIA':
+        message = '现场证据采集未提交' if event == 'capture_skipped' else '现场证据采集记录'
+    elif kind == 'GATEWAY':
+        message = {
+            'selection_intent_saved': '已保存选源意图，准备调用网关',
+            'selection_unconfirmed': '选源提交结果未知，只查询原请求',
+            'receipt_observed': '选源原请求回执已更新，按回包状态核对',
+            'query_error': '选源原请求查询异常',
+            'query_timeout': '选源原请求查询超时，结果仍未确认',
+            'identity_mismatch': '选源回执身份不匹配，不采用该结果',
+            'source_reused': '当前接收源符合要求，本次未发送选源请求',
+            'selection_verified': '已核对当前接收源生效，不代表机器人已停止',
+            'receiver_changed': '接收器实例已变化，保留旧请求未知结果',
+            'cleanup_superseded': '旧任务收尾已过期，不再发送取消或全关',
+            'cleanup_observed': '任务取消收尾观察：选源全关与执行端停止分别记录',
+        }.get(event, '接收源诊断')
     elif kind == 'TASK' and event in EVENTS:
         message = EVENTS[event]
         if event in {'task_opened', 'task_restored'}:
@@ -509,7 +586,7 @@ def format_process_event(record):
                   or diagnostic.get('error') or advice.get('error')
                   or record.get('ok') is False or record.get('state') == 'failed'
                   or (kind == 'PREFLIGHT' and record.get('ready') is False))
-    level = 'ERROR' if failed else 'INFO'
+    level = record.get('level') or ('ERROR' if failed else 'INFO')
     shown_task = task if event in {'task_opened', 'task_restored'} else task[:8]
     meta = []
     if shown_task:
@@ -528,6 +605,11 @@ def format_process_event(record):
     if command:
         meta.append(f'cmd={command}')
     detail = ['  ' + ' '.join(meta)] if meta else []
+    if event in {'vla_terminal_observed', 'vla_effect_observed', 'task_restored',
+                 'vla_completion_unconfirmed', 'execution_error', 'unconfirmed', 'submission_rejected'}:
+        detail.extend('  ' + part for part in _receipt_summary(diagnostic))
+    if diagnostic.get('observation_error'):
+        detail.append('  查询异常=' + str(diagnostic['observation_error']))
     for error in (diagnostic.get('error'), advice.get('error')):
         if error:
             detail.append('  error=' + _raw_value(error))
@@ -538,7 +620,11 @@ def format_process_event(record):
             'state', 'backend', 'revision', 'environment_revision', 'release_id', 'step_id',
             'command_id', 'cmd', 'attempt_id', 'blocked_reason', 'advice_action', 'task_desc', 'step_count',
             'diagnostic', 'recovery_advice', 'method', 'path', 'plan_steps', 'phase_labels',
-            'next_step_id', 'handoff_reason', 'handoff_confirmed', 'skipped_steps'}
+            'next_step_id', 'handoff_reason', 'handoff_confirmed', 'skipped_steps',
+            'log_schema_version', 'service_instance_id', 'code_revision', 'pid', 'service', 'level'}
+    used.update({'code_dirty', '_process_already_logged'})
+    if kind == 'MODEL':
+        used.add('purpose')
     if kind == 'INBOUND':
         used.update({'text', 'intent', 'risk'})
         for flag in ('force_new', 'resume'):

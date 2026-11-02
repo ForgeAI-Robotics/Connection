@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQPlanner 控制面板</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=20">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=21">
 </head>
 <body>
   <div class="app">
@@ -73,11 +73,26 @@
           <div id="log-pin" class="log-pin" role="status" hidden></div>
           <div id="log" tabindex="0" aria-label="运行日志">选择服务查看运行日志。</div>
         </div>
+        <details class="execution-details" id="diagnostic-search">
+          <summary>按任务查历史诊断</summary>
+          <p class="hint">查询本机已保存的跨日、跨重启记录；结果不代表当前任务或机器人状态。远端未导入的日志会列为缺失。</p>
+          <form id="diagnostic-form">
+            <label>任务 ID <input id="diagnostic-task" name="task_id" maxlength="128" autocomplete="off"></label>
+            <label>命令 ID <input id="diagnostic-command" name="command_id" maxlength="128" autocomplete="off"></label>
+            <label>选源请求 ID <input id="diagnostic-request" name="request_id" maxlength="128" autocomplete="off"></label>
+            <label>开始日期 <input id="diagnostic-from" name="date_from" type="date"></label>
+            <label>结束日期 <input id="diagnostic-to" name="date_to" type="date"></label>
+            <button type="submit" id="diagnostic-submit">查询</button>
+            <button type="button" id="diagnostic-export" disabled>导出本次结果</button>
+          </form>
+          <p id="diagnostic-status" role="status" aria-live="polite"></p>
+          <pre id="diagnostic-results" style="max-height:400px;overflow:auto;white-space:pre-wrap"></pre>
+        </details>
       </section>
     </div>
   </div>
   <script id="initial-services" type="application/json">{{ bootstrap|tojson }}</script>
-  <script src="{{ url_for('static', filename='panel.js') }}?v=23"></script>
+  <script src="{{ url_for('static', filename='panel.js') }}?v=24"></script>
   <script src="{{ url_for('static', filename='execution.js') }}?v=4"></script>
 </body>
 </html>

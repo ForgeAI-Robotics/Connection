@@ -1,12 +1,15 @@
 """Brain HTTP application factory. No web templates or import-time services."""
 import json
 import re
+import time
+import uuid
 import psutil
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from flask_cors import CORS
 from shared.brain_journal import emit as journal_emit, inbound_from_flask
 from contracts.intent import Intent, classify_task
 from brain.api.facade import HttpFacade
+from shared.diagnostic_context import diagnostic_context, diagnostic_event, report_exception
 _TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
@@ -19,6 +22,58 @@ def create_app(application, *, facade=None):
     register_body_control(app, application)
     from shared.quiet_http_log import install_poll_diagnostics
     install_poll_diagnostics(app)
+
+    @app.before_request
+    def bind_diagnostic_request():
+        body = request.get_json(silent=True) if request.is_json else None
+        body = body if isinstance(body, dict) else {}
+        known = {}
+        for key in ('task_id', 'command_id', 'step_id'):
+            value = body.get(key)
+            known[key] = value if isinstance(value, str) and _TASK_ID_PATTERN.fullmatch(value) else None
+        if request.path == '/publish_task':
+            from contracts.task_control import control_action
+            task = body.get('task')
+            if isinstance(task, list) and len(task) == 1:
+                task = task[0]
+            if isinstance(task, str) and control_action(task.strip()):
+                # publish_task's submitted task_id is not a control target.
+                target = body.get('target_task_id')
+                known['task_id'] = target if isinstance(target, str) and _TASK_ID_PATTERN.fullmatch(target) else None
+        context = diagnostic_context(replace=True, trace_id=uuid.uuid4().hex, call_id=None,
+                                     attempt_id=None, control_id=None, job_id=None, **known)
+        context.__enter__()
+        g.brain_diagnostic_context = context
+        g.brain_request_started = time.monotonic()
+        # Read-only successful heartbeat traffic stays silent. Individual writes
+        # are recorded without bodies, headers, user text or credentials.
+        if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+            diagnostic_event('REQUEST', 'started', component='brain.api',
+                method=request.method, path=request.path, _human_suppressed=True)
+
+    @app.after_request
+    def finish_diagnostic_request(response):
+        if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+            body = response.get_json(silent=True) if response.is_json else None
+            body = body if isinstance(body, dict) else {}
+            details = {'component': 'brain.api', 'method': request.method, 'path': request.path,
+                       'http_status': response.status_code,
+                       'duration_s': round(time.monotonic() - getattr(g, 'brain_request_started', time.monotonic()), 6),
+                       'accepted': body.get('accepted'), '_human_suppressed': response.status_code < 400}
+            returned = body.get('task_id')
+            if isinstance(returned, str) and _TASK_ID_PATTERN.fullmatch(returned):
+                details['task_id'] = returned
+            diagnostic_event('REQUEST', 'completed', **details)
+        return response
+
+    @app.teardown_request
+    def clear_diagnostic_request(error):
+        if error is not None:
+            report_exception(error, component='brain.api', method=request.method, path=request.path)
+        context = getattr(g, 'brain_diagnostic_context', None)
+        if context is not None:
+            context.__exit__(None, None, None)
+            g.brain_diagnostic_context = None
 
     def _validated_task_id(value):
         if value is None:

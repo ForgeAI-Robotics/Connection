@@ -1,0 +1,23 @@
+{
+  "log_schema_version": 1,
+  "event_id": "synthetic-event-3",
+  "time": "2026-11-02T04:00:03+00:00",
+  "monotonic_ns": 4000000000,
+  "service": "gateway",
+  "component": "source_gate",
+  "level": "INFO",
+  "service_instance_id": "synthetic-gateway-instance",
+  "code_revision": "unknown",
+  "host": "synthetic-nx",
+  "boot_id": "synthetic-boot",
+  "pid": 123,
+  "call_id": "synthetic-http-call",
+  "request_id": "synthetic-select-001",
+  "event": "http_response",
+  "http_status": 202,
+  "receipt": {
+    "request_id": "synthetic-select-001",
+    "state": "unknown",
+    "error_code": "QUERY_ORIGINAL_REQUEST"
+  }
+}

@@ -1,0 +1,172 @@
+{
+  "synthetic": true,
+  "source": "offline fake driver; no robot I/O",
+  "scenario": "running failure followed by unconfirmed body stop",
+  "http_status": 200,
+  "body": {
+    "accepted_at": "2026-11-02T13:56:03.600+08:00",
+    "command_id": "open-1",
+    "completed_at": "2026-11-02T13:56:03.714+08:00",
+    "completion": {},
+    "contract_version": "fq/reception-lan/v1",
+    "error": {
+      "code": "EXECUTION_STOP_UNCONFIRMED",
+      "details": {
+        "action_started": true,
+        "action_state_uncertain": true,
+        "business_outcome": "unverified",
+        "execution_boundary": {
+          "blockers": [
+            "SONIC_STREAM_DISABLED"
+          ],
+          "stage": "running_stream_control"
+        },
+        "exit_state": {
+          "action_port_released": null,
+          "action_started": true,
+          "body_stopped": false,
+          "business_outcome": "unverified",
+          "evidence": null,
+          "hands_stopped": true,
+          "hold_verified": false,
+          "holding": null,
+          "holding_known": false,
+          "output_fenced": true,
+          "policy_stopped": true,
+          "publisher_stopped": true,
+          "runtime": {
+            "body_stopped": false,
+            "hands_stopped": true,
+            "hold_verified": false,
+            "output_fenced": true,
+            "policy_stopped": true,
+            "publisher_stopped": true
+          },
+          "scene_state_uncertain": true
+        },
+        "holding_unknown": true,
+        "original_execution_failure": {
+          "code": "SONIC_STREAM_CONTROL_LOST",
+          "execution_boundary": {
+            "blockers": [
+              "SONIC_STREAM_DISABLED"
+            ],
+            "stage": "running_stream_control"
+          },
+          "message": "Synthetic sample: stream disabled during running"
+        },
+        "policy_stopped": true,
+        "scene_state_uncertain": true
+      },
+      "message": "source or receiver exit evidence incomplete",
+      "retryable": false
+    },
+    "evidence_level": "external_confirmation_required",
+    "execution_mode": "direct",
+    "execution_ready_at": "2026-11-02T05:56:03.605813+00:00",
+    "exit_state": {
+      "action_port_released": null,
+      "action_started": true,
+      "body_stopped": false,
+      "business_outcome": "unverified",
+      "evidence": null,
+      "hands_stopped": true,
+      "hold_verified": false,
+      "holding": null,
+      "holding_known": false,
+      "output_fenced": true,
+      "policy_stopped": true,
+      "publisher_stopped": true,
+      "runtime": {
+        "body_stopped": false,
+        "hands_stopped": true,
+        "hold_verified": false,
+        "output_fenced": true,
+        "policy_stopped": true,
+        "publisher_stopped": true
+      },
+      "scene_state_uncertain": true
+    },
+    "finish_requested": false,
+    "handoff": {
+      "execution": {
+        "direct": true
+      },
+      "execution_mode": "direct",
+      "original_execution_failure": {
+        "code": "SONIC_STREAM_CONTROL_LOST",
+        "execution_boundary": {
+          "blockers": [
+            "SONIC_STREAM_DISABLED"
+          ],
+          "stage": "running_stream_control"
+        },
+        "message": "Synthetic sample: stream disabled during running"
+      }
+    },
+    "object_id": "fridge_1",
+    "observed_at": "2026-11-02T13:56:03.716+08:00",
+    "operation": "open_fridge",
+    "pause_requested": false,
+    "photo_verification_enabled": false,
+    "progress": {
+      "message": "source or receiver exit evidence incomplete",
+      "phase": "failed"
+    },
+    "request_digest": "e21009bca6802a200a3f8dbab5ef974fd09f4a0abb6edc9f4cf57cef6effb366",
+    "result": {
+      "action_started": true,
+      "body_stopped": false,
+      "business_outcome": "unverified",
+      "confidence": null,
+      "execution_boundary": {
+        "blockers": [
+          "SONIC_STREAM_DISABLED"
+        ],
+        "stage": "running_stream_control"
+      },
+      "execution_mode": "direct",
+      "exit_state": {
+        "action_port_released": null,
+        "action_started": true,
+        "body_stopped": false,
+        "business_outcome": "unverified",
+        "evidence": null,
+        "hands_stopped": true,
+        "hold_verified": false,
+        "holding": null,
+        "holding_known": false,
+        "output_fenced": true,
+        "policy_stopped": true,
+        "publisher_stopped": true,
+        "runtime": {
+          "body_stopped": false,
+          "hands_stopped": true,
+          "hold_verified": false,
+          "output_fenced": true,
+          "policy_stopped": true,
+          "publisher_stopped": true
+        },
+        "scene_state_uncertain": true
+      },
+      "hands_stopped": true,
+      "hold_verified": false,
+      "holding": null,
+      "holding_unknown": true,
+      "message": "source or receiver exit evidence incomplete",
+      "object_grasped": null,
+      "object_id": "fridge_1",
+      "policy_stopped": true,
+      "released": false,
+      "scene_state_uncertain": true,
+      "success": false
+    },
+    "started_at": "2026-11-02T13:56:03.604+08:00",
+    "state": "failed",
+    "stop_requested": false,
+    "stop_requests": {},
+    "target_area": "fridge_area",
+    "task_id": "business-1",
+    "verification_ready_at": null
+  }
+}

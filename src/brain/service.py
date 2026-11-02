@@ -9,6 +9,7 @@ from contracts.tasks import Rejected
 from brain.adapters.ports import select_backend, target_identity
 from brain.storage.tasks import load_existing
 from brain.service_support import runtime_dir, control_task
+from shared.diagnostic_context import diagnostic_context, task_fields, report_exception
 
 
 _ADMISSION = threading.RLock()
@@ -81,6 +82,10 @@ class BrainService:
         return self._response(runtime)
 
     def _plan_task(self, runtime, options):
+        with diagnostic_context(**task_fields(runtime.record)):
+            return self._plan_task_with_context(runtime, options)
+
+    def _plan_task_with_context(self, runtime, options):
         from contracts.planning import Plan
         from brain.reasoning import selection
         from brain.packages.registry import match_name
@@ -322,6 +327,10 @@ class BrainService:
         self._advise(runtime)
 
     def _drive(self, runtime):
+        with diagnostic_context(**task_fields(runtime.record)):
+            return self._drive_with_context(runtime)
+
+    def _drive_with_context(self, runtime):
         while not runtime.planning_done.wait(.1):
             try:
                 state = runtime.public_status()
@@ -339,6 +348,9 @@ class BrainService:
                 runtime.await_vla_completion()
                 runtime.drive()
             except Exception as exc:
+                # Keep the programming/transport traceback before the business
+                # state records its conservative string-only failure reason.
+                report_exception(exc, component='brain.runtime', **task_fields(runtime.record))
                 try:
                     runtime.fail_closed(str(exc))
                 except Rejected:

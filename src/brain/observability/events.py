@@ -1,4 +1,34 @@
+from copy import deepcopy
+
 from shared.brain_journal import emit as journal_emit
+
+
+def _diagnostic(record, attempt):
+    """Project saved evidence without resolving conflicts or inferring a stop."""
+    diagnostic = {key: deepcopy(record[key]) for key in (
+        'open_command_id', 'command_unknown', 'stopped_confirmed', 'resources_cleared') if key in record}
+    progress = attempt.get('progress') or {}
+    evidence = progress.get('evidence') or {}
+    if progress.get('error'):
+        diagnostic['error'] = progress['error']
+    for key in ('attempt_id', 'command_id', 'outcome', 'verdict', 'evidence_ref'):
+        if key in attempt:
+            diagnostic[key] = deepcopy(attempt[key])
+    raw = evidence.get('downstream')
+    if isinstance(raw, dict):
+        # Keep original JSON paths: similarly named instance/time/stop fields
+        # from different components are not interchangeable.
+        diagnostic['downstream'] = deepcopy(raw)
+        diagnostic['receipt_scope'] = 'last_saved_command_observation'
+        for key in ('identity_ok', 'time_ok', 'effect_verified', 'supports'):
+            if key in evidence:
+                diagnostic[key] = deepcopy(evidence[key])
+    confirmation = record.get('vla_confirmation') or {}
+    if confirmation.get('observation_error'):
+        diagnostic['observation_error'] = confirmation['observation_error']
+    if attempt.get('vla_query_error') and confirmation.get('observation_error'):
+        diagnostic['query_error_receipt'] = deepcopy(attempt['vla_query_error'])
+    return diagnostic
 
 
 def _plan_steps(record):
@@ -61,18 +91,11 @@ def emit(event, record, **details):
     attempts = (record.get('steps', {}).get(phase) or {}).get('attempts') or []
     attempt = attempts[-1] if attempts else {}
     abnormal = (record.get('blocked_reason') or record.get('state') in
-                {'waiting_human', 'recovery_required', 'failed'} or details.get('error'))
+                {'waiting_human', 'recovery_required', 'failed'} or details.get('error')
+                or event in {'task_cancelled', 'vla_effect_observed', 'task_restored'})
     diagnostic = None
     if abnormal:
-        # Keep absent values absent, and actual null/false values intact.
-        diagnostic = {key: record[key] for key in (
-            'open_command_id', 'command_unknown', 'resources_cleared') if key in record}
-        progress = attempt.get('progress') or {}
-        if progress.get('error'):
-            diagnostic['error'] = progress['error']
-        for key in ('attempt_id', 'command_id', 'outcome', 'verdict', 'evidence_ref'):
-            if key in attempt:
-                diagnostic[key] = attempt[key]
+        diagnostic = _diagnostic(record, attempt)
     advice = record.get('recovery_advice') if event in {'recovery_advised', 'task_restored'} else None
     return journal_emit('TASK', event=event, task_id=record.get('task_id'), inherit_task=False,
         step_id=phase, attempt_id=attempt.get('attempt_id'),

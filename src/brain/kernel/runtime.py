@@ -1018,8 +1018,11 @@ class TaskRuntime:
                     self._save('vla_effect_intent')
             revision = self.record.get('revision')
         try:
-            viewed = self.port.effect_control(sent_action, command_id, request,
-                                              evidence=evidence, authorization=authorization)
+            from shared.diagnostic_context import diagnostic_context
+            with diagnostic_context(task_id=contract.task_id, step_id=contract.step_id,
+                                    attempt_id=contract.attempt_id, command_id=command_id):
+                viewed = self.port.effect_control(sent_action, command_id, request,
+                                                 evidence=evidence, authorization=authorization)
             progress = self.runner._progress(contract, viewed)
         except Exception as exc:
             # Keep the durable intent if a POST may have been received. Explicit validation
@@ -1083,10 +1086,17 @@ class TaskRuntime:
             contract = self._contract(step, attempt['attempt_id'], command_id, deepcopy(attempt['request']))
             revision = self.record['revision']
         try:
-            viewed = self.port.query(command_id, contract.request)
+            from shared.diagnostic_context import diagnostic_context
+            with diagnostic_context(task_id=contract.task_id, step_id=contract.step_id,
+                                    attempt_id=contract.attempt_id, command_id=command_id):
+                viewed = self.port.query(command_id, contract.request)
             if not isinstance(viewed, dict):
                 viewed = {'error': 'VLA 原命令回包无效'}
         except Exception as exc:
+            if confirmation.get('observation_error') != str(exc):
+                from shared.diagnostic_context import report_exception
+                report_exception(exc, component='runtime.vla_observation', task_id=contract.task_id,
+                                 step_id=contract.step_id, attempt_id=contract.attempt_id, command_id=command_id)
             viewed = {'error': str(exc)}
         progress = self.runner._progress(contract, viewed)
         valid = (viewed.get('command_id') == command_id and not progress.timed_out
@@ -1098,9 +1108,11 @@ class TaskRuntime:
                     or self.state != 'waiting_human' or self.record.get('open_command_id') != command_id
                     or self.record.get('control_request') or self.record.get('dispatch_closed')
                     or self.pending_vla_completion()):
+                self._log_discarded_observation(contract, revision, 'task_revision_or_control_changed')
                 return False
             attempt = self._latest(step.step_id)
             if not attempt or attempt.get('attempt_id') != contract.attempt_id:
+                self._log_discarded_observation(contract, revision, 'attempt_changed')
                 return False
             previous = self.record['vla_confirmation']
             if not valid:
@@ -1140,6 +1152,16 @@ class TaskRuntime:
             self._save('vla_terminal_observed' if known else 'vla_status_observed')
             return True
 
+    def _log_discarded_observation(self, contract, revision, reason):
+        try:
+            from shared.brain_journal import emit
+            emit('TASK', event='progress_ignored', inherit_task=False, task_id=contract.task_id,
+                 step_id=contract.step_id, attempt_id=contract.attempt_id, command_id=contract.command_id,
+                 component='runtime', queried_revision=revision, reason=reason,
+                 current_task_id=self.record.get('task_id'), current_revision=self.record.get('revision'))
+        except Exception:
+            pass  # Logging cannot undo the stale-result guard.
+
     def pending_vla_completion(self):
         """Only a persisted human finish intent can authorize automatic progression."""
         step = self._current_step()
@@ -1161,7 +1183,10 @@ class TaskRuntime:
             request = deepcopy(attempt['request'])
             intent = deepcopy(attempt['effect_controls']['finish'])
             contract = self._contract(step, attempt['attempt_id'], command_id, request)
-        viewed = self.port.wait_completion(command_id, request)
+        from shared.diagnostic_context import diagnostic_context
+        with diagnostic_context(task_id=contract.task_id, step_id=contract.step_id,
+                                attempt_id=contract.attempt_id, command_id=command_id):
+            viewed = self.port.wait_completion(command_id, request)
         progress = self.runner._progress(contract, viewed)
         with self._exclusive():
             self._reload_locked()

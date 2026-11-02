@@ -21,6 +21,17 @@ from brain.storage.tasks import load_existing
 from contracts.body_control import ControlError
 from contracts.vla import NATIVE_OPERATIONS
 from contracts.vla_direct import business_request
+from shared.diagnostic_context import diagnostic_context, context_fields
+
+
+def _diagnose(event, **fields):
+    """Diagnostics may fail; the control intent/receipt store must not."""
+    try:
+        from shared.brain_journal import emit
+        emit('GATEWAY', event=event, inherit_task=False,
+             task_id=context_fields().get('task_id'), component='source_gate', **fields)
+    except Exception:
+        pass  # The diagnostic sink reports its own health; never change control.
 
 
 class SourceGateControl:
@@ -111,16 +122,49 @@ class SourceGateControl:
         return bool(self._read()['commands'].get(self._key(request), {}).get('submitted'))
 
     def _observe_operation(self, key, *, first=None):
-        op = self._read()['operations'][key]
+        gate = self._read()
+        op = gate['operations'][key]
+        identity = dict(task_id=None, command_id=None, step_id=None, attempt_id=None, request_id=op['request']['request_id'])
+        saved = op.get('diagnostic_identity')
+        if isinstance(saved, dict):
+            identity.update({k: saved.get(k) for k in ('task_id', 'command_id', 'step_id', 'attempt_id')})
+        elif key.startswith('cancel:'):
+            identity['task_id'] = key[len('cancel:'):]
+        else:
+            # Legacy operations may predate the diagnostic association. Only
+            # recover identity from the matching stored command, never a new task.
+            for row in gate['commands'].values():
+                request = row.get('request') or {}
+                if request.get('body') and key in {'nav:' + self._key(request), 'vla:' + self._key(request)}:
+                    identity.update(task_id=request['body'].get('task_id'), command_id=request['body'].get('command_id'))
+                    break
+        with diagnostic_context(**identity):
+            return self._observe_operation_receipt(op, key, first=first)
+
+    def _observe_operation_receipt(self, op, key, *, first=None):
         body = op['request']
         deadline = time.monotonic() + self.timeout
+        started = time.monotonic()
+        last_signature, last_error, polls = None, None, 0
         while True:
             try:
+                polls += 1
                 result = first if first is not None else self.client.query(body['request_id'])
                 first = None
                 self._update(lambda g: g['operations'][key].update(receipt=deepcopy(result)))
+                signature = {k: result.get(k) for k in ('state', 'source', 'receiver_instance_id',
+                    'revision', 'effective_source', 'changed', 'error')}
+                if signature != last_signature or last_error:
+                    _diagnose('receipt_observed', request_id=body['request_id'],
+                        requested_source=body['source'], expected_receiver_instance_id=body['receiver_instance_id'],
+                        receipt=deepcopy(result), state=result.get('state'),
+                        duration_s=round(time.monotonic()-started, 3), query_count=polls,
+                        query_recovered=bool(last_error))
+                    last_signature, last_error = deepcopy(signature), None
                 if (result.get('request_id') != body['request_id'] or result.get('source') != body['source']
                         or result.get('receiver_instance_id') != body['receiver_instance_id']):
+                    _diagnose('identity_mismatch', request_id=body['request_id'], receipt=deepcopy(result),
+                              expected_request=deepcopy(body), level='ERROR')
                     raise ControlError('SOURCE_GATE_IDENTITY', '选源回执身份不匹配')
                 if result.get('state') == 'applied':
                     if (result.get('effective_source') != body['source']
@@ -133,7 +177,13 @@ class SourceGateControl:
                     raise ControlError('SOURCE_GATE_REJECTED', 'SONIC 未应用选源', details=result)
             except HttpContractError as exc:
                 self._update(lambda g: g['operations'][key].update(error=str(exc)))
+                if last_error != str(exc):
+                    _diagnose('query_error', request_id=body['request_id'], error=str(exc),
+                              state='unknown', level='ERROR', query_count=polls)
+                    last_error = str(exc)
             if time.monotonic() >= deadline:
+                _diagnose('query_timeout', request_id=body['request_id'], state='unknown',
+                          level='ERROR', duration_s=round(time.monotonic()-started, 3), query_count=polls)
                 raise ControlError('SOURCE_GATE_UNKNOWN', '选源结果未确认；保留原 request_id，仅查询不重发')
             time.sleep(self.poll)
 
@@ -145,6 +195,12 @@ class SourceGateControl:
                 continue
             if op['request']['receiver_instance_id'] != current['receiver_instance_id']:
                 self._update(lambda g: g['operations'][previous_key].update(retired_receiver=True))
+                saved = op.get('diagnostic_identity') or {}
+                with diagnostic_context(task_id=saved.get('task_id'), command_id=saved.get('command_id'),
+                                        step_id=saved.get('step_id'), attempt_id=saved.get('attempt_id')):
+                    _diagnose('receiver_changed', request_id=op['request']['request_id'],
+                              old_receiver_instance_id=op['request']['receiver_instance_id'],
+                              receiver_instance_id=current['receiver_instance_id'], state='unknown')
                 continue  # Preserve the unknown old receipt; never replay into the new receiver.
             self._observe_operation(previous_key)
         current = self.client.current()
@@ -160,14 +216,22 @@ class SourceGateControl:
                 raise ControlError('SOURCE_GATE_CHANGED', '原选源结果不代表当前状态；未重放旧操作')
             return current
         if current['effective_source'] == source:
+            _diagnose('source_reused', requested_source=source, observation=deepcopy(current),
+                      request_sent=False)
             return current  # Same source: no PUT, no reset, no reconnect.
         body = dict(request_id=uuid.uuid4().hex, source=source,
                     receiver_instance_id=current['receiver_instance_id'])
-        self._update(lambda g: g['operations'].__setitem__(key, dict(request=body, resolved=False)))
+        identity = {k: context_fields().get(k) for k in ('task_id', 'command_id', 'step_id', 'attempt_id')}
+        self._update(lambda g: g['operations'].__setitem__(key,
+            dict(request=body, resolved=False, diagnostic_identity=identity)))
+        _diagnose('selection_intent_saved', request_id=body['request_id'],
+                  requested_source=source, receiver_instance_id=body['receiver_instance_id'])
         try:
             first = self.client.set(body)
         except HttpContractError as exc:
             self._update(lambda g: g['operations'][key].update(error=str(exc)))
+            _diagnose('selection_unconfirmed', request_id=body['request_id'], error=str(exc),
+                      state='unknown', level='ERROR')
             first = None
         receipt = self._observe_operation(key, first=first)
         current = self.client.current()
@@ -176,6 +240,9 @@ class SourceGateControl:
                 or current['pending_requests']):
             raise ControlError('SOURCE_GATE_CHANGED', '选源回执之后 SONIC 状态已变化')
         self._update(lambda g: g.update(observation=deepcopy(current)))
+        _diagnose('selection_verified', request_id=body['request_id'], requested_source=source,
+                  receiver_instance_id=current['receiver_instance_id'], receiver_revision=current['revision'],
+                  state='applied', physical_stop_verified=False)
         return current
 
     def submit_navigation(self, dream, request):
@@ -193,7 +260,7 @@ class SourceGateControl:
         query = client.command if source == 'navigation' else client.task
         wire = request['body'] if source == 'navigation' else business_request(request['body'])
         endpoint = self.config['reception_real']['dream_base_url' if source == 'navigation' else 'vla_base_url']
-        with self._lock:
+        with diagnostic_context(task_id=request['body']['task_id'], command_id=request['body']['command_id']), self._lock:
             with self.store.writer():
                 self._eligible(request)
             previous = self._read()['commands'].get(key)
@@ -263,7 +330,7 @@ class SourceGateControl:
         return self.recovery_status()
 
     def _cleanup(self, task_id):
-        with self._lock:
+        with diagnostic_context(task_id=task_id, command_id=None, step_id=None, attempt_id=None), self._lock:
             # A queued or explicitly rechecked old cleanup must never cancel or
             # close inputs after another task has taken over. This shares the
             # submit lock, so an already-running cleanup finishes before a new
@@ -271,6 +338,7 @@ class SourceGateControl:
             record = load_existing(self.root) or {}
             if record.get('task_id') != task_id or record.get('state') != 'cancelled':
                 self._update(lambda g: g['tasks'][task_id].update(cleanup_superseded=True))
+                _diagnose('cleanup_superseded', state='superseded')
                 return
             real = self.config['reception_real']
             dream = DreamClient(real['dream_base_url'], contract_version=real.get('contract_version', 'fq/reception-lan/v1'),
@@ -316,6 +384,10 @@ class SourceGateControl:
                 navigation_not_submitted='navigation' not in seen_sources,
                 vla_not_submitted='vla' not in seen_sources,
                 error='；'.join(errors) or ('' if stopped else '原执行命令停止结果未确认')))
+            _diagnose('cleanup_observed', gate_closed=closed, source_stop_observations=source_stops,
+                      sources_seen=sorted(seen_sources), error='；'.join(errors) or None,
+                      state='completed' if closed and stopped else 'unconfirmed',
+                      level='INFO' if closed and stopped else 'WARNING')
 
     def request_cleanup(self, task_id, expected_lease_id, *, new_exit_check=False):
         if expected_lease_id != task_id or task_id not in self._read()['tasks']:

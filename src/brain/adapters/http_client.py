@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import http.client
 import socket
 import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
+import threading
+import time
+import uuid
+from collections import OrderedDict
 from shared.service_credentials import service_token
+from shared.diagnostic_context import context_fields, diagnostic_context, diagnostic_event
 
 
 class HttpContractError(RuntimeError):
@@ -28,6 +34,8 @@ class HttpClient:
         self.contract_version = str(contract_version or "").strip()
         self.auth_token_env = None  # Optional joint-control service credential, never the token itself.
         self.ssl_context = ssl.create_default_context(cafile=ca_file) if ca_file else None
+        self._diagnostic_polls = OrderedDict()
+        self._diagnostic_lock = threading.Lock()
 
     def url(self, path):
         value = str(path)
@@ -36,6 +44,48 @@ class HttpClient:
         return urllib.parse.urljoin(self.base_url + "/", value.lstrip("/"))
 
     def request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None):
+        started = time.monotonic()
+        write = str(method).upper() not in {'GET', 'HEAD'}
+        identity = {key: payload[key] for key in ('task_id', 'command_id', 'request_id')
+                    if isinstance(payload, dict) and isinstance(payload.get(key), str)}
+        parent = context_fields().get('call_id')
+        with diagnostic_context(call_id=uuid.uuid4().hex, parent_call_id=parent, **identity):
+            details = {'component': 'brain.http', 'method': str(method).upper(),
+                       'endpoint': self.url(path), 'timeout_sec': float(timeout_sec or self.timeout_sec)}
+            if write:
+                diagnostic_event('HTTP', 'started', **details, _human_suppressed=True)
+            try:
+                result = self._request_bytes(method, path, payload, timeout_sec=timeout_sec, headers=headers)
+            except Exception as exc:
+                elapsed = time.monotonic() - started
+                if write or self._poll_diagnostic(path, str(exc)):
+                    diagnostic_event('HTTP', 'failed', **details, duration_s=round(elapsed, 6),
+                        level='ERROR', error=str(exc), exception_type=type(exc).__name__,
+                        http_status=getattr(exc, 'status_code', None))
+                raise
+            elapsed = time.monotonic() - started
+            report = write or self._poll_diagnostic(path, None, slow=elapsed >= 2.)
+            if report:
+                diagnostic_event('HTTP', 'completed', **details, duration_s=round(elapsed, 6),
+                    http_status=result[1], transport_only=True, _human_suppressed=write)
+            return result
+
+    def _poll_diagnostic(self, path, error, *, slow=False):
+        """Bounded failure/recovery and slow-call notices; ordinary GETs stay quiet."""
+        key = hashlib.sha256(str(path).encode('utf-8', 'replace')).hexdigest()
+        signature = hashlib.sha256(error.encode('utf-8', 'replace')).hexdigest() if error is not None else None
+        now = time.monotonic()
+        with self._diagnostic_lock:
+            previous = self._diagnostic_polls.pop(key, None)
+            if error is None and not slow:
+                return previous is not None and previous[0] is not None
+            emit = previous is None or previous[0] != signature or now - previous[1] >= 30.
+            self._diagnostic_polls[key] = (signature, now if emit else previous[1])
+            while len(self._diagnostic_polls) > 128:
+                self._diagnostic_polls.popitem(last=False)
+            return emit
+
+    def _request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None):
         data = None
         headers = dict(headers or {})
         opener = urllib.request.urlopen
