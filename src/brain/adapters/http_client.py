@@ -26,7 +26,8 @@ class HttpContractError(RuntimeError):
 
 
 class HttpClient:
-    def __init__(self, base_url, *, timeout_sec=10.0, contract_version=None, ca_file=None):
+    def __init__(self, base_url, *, timeout_sec=10.0, contract_version=None, ca_file=None,
+                 error_body_in_message=True):
         self.base_url = str(base_url or "").strip().rstrip("/")
         if not self.base_url.startswith(("http://", "https://")):
             raise ValueError(f"无效HTTP服务地址: {base_url!r}")
@@ -34,6 +35,7 @@ class HttpClient:
         self.contract_version = str(contract_version or "").strip()
         self.auth_token_env = None  # Optional joint-control service credential, never the token itself.
         self.ssl_context = ssl.create_default_context(cafile=ca_file) if ca_file else None
+        self.error_body_in_message = bool(error_body_in_message)
         self._diagnostic_polls = OrderedDict()
         self._diagnostic_lock = threading.Lock()
 
@@ -43,7 +45,8 @@ class HttpClient:
             return value
         return urllib.parse.urljoin(self.base_url + "/", value.lstrip("/"))
 
-    def request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None):
+    def request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None,
+                      max_response_bytes=None):
         started = time.monotonic()
         write = str(method).upper() not in {'GET', 'HEAD'}
         identity = {key: payload[key] for key in ('task_id', 'command_id', 'request_id')
@@ -55,7 +58,10 @@ class HttpClient:
             if write:
                 diagnostic_event('HTTP', 'started', **details, _human_suppressed=True)
             try:
-                result = self._request_bytes(method, path, payload, timeout_sec=timeout_sec, headers=headers)
+                options = {'timeout_sec': timeout_sec, 'headers': headers}
+                if max_response_bytes is not None:
+                    options['max_response_bytes'] = max_response_bytes
+                result = self._request_bytes(method, path, payload, **options)
             except Exception as exc:
                 elapsed = time.monotonic() - started
                 if write or self._poll_diagnostic(path, str(exc)):
@@ -85,7 +91,19 @@ class HttpClient:
                 self._diagnostic_polls.popitem(last=False)
             return emit
 
-    def _request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None):
+    def _request_bytes(self, method, path, payload=None, *, timeout_sec=None, headers=None,
+                       max_response_bytes=None):
+        if max_response_bytes is not None and (type(max_response_bytes) is not int or max_response_bytes < 1):
+            raise ValueError('Response byte limit must be a positive integer')
+
+        def read_response(response):
+            raw = response.read() if max_response_bytes is None else response.read(max_response_bytes + 1)
+            if max_response_bytes is not None and len(raw) > max_response_bytes:
+                error = HttpContractError('服务响应超过诊断读取大小上限',
+                    status_code=getattr(response, 'status', getattr(response, 'code', None)))
+                error.diagnostic_code = 'RESPONSE_TOO_LARGE'
+                raise error
+            return raw
         data = None
         headers = dict(headers or {})
         opener = urllib.request.urlopen
@@ -125,34 +143,38 @@ class HttpClient:
                 req, timeout=float(timeout_sec or self.timeout_sec)
             ) as response:
                 return (
-                    response.read(),
+                    read_response(response),
                     int(response.status),
                     {str(k): str(v) for k, v in response.headers.items()},
                 )
         except urllib.error.HTTPError as exc:
-            raw = exc.read()
+            raw = read_response(exc)
             try:
                 detail = json.loads(raw.decode("utf-8"))
             except Exception:
                 detail = raw.decode("utf-8", errors="replace")
             raise HttpContractError(
-                f"HTTP {exc.code} {self.url(path)}: {detail}",
+                (f"HTTP {exc.code} {self.url(path)}: {detail}" if self.error_body_in_message
+                 else f"HTTP {exc.code} {self.url(path)}"),
                 status_code=exc.code,
                 payload=detail,
             ) from exc
         except urllib.error.URLError as exc:
             raise HttpContractError(
-                f"服务不可达 {self.url(path)}: {exc.reason}") from exc
+                f"服务不可达 {self.url(path)}" + (f": {exc.reason}" if self.error_body_in_message else '')) from exc
         except (TimeoutError, ConnectionError, http.client.HTTPException, socket.timeout, OSError) as exc:
             raise HttpContractError(
-                f"HTTP连接状态不确定 {self.url(path)}: {exc}") from exc
+                f"HTTP连接状态不确定 {self.url(path)}" + (f": {exc}" if self.error_body_in_message else '')) from exc
 
     def request_json(
-        self, method, path, payload=None, *, accepted_statuses=(200,), timeout_sec=None, headers=None
+        self, method, path, payload=None, *, accepted_statuses=(200,), timeout_sec=None, headers=None,
+        max_response_bytes=None
     ):
         options = {'timeout_sec': timeout_sec}
         if headers is not None:
             options['headers'] = headers
+        if max_response_bytes is not None:
+            options['max_response_bytes'] = max_response_bytes
         raw, status, headers = self.request_bytes(method, path, payload, **options)
         if status not in set(accepted_statuses):
             raise HttpContractError(

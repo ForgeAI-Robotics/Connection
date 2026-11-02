@@ -1,0 +1,220 @@
+{
+  "schema": "fq/robot-diagnostic-report/v1",
+  "run_id": "diag-synthetic-task-001",
+  "task_id": "synthetic-task-001",
+  "status": "complete",
+  "generated_at": "2026-11-02T08:00:02+00:00",
+  "window": {
+    "requested_start": "2026-11-02T16:00:00+08:00",
+    "requested_end": "2026-11-02T16:00:01+08:00",
+    "recording_start": "2026-11-02T16:00:00+08:00",
+    "recording_end": "2026-11-02T16:00:01+08:00"
+  },
+  "quality": {
+    "scope": "navigation_profile_only",
+    "whole_robot_complete": false,
+    "applicability": "unknown",
+    "navigation_physical": null,
+    "manipulation_physical": null,
+    "recording_enabled": true,
+    "recording_ready": false,
+    "recorder_released": true,
+    "recorder_state": "stopped",
+    "processing_complete": true,
+    "finish_reason": "completed",
+    "required_topics": [
+      "/lidar_odometry/pose_fixed",
+      "/localization/odom_nav",
+      "/g1pilot/navigation_state"
+    ],
+    "optional_topics": [
+      "/g1pilot/navigation_odom",
+      "/localization/global_pose",
+      "/localization/confidence",
+      "/scan",
+      "/tf",
+      "/tf_static",
+      "/joint_states",
+      "/g1pilot/cmd_vel",
+      "/g1pilot/terminal_navigation_state",
+      "/g1pilot/emergency_stop",
+      "/g1pilot/token_adapter_input_status",
+      "/g1pilot/map_localization_status",
+      "/g1pilot/perception_source_status",
+      "/g1pilot/world_scan_status",
+      "/g1pilot/lio_input_status",
+      "/codex_fixed_map/status",
+      "/g1pilot/navigation_diagnostics_status"
+    ],
+    "required_topics_observed": true,
+    "missing_evidence": [],
+    "loss_visibility": "unknown",
+    "topics": {
+      "/lidar_odometry/pose_fixed": {
+        "type": "nav_msgs/msg/Odometry",
+        "messages_observed": 6,
+        "first_record_ns": 1793606400000000000,
+        "last_record_ns": 1793606401000000000,
+        "hz": 5,
+        "max_gap_ms": 200,
+        "p95_gap_ms": 200,
+        "reversed_record_times": 0,
+        "header_samples_decoded": 6,
+        "consecutive_duplicate_header_stamps": 0,
+        "reversed_header_stamps": 0,
+        "max_header_record_age_ms": 0,
+        "header_role": "unverified_source_semantics",
+        "first_offset_sec": 0,
+        "last_offset_sec": 0,
+        "sample_span_ratio": 1,
+        "interval_scope": "recorder_observation_not_consumer_callback"
+      },
+      "/localization/odom_nav": {
+        "type": "nav_msgs/msg/Odometry",
+        "messages_observed": 6,
+        "first_record_ns": 1793606400000000000,
+        "last_record_ns": 1793606401000000000,
+        "hz": 5,
+        "max_gap_ms": 200,
+        "p95_gap_ms": 200,
+        "reversed_record_times": 0,
+        "header_samples_decoded": 6,
+        "consecutive_duplicate_header_stamps": 0,
+        "reversed_header_stamps": 0,
+        "max_header_record_age_ms": 0,
+        "header_role": "unverified_source_semantics",
+        "first_offset_sec": 0,
+        "last_offset_sec": 0,
+        "sample_span_ratio": 1,
+        "interval_scope": "recorder_observation_not_consumer_callback"
+      },
+      "/g1pilot/navigation_state": {
+        "type": "std_msgs/msg/String",
+        "messages_observed": 6,
+        "first_record_ns": 1793606400000000000,
+        "last_record_ns": 1793606401000000000,
+        "hz": 5,
+        "max_gap_ms": 200,
+        "p95_gap_ms": 200,
+        "reversed_record_times": 0,
+        "header_samples_decoded": 0,
+        "consecutive_duplicate_header_stamps": null,
+        "reversed_header_stamps": null,
+        "max_header_record_age_ms": null,
+        "header_role": "unverified_source_semantics",
+        "first_offset_sec": 0,
+        "last_offset_sec": 0,
+        "sample_span_ratio": 1,
+        "interval_scope": "recorder_observation_not_consumer_callback"
+      }
+    },
+    "analysis": {
+      "state": "finished",
+      "budget": {
+        "max_messages": 100,
+        "max_bytes": 100000,
+        "max_seconds": 2
+      },
+      "elapsed_sec": 0.002,
+      "errors": [],
+      "inspected_bytes": 1368,
+      "payload_bytes_observed": 216,
+      "scanned_messages": 18,
+      "metadata_present": true,
+      "missing_required": [],
+      "missing_optional": [
+        "/g1pilot/navigation_odom",
+        "/localization/global_pose",
+        "/localization/confidence",
+        "/scan",
+        "/tf",
+        "/tf_static",
+        "/joint_states",
+        "/g1pilot/cmd_vel",
+        "/g1pilot/terminal_navigation_state",
+        "/g1pilot/emergency_stop",
+        "/g1pilot/token_adapter_input_status",
+        "/g1pilot/map_localization_status",
+        "/g1pilot/perception_source_status",
+        "/g1pilot/world_scan_status",
+        "/g1pilot/lio_input_status",
+        "/codex_fixed_map/status",
+        "/g1pilot/navigation_diagnostics_status"
+      ],
+      "recorder_log_truncated": false,
+      "recorder_loss_warning_lines": 0,
+      "source_gate_matched_events": 0,
+      "source_stamp_semantics": "message_header_only_not_verified_sensor_time",
+      "loss_visibility": "unknown",
+      "stop_reason": null,
+      "truncated": false
+    },
+    "capture": {
+      "cpu_budget_sec_per_record_process": 120,
+      "resource_samples_attempted": 2,
+      "errors": 0,
+      "source_window_gaps": 0,
+      "truncated": false
+    },
+    "archive": {
+      "schema": "g1/diagnostic-archive/v1",
+      "budget": {
+        "max_bytes": 268435456,
+        "max_files": 512,
+        "max_seconds": 3
+      },
+      "elapsed_sec": 0.002,
+      "hashed_bytes": 13658,
+      "truncated": false
+    },
+    "indexed_events": 1,
+    "external_summaries": [
+      {
+        "source": "nav",
+        "event_id": "synthetic-event-001",
+        "command_id": "synthetic-nav-001",
+        "source_instance_id": "synthetic-nav-instance",
+        "at": "2026-11-02T16:00:00+08:00",
+        "verification": "source_declared",
+        "summary": {
+          "code": "CONSUMER_TIMING_AVAILABLE",
+          "assessment": "unknown",
+          "quality_status": "partial",
+          "missing_count": 1,
+          "available": false
+        }
+      }
+    ]
+  },
+  "findings": [],
+  "evidence_refs": [
+    {
+      "evidence_id": "synthetic-event-001",
+      "kind": "external_reference",
+      "source": "nav",
+      "available": false,
+      "reference": "nav:synthetic-nav-001:report"
+    },
+    {
+      "evidence_id": "archive",
+      "kind": "archive_manifest",
+      "source": "gateway",
+      "available": true,
+      "reference": "gateway-run:diag-synthetic-task-001:archive"
+    },
+    {
+      "evidence_id": "rosbag",
+      "kind": "rosbag_session",
+      "source": "gateway",
+      "available": true,
+      "reference": "gateway-run:diag-synthetic-task-001:session"
+    }
+  ],
+  "limitations": [
+    "Diagnostic state is not business or physical state.",
+    "Message counts do not prove lossless recording.",
+    "Header time is not verified sensor time; recorder time is not consumer time.",
+    "Remote references are not downloaded or independently verified."
+  ],
+  "state_authority": false
+}

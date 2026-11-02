@@ -29,6 +29,7 @@ def create_app(*, switch_pool=None):
     import threading
     _SWITCH_GUARD = threading.Lock()
     _DIAGNOSTIC_GUARD = threading.BoundedSemaphore(2)
+    _REPORT_GUARD = threading.BoundedSemaphore(2)
 
 
     @app.get("/api/execution")
@@ -142,6 +143,27 @@ def create_app(*, switch_pool=None):
         response.headers['X-Content-Type-Options'] = 'nosniff'
         if request.path.endswith('/export'):
             response.headers['Content-Disposition'] = 'attachment; filename="brain-diagnostics.json"'
+        return response
+
+
+    @app.get('/api/brain/task_diagnostics')
+    def robot_diagnostic_report():
+        from brain.api.diagnostic_reports import report_query, report_error
+        from ops.diagnostic_reports import task_report
+        try:
+            task_id, refresh = report_query(request.args)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        if not _REPORT_GUARD.acquire(blocking=False):
+            return jsonify(report_error(task_id, 'REPORT_QUERY_BUSY', '诊断摘要查询正在进行，请稍后重试')), 429
+        try:
+            payload, status = task_report(task_id, refresh and request.method == 'GET')
+        finally:
+            _REPORT_GUARD.release()
+        response = jsonify(payload)
+        response.status_code = status
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
         return response
 
 

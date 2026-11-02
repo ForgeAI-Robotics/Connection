@@ -1,6 +1,7 @@
 """Lifecycle owner for one brain process. Entries never instantiate this class."""
 import fcntl
 from functools import partial
+import json
 import os
 from pathlib import Path
 import threading
@@ -55,6 +56,12 @@ class BrainApplication:
                     raise ValueError('body_control requires ' + key)
             self.body_control = BodyControl(self.config, root, ControlDriver(self.config), self.io)
         service.body_control = self.body_control
+        from brain.observability.diagnostic_runs import DiagnosticRuns
+        from brain.adapters.diagnostic_peer_summaries import DiagnosticPeerSummaryReader
+        self.diagnostic_runs = DiagnosticRuns(self.config,
+            control_records=self._diagnostic_control_records
+            if getattr(self.body_control, 'mode', None) == 'source_gate' else None,
+            peer_summary_reader=DiagnosticPeerSummaryReader(self.config))
         factory = service.port_factory
         runtime_factory = service.runtime_factory
 
@@ -83,7 +90,41 @@ class BrainApplication:
         service.refresh_advice = lambda rt: self._submit_runtime(self.owner, service._advise, rt)
         service.reflection = self.learning.enqueue
         self._next_vla_observation = 0.
-        self.owner.on_idle = self._observe_waiting_vla
+        self.owner.on_idle = self._idle
+        self.owner.on_wait_tick = self.diagnostic_runs.tick
+
+    def _diagnostic_control_records(self):
+        """Bounded off-owner identity lookup; never change the control ledger reader."""
+        path = self.body_control.store.path
+        if not path.exists():
+            return None
+        if path.stat().st_size > 8 * 1024 * 1024:
+            raise ValueError('诊断选源索引超过读取预算，原控制账本保持不变')
+        with path.open('rb') as stream:
+            raw = stream.read(8 * 1024 * 1024 + 1)
+        if len(raw) > 8 * 1024 * 1024:
+            raise ValueError('诊断选源索引超过读取预算，原控制账本保持不变')
+        value = json.loads(raw)
+        if not isinstance(value, dict) or not isinstance(value.get('source_gate'), dict):
+            raise ValueError('诊断选源索引结构无效')
+        return value
+
+    def _idle(self):
+        if self._closing or not self._started:
+            return
+        self._diagnostic_call('tick')
+        self._observe_waiting_vla()
+
+    def _diagnostic_call(self, method, *args):
+        target = getattr(self, 'diagnostic_runs', None)
+        call = getattr(target, method, None)
+        if not callable(call):
+            return None
+        try:
+            return call(*args)
+        except Exception as exc:
+            report_exception(exc, component='brain.diagnostic_runs', operation=method)
+            return {'error': 'diagnostic_transport_unavailable'} if method == 'health' else None
 
     @staticmethod
     def _submit_runtime(pool, fn, runtime, *args, **kwargs):
@@ -180,6 +221,7 @@ class BrainApplication:
                 except Exception as exc:
                     emit('control_cleanup_unconfirmed', record, error=str(exc))
         emit(event, record)
+        self._diagnostic_call('event', event, record)
         if (self.config.get("brain") or {}).get("capture_timeline", True):
             self.media.event(event, record)
 
@@ -212,6 +254,7 @@ class BrainApplication:
                 self._started = True
                 if record.get('task_id'):
                     emit('task_restored', record)
+                    self._diagnostic_call('event', 'task_restored', record)
                     if record.get('state') == 'waiting_human' and record.get('vla_confirmation'):
                         self.owner.submit(self._resume_vla_confirmation)
             except Exception:
@@ -307,6 +350,7 @@ class BrainApplication:
                 'workers': [p.health() for p in (self.planner, self.adviser, self.io, self.controls)],
                 'reflection_error': redact(self.learning.last_error),
                 'media': self.media.health() if callable(getattr(self.media, 'health', None)) else {},
+                'diagnostic_runs': self._diagnostic_call('health') or {},
                 'diagnostics': get_journal().health()}
 
     def _checkpoint(self):
@@ -340,6 +384,9 @@ class BrainApplication:
             stopped = pool.close(remaining()) and stopped
         for transport in self.service.transports:
             transport.close(remaining())
+        # Diagnostic transport cannot keep the business lease alive, and close
+        # never sends recorder start/stop or robot controls.
+        self._diagnostic_call('close', remaining())
         if stopped and self._lease is not None:
             if self.body_control is not None:
                 self.body_control.close()

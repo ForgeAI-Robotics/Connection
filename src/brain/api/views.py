@@ -14,6 +14,8 @@ from contracts.intent import classify_entry
 
 
 def register_views(app, application):
+    from brain.api.diagnostic_reports import register_diagnostic_reports
+    register_diagnostic_reports(app, application)
     service = application.service
     root = workspace_root()
     from brain.learning.demo import DemoLearning

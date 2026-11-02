@@ -138,6 +138,10 @@ venv/core/bin/python scripts/execution_mode.py apply --mode real --reset-overrid
 
 大脑工作器配置位于 `config/brain.yaml` 的 `brain`：`queue_limit` 默认 32、`io_workers` 默认 4（最少 2）、`shutdown_timeout_sec` 默认 10、`capture_timeline` 默认 true。规划 1 个工作线程，Runtime 1 个所有者线程，控制 I/O 2 个，反思 1 个；媒体及示教工作器按需启动。关闭超时不会假写“已停止”，原命令保留在账本。`brain.scheduler=legacy` 不再由新启动器动态切回旧执行；回退须停准入、核清任务后切回上一代码版本。
 
+## 整轮诊断与小报告
+
+整轮诊断录制与报告协调位于已有 `brain.yaml` 的 `brain.diagnostics`；公开模板默认关闭，沿用 body_control 的网关 URL／CA／凭据源，不新增第二份地址配置。网关采集还需其独立 recording_enabled 开关。真实任务触发、只读报告、资源预算及本机启用情况统一见[整轮归档与报告服务](../docs/多端联调_大脑日志与跨端诊断.md#rosbag-report-service)，不能以开启诊断代替机器人执行就绪。
+
 ## 网页操控完成确认凭据
 
 网页操作员只需在现场确认动作完成后点击相应按钮，不填写核验凭据。在运行 `entries.web` 的主机私有 `.env` 中配置 `BRAIN_VLA_VERIFIER_TOKEN_FILE=/absolute/private/path/.completion_token`，指向 VLA 实际使用的 completion token 文件；文件须为私有普通文件，不能使用符号链接。`python -m entries.web` 启动时读取工作区 `.env`，已有进程环境优先。网页仅对 finish 转发读取该文件并携带鉴权，文件轮换无需复制 token 到页面；query／pause 不使用此凭据。跨机器部署须由维护方提供受控私有凭据来源，不将真实凭据或本机路径加入公开模板。行为见[大脑一次完成确认](../docs/接口说明_大脑%20Brain.md#81-流程与请求身份)。

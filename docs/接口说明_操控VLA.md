@@ -1,6 +1,6 @@
 # 接口说明：操控 VLA
 
-跨端日志专项见大脑维护的[实施约定](多端联调_大脑日志与跨端诊断.md#alignment-table)与[VLA 交付映射](多端联调_大脑日志与跨端诊断.md#vla-delivery)。2026-11-02 VLA2 报告日志增强及 97 项定向回归通过；未部署，不改变 direct-v1 请求、效果确认或停止核验规则。
+跨端日志专项见大脑维护的[实施约定](多端联调_大脑日志与跨端诊断.md#alignment-table)与[VLA 交付映射](多端联调_大脑日志与跨端诊断.md#vla-delivery)。2026-11-02 VLA2 报告日志增强及 97 项定向回归通过；原有 API 已加载日志提交 1911f8f，后续启停由用户手动操作。应用边界见[主文档](多端联调_大脑日志与跨端诊断.md#deployment-20261102)，不改变 direct-v1 请求、效果确认或停止核验规则。
 
 > **2026-10-28 当前源码：** source_gate 模式新增 VLA direct-v1 接入，见下节；原 unified 模式与带日期的 relay／acquire 记录保留。三个接待按钮分别绑定真实／模拟执行端，不静默回退。大脑源码适配、隔离验证及大脑／网页重载完成，已有真实操控失败回执；后续 VLA／O6 修订按下文注明来源，完整动作验收尚未完成。
 
@@ -31,7 +31,7 @@ VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}
 
 ### 日志对齐中的身份、时间与效果范围（2026-11-02）
 
-来源为 VLA2 对 `e9ce1e4` 及本轮工作区代码的核对；生产实例未核验。诊断只读投影这些字段，不替执行端裁决冲突。
+来源为 VLA2 对 `e9ce1e4` 及本轮日志代码的核对；后续 API 已加载 1911f8f，实际运行与依赖边界见主文档第 11 节。诊断只读投影这些字段，不替执行端裁决冲突。
 
 | 原字段路径 | 含义／边界 |
 | --- | --- |
@@ -47,6 +47,10 @@ VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}
 direct 正常执行异常路径在 handoff.original_execution_failure 保留首因，失败时可投影到 error.details.original_execution_failure；收尾错误可成为顶层 error。服务重启可将未完成任务标为 VLA_SERVICE_RESTARTED 并保留旧 handoff，不能假定所有异常／重启后的首因都固定在 error.details 同一路径。多个路径内容冲突时保留原值和来源，不静默合成停止或成功。
 
 命令和 finish 意图保存在 current_state.json；现有代码没有命令 TTL 清理，也没有固定保存时长保证。新诊断事件有独立轮转边界，不能用事件文件存在代替完整历史。O6 首因匹配沿执行端现有选择规则，不能据本轮日志增强宣称已新增对所有字段的核验。
+
+## 整轮诊断小摘要与归档
+
+2026-11-02 整轮证据提交 `df42387353f406712672cec2e6fdfdf467474874` 在原命令 GET 可选增加 `diagnostic_summary`（`fq/peer-diagnostic-summary/v1`、peer=vla、state_authority=false、最多 16 KiB），仅读预生成缓存。原 task_id／command_id、效果与停止字段不变；归档 pending／partial／缺字段和预算截断不冒充物理结论。原生事件、低频图像、推理时序及哈希索引在 VLA 工作站保留，网关／大脑只收小摘要与引用；不会将 ZMQ／UDP／CAN 数据自动当作 ROS bag 已录。默认预算、测试与用户手动加载边界见[主文档整轮工程](多端联调_大脑日志与跨端诊断.md#rosbag-report-service)。
 
 ## O6 反馈故障首因（兼容新增）
 

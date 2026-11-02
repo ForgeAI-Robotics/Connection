@@ -103,6 +103,13 @@ nav {
 #diagnostic-form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
 #diagnostic-form input { max-width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
 #diagnostic-status { color: var(--muted); }
+#robot-report { flex: 0 0 auto; margin-top: 12px; }
+#robot-report-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 12px 0; }
+#robot-report-form label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+#robot-report-form input { width: 280px; max-width: 100%; padding: 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
+#robot-report pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+#robot-report-findings h4 { margin: 10px 0 4px; }
+#robot-report-status { color: var(--muted); }
 .workspace-head {
   flex: 0 0 auto;
   display: flex;

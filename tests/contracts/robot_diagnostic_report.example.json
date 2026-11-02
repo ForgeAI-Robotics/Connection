@@ -1,0 +1,50 @@
+{
+  "schema": "fq/robot-diagnostic-report/v1",
+  "run_id": "diag-task-001",
+  "task_id": "task-001",
+  "status": "recording_disabled",
+  "generated_at": "2026-11-02T08:00:00+00:00",
+  "window": {
+    "requested_start": "2026-11-02T16:00:00+08:00",
+    "requested_end": null,
+    "recording_start": null,
+    "recording_end": null
+  },
+  "quality": {
+    "recording_enabled": false,
+    "recording_ready": false,
+    "recorder_state": "disabled",
+    "required_topics": [
+      "/lidar_odometry/pose_fixed",
+      "/localization/odom_nav",
+      "/g1pilot/navigation_state"
+    ],
+    "optional_topics": [],
+    "topics": {},
+    "missing_evidence": [
+      "recording_disabled"
+    ],
+    "loss_visibility": "unknown",
+    "analysis": {
+      "state": "pending",
+      "truncated": false
+    },
+    "capture": {},
+    "archive": {}
+  },
+  "findings": [
+    {
+      "code": "RECORDING_DISABLED",
+      "assessment": "confirmed",
+      "message": "ROS recording is disabled by configuration.",
+      "evidence_ids": []
+    }
+  ],
+  "evidence_refs": [],
+  "limitations": [
+    "Diagnostic state is not business or physical state.",
+    "Message counts do not prove lossless recording."
+  ],
+  "state_authority": false,
+  "replayed": false
+}

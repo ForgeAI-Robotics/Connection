@@ -575,7 +575,114 @@ function installDiagnosticSearch() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 }
+function renderRobotReport(view) {
+  const report = view.report || {};
+  const statuses = {registered: "已登记", recording_disabled: "未启用录制", starting: "录制启动中",
+    recording: "正在录制", finishing: "正在收尾", complete: "报告已生成", partial: "报告不完整", interrupted: "录制已中断"};
+  const status = report.status || report.state;
+  let message = status ? (statuses[status] || `报告状态：${status}`)
+    : !view.enabled ? "任务诊断未启用"
+      : view.tracking === "not_tracked" ? "该任务尚无诊断关联"
+        : view.tracking === "not_recorded" ? "任务结束前未启动录制，未补录历史任务"
+        : view.refreshing ? "正在读取网关已有摘要" : "尚未取得报告";
+  if (view.refreshing) message += "；正在刷新（仅读取）";
+  if (view.error) message += `；查询异常 ${view.error.code || ""}：${view.error.message || "未提供原因"}`;
+  if (view.report && view.error) message += "；以下保留该任务的缓存报告";
+  $("robot-report-status").textContent = message;
+  const quality = report.quality || report.coverage || {};
+  const missing = [...(view.incomplete_reasons || []), ...(report.missing_evidence || []), ...(quality.missing_evidence || [])];
+  for (const part of ["capture", "analysis", "archive"]) {
+    if (Array.isArray(quality[part]?.missing_evidence)) missing.push(...quality[part].missing_evidence.map(x => `${part}: ${x}`));
+  }
+  const loss = quality.loss_visibility;
+  $("robot-report-summary").textContent = `任务：${view.task_id} · 录制关联：${view.run_id || "未取得"}` +
+    (view.dropped_events ? ` · 未送达诊断事件：${view.dropped_events}` : "") +
+    (missing.length ? ` · 缺失证据：${[...new Set(missing)].join("；")}` : "") +
+    (quality.analysis?.state ? ` · 分析状态：${quality.analysis.state}` : "") +
+    (loss ? ` · 丢失可见性：${loss === "unknown" ? "未知" : loss}` : "");
+  const format = value => {
+    const text = JSON.stringify(value, null, 2);
+    return text.length > 16000 ? text.slice(0, 16000) + "\n…（展示已截断）" : text;
+  };
+  $("robot-report-quality").textContent = format({quality, missing_evidence: missing, limitations: report.limitations || []});
+  $("robot-report-evidence").textContent = format((report.evidence_refs || []).map(ref => ({
+    evidence_id: ref.evidence_id, kind: ref.kind, source: ref.source,
+    availability: ref.available === true ? "对端标记可用" : ref.available === false ? "对端标记不可用" : "未知",
+    reference: ref.reference,
+  })));
+  $("robot-report-metadata").textContent = format({task_id: view.task_id, run_id: view.run_id,
+    tracking: view.tracking, cache_updated_at: view.updated_at, generated_at: report.generated_at,
+    window: report.window, versions: report.versions || "未提供", read_only: true, task_authority: false});
+  const findings = $("robot-report-findings");
+  findings.replaceChildren();
+  for (const [assessment, title] of [["confirmed", "已确认事实"], ["suspected", "疑似原因"], ["unknown", "尚未核清"]]) {
+    const items = (report.findings || []).filter(item => (item.assessment || "unknown") === assessment);
+    const heading = document.createElement("h4"), list = document.createElement("ul");
+    heading.textContent = title;
+    for (const item of items) {
+      const line = document.createElement("li");
+      line.textContent = `${item.code || ""} ${item.message || ""}` +
+        (item.evidence_ids?.length ? `（证据：${item.evidence_ids.join("、")}）` : "");
+      list.appendChild(line);
+    }
+    if (!items.length) { const line = document.createElement("li"); line.textContent = "暂无记录"; list.appendChild(line); }
+    findings.appendChild(heading); findings.appendChild(list);
+  }
+}
+
+function installRobotReport() {
+  const form = $("robot-report-form");
+  if (!form) return;
+  let revision = 0, pending = false, controller = null;
+  const task = $("robot-report-task"), query = $("robot-report-query"), refresh = $("robot-report-refresh");
+  const status = $("robot-report-status");
+  task.addEventListener("input", () => {
+    revision++; controller?.abort(); pending = false; query.disabled = false; refresh.disabled = false;
+    status.textContent = "任务 ID 已变化，请重新查询。";
+    for (const id of ["robot-report-summary", "robot-report-quality", "robot-report-evidence", "robot-report-metadata"]) $(id).textContent = "";
+    $("robot-report-findings").replaceChildren();
+  });
+  async function read(refreshRequested) {
+    if (pending) return;
+    const taskId = task.value.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(taskId)) {
+      status.textContent = "请填写完整的原任务 ID。"; return;
+    }
+    pending = true; query.disabled = true; refresh.disabled = true;
+    const token = ++revision;
+    controller = new AbortController();
+    const active = controller;
+    const deadline = setTimeout(() => active.abort(), 12000);
+    status.textContent = refreshRequested ? "正在查询网关已有摘要…" : "正在读取该任务缓存…";
+    try {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (token !== revision) return;
+        const params = new URLSearchParams({task_id: taskId, refresh: attempt === 0 && refreshRequested ? "1" : "0"});
+        const response = await fetch(`/api/brain/task_diagnostics?${params}`, {method: "GET", cache: "no-store", signal: active.signal});
+        const body = await response.json();
+        if (token !== revision) return;
+        if (body.task_id !== taskId || (body.report?.task_id && body.report.task_id !== taskId)) {
+          throw new Error("报告身份不匹配，未展示其他任务的诊断。");
+        }
+        renderRobotReport(body);
+        if (!body.refreshing || !response.ok) return;
+        if (attempt < 5) await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      status.textContent += "；仍在读取，可稍后查询缓存。";
+    } catch (error) {
+      if (token !== revision) return;
+      status.textContent = error.name === "AbortError" ? "诊断摘要读取超时，请稍后重试。" : String(error);
+    } finally {
+      clearTimeout(deadline);
+      if (token === revision) { pending = false; query.disabled = false; refresh.disabled = false; }
+    }
+  }
+  form.addEventListener("submit", event => { event.preventDefault(); read(false); });
+  refresh.addEventListener("click", () => read(true));
+}
+
 installDiagnosticSearch();
+installRobotReport();
 
 document.querySelectorAll(".layer").forEach((button) => {
   button.onclick = () => selectLayer(button.dataset.layer);

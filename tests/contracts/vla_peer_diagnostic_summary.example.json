@@ -1,0 +1,101 @@
+{
+  "synthetic": true,
+  "robot_io": false,
+  "diagnostic_summary": {
+    "code_revision": "synthetic-offline",
+    "collection_state": "closed",
+    "command_id": "synthetic-command",
+    "evidence_refs": [
+      {
+        "bytes": 447,
+        "hash_scope": "written_prefix",
+        "ref_id": "4a8b09a3e804e920a9802fdb85d5ce29287cf5936d0f34b21c4b6666cc2cb104:api-events",
+        "relative_path": "evidence/4a8b09a3e804e920a9802fdb85d5ce29287cf5936d0f34b21c4b6666cc2cb104/events.synthetic-api-instance.jsonl",
+        "root": "vla_runtime",
+        "sha256": "00eb5212d67fcf6ab4a7b900745c7b558a9905a65097a8c9b12bafcdbfe49156"
+      },
+      {
+        "hash_scope": "report_at_generated_at",
+        "ref_id": "synthetic-run",
+        "relative_path": "synthetic-session/evidence_report.synthetic-run.json",
+        "root": "vla_project_logs",
+        "sha256": "fdf565c5e4273042047c2522cba26112aabd1cc08961770e6e6a529823ed2a8a",
+        "window": {
+          "ended_at": "2026-11-02T07:54:59.444772+00:00",
+          "first_host_monotonic_s": 10.0,
+          "first_host_wall_s": 1793605000.0,
+          "last_host_monotonic_s": 10.0,
+          "last_host_wall_s": 1793605000.0,
+          "started_at": "2026-11-02T07:54:59.444744+00:00"
+        }
+      }
+    ],
+    "findings": [
+      {
+        "classification": "confirmed",
+        "code": "OBSERVATION_FIELDS_RECORDED",
+        "scope": "record presence only",
+        "signals": [
+          "body_q",
+          "body_dq",
+          "body_applied_target",
+          "motor_temperature"
+        ]
+      },
+      {
+        "classification": "unknown",
+        "code": "SIGNAL_NOT_RECORDED",
+        "signals": [
+          "motor_torque",
+          "motor_error",
+          "hands",
+          "camera_capture_source_s",
+          "camera_receive_monotonic_s",
+          "state_receive_monotonic_s",
+          "state_source_s",
+          "observation_consume_monotonic_s"
+        ]
+      },
+      {
+        "classification": "unknown",
+        "code": "DEVICE_ACK_AND_CONTACT_UNOBSERVED"
+      },
+      {
+        "classification": "unknown",
+        "code": "VISUAL_WINDOW_SAMPLED_NOT_CONTINUOUS"
+      }
+    ],
+    "generated_at": "2026-11-02T07:54:59.445107+00:00",
+    "peer": "vla",
+    "quality": {
+      "missing": [
+        "camera_capture_source_s",
+        "camera_receive_monotonic_s",
+        "hands",
+        "motor_error",
+        "motor_torque",
+        "observation_consume_monotonic_s",
+        "state_receive_monotonic_s",
+        "state_source_s",
+        "device_acknowledgment",
+        "raw_CAN",
+        "ROS_bag"
+      ],
+      "status": "partial",
+      "truncation": true
+    },
+    "schema": "fq/peer-diagnostic-summary/v1",
+    "service_instance_id": "synthetic-api-instance",
+    "state_authority": false,
+    "status": "ready",
+    "task_id": "synthetic-task",
+    "window": {
+      "ended_at": "2026-11-02T07:54:59.444772+00:00",
+      "first_host_monotonic_s": 10.0,
+      "first_host_wall_s": 1793605000.0,
+      "last_host_monotonic_s": 10.0,
+      "last_host_wall_s": 1793605000.0,
+      "started_at": "2026-11-02T07:54:59.444744+00:00"
+    }
+  }
+}

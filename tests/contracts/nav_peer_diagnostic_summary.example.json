@@ -1,0 +1,51 @@
+{
+  "synthetic": true,
+  "robot_io": false,
+  "diagnostic_summary": {
+    "schema": "fq/peer-diagnostic-summary/v1",
+    "peer": "nav",
+    "task_id": "synthetic-task",
+    "command_id": "synthetic-command",
+    "generated_at": "2026-11-02T16:23:52.486132+08:00",
+    "archive_state": "snapshot_sealed",
+    "state_authority": false,
+    "quality": {
+      "status": "partial",
+      "missing": [
+        "complete_callback_history",
+        "physical_outcome",
+        "CPU_causality"
+      ],
+      "truncation": false
+    },
+    "findings": [
+      {
+        "confidence": "confirmed",
+        "code": "RETAINED_NAV_EVIDENCE",
+        "events": 2,
+        "last_observed_event": {
+          "state": "failed",
+          "time": "2026-11-02T12:00:00.080+08:00"
+        },
+        "meaning": "Recorded observations only; Runtime remains authoritative"
+      },
+      {
+        "confidence": "unknown",
+        "code": "CAUSALITY_AND_PHYSICAL_OUTCOME_NOT_ESTABLISHED"
+      }
+    ],
+    "evidence_refs": [
+      {
+        "ref_id": "nav:20261102-162352-1021668f89484023b7ca4b1e6d0e40f8",
+        "relative_path": "nav_evidence/archives/20261102-162352-1021668f89484023b7ca4b1e6d0e40f8/summary.json",
+        "sha256": "7355d612923bdb417780faa8913f2a0d20f48da7602fa20a5dcd1650c490c9f6",
+        "time_window": {
+          "first_command_event": "2026-11-02T12:00:00.000+08:00",
+          "last_command_event": "2026-11-02T12:00:00.080+08:00",
+          "snapshot_at": "2026-11-02T16:23:52.486132+08:00"
+        },
+        "scope": "sealed local snapshot; consumer counters are process cumulative"
+      }
+    ]
+  }
+}

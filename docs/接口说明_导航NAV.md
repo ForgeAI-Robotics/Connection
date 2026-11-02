@@ -1,6 +1,6 @@
 # 接口说明：导航 NAV
 
-跨端日志专项见大脑维护的[实施约定](多端联调_大脑日志与跨端诊断.md#alignment-table)与[NAV 交付映射](多端联调_大脑日志与跨端诊断.md#nav-delivery)。2026-11-02 NAV 侧报告源码日志增强及 185 项隔离测试通过；未部署，候选源码尚未更新发布完整性清单，诊断不新增导航准入要求。
+跨端日志专项见大脑维护的[实施约定](多端联调_大脑日志与跨端诊断.md#alignment-table)与[NAV 交付映射](多端联调_大脑日志与跨端诊断.md#nav-delivery)。2026-11-02 NAV 侧报告源码日志增强及 185 项隔离测试通过；发布完整性清单和正式一键入口已更新核验；未执行 brain-navigation-start，正式服务由用户手动启动。应用证据见[主文档](多端联调_大脑日志与跨端诊断.md#deployment-20261102)，诊断不新增导航准入要求。
 
 > **2026-10-28 独立 NAV 接入：** 已只读核对 NX 的 brain-navigation-start：启动独立 Planner，保留原 NAV Bearer 与目标／查询／取消接口。配套大脑 source_gate 模式见[接收源开关](接口说明_机器人统一网关.md#sonic-接收源开关source_gate)；无需旧联合 prepare 或 control_authorization，携带旧授权将被 NAV 拒绝。本页后续联合控制与早期路线限制按各自日期追溯，不能作为独立入口的额外前置。
 
@@ -464,6 +464,10 @@ accepted
 ```
 
 命令终态至少保留一小时，保证大脑和VLA可以查询同一导航凭证。
+
+### 8.2 整轮诊断小摘要
+
+整轮证据增量在原命令 GET 中可选增加 `diagnostic_summary`（`fq/peer-diagnostic-summary/v1`、peer=nav、state_authority=false、最多 16 KiB），不改变原业务字段或请求。GET 只读取预生成缓存，不扫描、归档或采集；pending／unknown 与已封存但 partial 分开。原命令事件、消费者时序和停止证据变更的自动后台归档及版本／验证依据见[主文档整轮工程](多端联调_大脑日志与跨端诊断.md#rosbag-report-service)。采集回调统计不修改既有时效阈值；归档标识不成为动作授权。
 
 ## 9. 导航命令取消接口
 

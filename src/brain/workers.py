@@ -156,6 +156,7 @@ class RuntimeOwner:
         self._control_depth = 0
         self._wait_generation = 0
         self.on_idle = None
+        self.on_wait_tick = None
         self._active_guard = threading.Lock()
         self._active = []
 
@@ -214,6 +215,8 @@ class RuntimeOwner:
         generation = self._wait_generation
         started = time.monotonic()
         notice_at = started + WAIT_NOTICE_SEC
+        diagnostic_tick_at = started
+        diagnostic_error_reported = False
         while not future.done():
             try:
                 self._execute(self.control.get(timeout=.02), control=True)
@@ -229,6 +232,15 @@ class RuntimeOwner:
             if generation != self._wait_generation:
                 future.cancel()
                 raise Rejected('本轮任务已取消，结束本地等待')
+            if self.on_wait_tick is not None and time.monotonic() >= diagnostic_tick_at:
+                diagnostic_tick_at = time.monotonic() + .25
+                try:
+                    self.on_wait_tick()
+                    diagnostic_error_reported = False
+                except Exception as exc:
+                    if not diagnostic_error_reported:
+                        report_exception(exc, component='brain-runtime', operation='diagnostic_wait_tick')
+                        diagnostic_error_reported = True
         return future.result()
 
     def _run(self):

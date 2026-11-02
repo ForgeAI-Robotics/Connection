@@ -11,6 +11,7 @@ ROUTES = {
     '/publish_task': ['POST'],
     '/api/publish_task': ['POST'], '/api/task_intent': ['POST'],
     '/api/task_preflight': ['POST'], '/api/task_status': ['GET'],
+    '/api/task_diagnostics': ['GET'],
     '/api/task_skip': ['POST'], '/api/task_pause': ['POST'], '/api/task_continue': ['POST'], '/api/task_cancel': ['POST'],
     '/api/task_advice/confirm': ['POST'],
     '/api/success_pending': ['GET'], '/api/failure_pending': ['GET'],
@@ -65,7 +66,7 @@ def create_app(brain_url=None, *, client=None, ops_client=None):
                 authorization = 'Bearer ' + token
             headers['Authorization'] = authorization
         kwargs = {'headers': headers, 'params': request.args}
-        if request.path == '/api/task_status':
+        if request.path in {'/api/task_status', '/api/task_diagnostics'}:
             kwargs['timeout'] = 5
         if request.files:
             kwargs['files'] = [(key, (value.filename, value.stream, value.content_type))
@@ -84,7 +85,7 @@ def create_app(brain_url=None, *, client=None, ops_client=None):
                               content_type=response.headers.get('content-type', 'application/json'))
             if response.headers.get('content-disposition'):
                 result.headers['Content-Disposition'] = response.headers['content-disposition']
-            if request.path == '/api/task_status':
+            if request.path in {'/api/task_status', '/api/task_diagnostics'}:
                 result.headers['Cache-Control'] = 'no-store'
             return result
         except Exception as exc:

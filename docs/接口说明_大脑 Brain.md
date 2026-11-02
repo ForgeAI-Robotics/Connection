@@ -1,6 +1,6 @@
 # 接口说明：大脑 Brain
 
-跨端日志专项由大脑维护，见[本轮实现与验证](多端联调_大脑日志与跨端诊断.md#implementation-v1)。2026-11-02 源码已接入诊断隔离、原身份追踪和只读检索；本轮不新增跨端诊断头，不改变本文任务控制语义，部署尚未执行。
+跨端日志专项由大脑维护，见[本轮实现与验证](多端联调_大脑日志与跨端诊断.md#implementation-v1)。2026-11-02 源码已接入诊断隔离、原身份追踪和只读检索；本轮不新增跨端诊断头，不改变本文任务控制语义。大脑与面板已加载日志提交 4538ff3，实际应用和原任务保持证据见[应用记录](多端联调_大脑日志与跨端诊断.md#deployment-20261102)。
 
 > **2026-10-28 当前源码：** 新增 `body_control.mode=source_gate`，NAV 直连 SONIC，大脑只管理接收源并调用原 NAV 业务接口；本轮已接入 direct-v1 真实操控，三个按钮按各自真实／模拟范围执行。原联合控制以 `mode=unified` 保留，不混用握手。字段、取消与恢复见[接收源开关](接口说明_机器人统一网关.md#sonic-接收源开关source_gate)。源码／配置已应用并重载大脑，运行状态已确认 source_gate；真机验收尚未完成。
 
@@ -17,6 +17,8 @@
 
 Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务目标，Verifier 输出 PASS / FAIL / UNKNOWN。接待、通用任务、观察、整理及演示共用 Runtime；真机端口与仿真端口由运行配置选择。大脑不直接实现 L1/L0，不发 NX 裸 START/STOP。交接依据及人工跳过例外见第 8.3 节。
 
+2026-11-02 新增可选整轮诊断协调，配置位于 `brain.diagnostics`，公开模板默认关闭，复用原网关 HTTPS／CA／Bearer。仅新建真机任务后端选定后登记诊断 run，任务终态后有界收尾；恢复任务和 GET 只查原 run，不重开录制。recovery_required 仍属于同任务，诊断窗口预算和新任务替代独立标记缺项，不代表业务终态。队列、重试、缓存及对端最终小索引补查均有界，诊断异常不阻塞原动作控制。`/health.diagnostic_runs` 显示本端协调状态，与 Runtime 状态和日志 writer 状态分开。完整合同与实际启用记录见[整轮归档与报告服务](多端联调_大脑日志与跨端诊断.md#rosbag-report-service)。
+
 | 接口 | 行为 |
 | --- | --- |
 | `POST /publish_task` | 保留 task、task_id、refresh、resume 与 accepted 等现有字段；一次只接受一个顶层任务，拒绝时不自动重发 |
@@ -27,6 +29,7 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | `POST /api/task_skip` | 必填 `task_id`、`step_id`；跳过当前未完成动作，执行中先请求停止，核对停止与资源后推进；保留人工跳过记录，不伪造成功 |
 | `POST /api/task_preflight` | 对明确真机接待只读核对 NAV 接口与点位声明；不检查 VLA 内部条件或批准运动，见第 8.1 节 |
 | `GET /health`、`/api/execution_profile` | 进程工作器状态与已应用配置版本 |
+| `GET /api/task_diagnostics` | 必须指定原 task_id；默认仅读诊断缓存，refresh=1 仅调度网关 GET；返回小摘要／证据索引，不下载 bag，不改变任务或启动录制 |
 | `POST /api/reception/run`、`GET /api/reception/report` | 同一 Runtime 的 mock 演示与报告，不另起旧接待循环 |
 | `/api/scene_state`、`belief`、`update_scene` | 大脑侧现场读模型；人工修改写入带来源和有效期的线索，不直接伪造已确认事实 |
 | `/api/experiences`、`save_experience`、成功/失败经验接口 | 读取或人工保存经验，保持既有字段；不自动发布规则 |

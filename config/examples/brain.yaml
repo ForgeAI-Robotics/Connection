@@ -54,6 +54,20 @@ reflection:
   # 候选规则发布目录。不设置时，新任务不绑定规则版本。
   # release_dir: data/releases
 brain:
+  diagnostics:
+    # 显式开启后，仅新建真机执行任务通过既有网关发起诊断会话。
+    # 复用 reception_real.body_control 的 gateway URL／CA／token，不另配端点。
+    enabled: false
+    request_timeout_sec: 2
+    max_capture_duration_sec: 900  # 诊断窗口上限，不改变任务或动作期限。
+    start_wait_timeout_sec: 60  # 前一录制收尾或明确 BUSY 时有界等待；不等待业务。
+    report_poll_interval_sec: 2
+    max_report_polls: 30
+    # 原命令终态后，对端最终索引最多补查 4 次／120 秒；不延长动作期限。
+    retry_interval_sec: 1
+    max_attempts: 3  # 只重试同一诊断意图；身份与时间不重新生成。
+    event_queue_limit: 64
+    max_cached_runs: 16
   # 视觉任务的步骤期限（默认 30 秒）；长思考模型需与视觉 HTTP 超时分别核对。
   # observation_timeout_sec: 1800
   reasoning:
