@@ -8,6 +8,9 @@ def main():
     parser.add_argument('--host', default='0.0.0.0')
     parser.add_argument('--port', type=int, default=8888)
     args = parser.parse_args()
+    from dotenv import load_dotenv
+    from shared.paths import workspace_root
+    load_dotenv(workspace_root() / '.env')
     from shared.log_setup import attach_process_log
     attach_process_log('deploy')
     create_app(args.brain_url).run(host=args.host, port=args.port, threaded=True, use_reloader=False)

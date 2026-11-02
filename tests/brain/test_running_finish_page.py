@@ -19,7 +19,7 @@ const handler = fs.readFileSync(0, 'utf8');
  for (const lost of [false, true]) {
   for (const operation of ['open_fridge','grasp_cola']) {
    const sent=[]; let queries=0;
-   const elements={'vla-verifier':{value:'test-only'}, 'task-command-feedback':{textContent:''}};
+   const elements={'task-command-feedback':{textContent:''}};
    const ctx={crypto:require('crypto').webcrypto, Uint8Array, Map, Date,
       displayedTask:{task_id:'task-one',state:'waiting_human',vla_confirmation:{command_id:'command-one',
          state:'running',operation,object_id:operation==='grasp_cola'?'cola_can_1':'fridge_1'}},
@@ -35,7 +35,7 @@ const handler = fs.readFileSync(0, 'utf8');
    assert.equal(body.task_id,'task-one');assert.equal(body.auto_advance,true);
    assert.equal(body.evidence.source,'operator_observation');assert.ok(body.evidence.reference);
    assert.ok(Number.isFinite(Date.parse(body.evidence.observed_at)));
-   assert.equal(sent[0][1].headers.Authorization,'Bearer test-only');
+   assert.equal(sent[0][1].headers.Authorization,undefined);
    assert.ok(!sent[0][1].body.includes('test-only'));
    assert.equal(operation==='grasp_cola'?body.evidence.clear_of_fridge:body.evidence.hands_clear_of_door,true);
    ctx.displayedTask.pause_requested=true;await ctx.confirmVlaCompletion();assert.equal(sent.length,1);
@@ -45,3 +45,23 @@ const handler = fs.readFileSync(0, 'utf8');
 '''
         result = subprocess.run(['node','-e',code],input=handler,text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)
+        self.assertNotIn('id="vla-verifier"', page)
+
+    def test_normal_effect_wait_is_not_rendered_as_recovery_advice(self):
+        page = Path('src/entries/web/templates/index.html').read_text()
+        handler = page[page.index('        function awaitingVlaEffect'):page.index('        function renderRecoveryAdvice')]
+        code = r'''
+const assert=require('assert'),vm=require('vm'),fs=require('fs');
+const ctx={};vm.createContext(ctx);vm.runInContext(fs.readFileSync(0,'utf8'),ctx);
+const data={state:'waiting_human',blocked_reason:'vla_effect_confirmation',
+ vla_confirmation:{state:'running',execution_mode:'direct'}};
+assert.equal(ctx.awaitingVlaEffect(data),true);
+assert.equal(ctx.awaitingVlaEffect({...data,state:'recovery_required'}),false);
+assert.equal(ctx.awaitingVlaEffect({...data,pause_requested:true}),false);
+assert.equal(ctx.awaitingVlaEffect({...data,failure_detail:{message:'failed'}}),false);
+assert.equal(ctx.awaitingVlaEffect({...data,vla_confirmation:{...data.vla_confirmation,observation_error:'timeout'}}),false);
+assert.equal(ctx.awaitingVlaEffect({...data,vla_confirmation:{...data.vla_confirmation,finish_rejection:{}}}),false);
+'''
+        result=subprocess.run(['node','-e',code],input=handler,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn("if (awaitingVlaEffect(data)) return '';",page)

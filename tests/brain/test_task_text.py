@@ -7,6 +7,20 @@ from ops.brain_view import current_alert
 
 
 class TaskTextTests(unittest.TestCase):
+    def test_normal_vla_wait_is_info_but_real_errors_remain_errors(self):
+        for event in ('vla_effect_waiting', 'drive_stopped'):
+            record = dict(kind='TASK', event=event, state='waiting_human',
+                          blocked_reason='vla_effect_confirmation', step_id='VLA_OPEN_FRIDGE')
+            line = format_process_event(record)
+            self.assertIn(' - INFO - ', line)
+            self.assertIn('查询', line)
+            self.assertNotIn('异常建议', line)
+            for extra in ({'error': 'query timeout'}, {'diagnostic': {'error': 'feedback expired'}},
+                          {'blocked_reason': 'vla_status_unconfirmed'},
+                          {'state': 'recovery_required', 'blocked_reason': 'FEEDBACK_EXPIRED'}):
+                with self.subTest(event=event, extra=extra):
+                    self.assertIn(' - ERROR - ', format_process_event(dict(record, **extra)))
+
     def test_new_error_names_do_not_gate_structured_evidence(self):
         from shared.task_text import failure_text
         metrics = {'goal_distance': .12, 'final_yaw_error': -.5,
@@ -84,7 +98,7 @@ class TaskTextTests(unittest.TestCase):
     def test_gate_explains_reason_without_claiming_command_was_sent(self):
         record = self.record(environment_revision='long-environment-revision', revision=1278)
         line = format_process_event(record)
-        for text in ['导航到 2 号桌', '真机动作许可未开启', '等待人工处理',
+        for text in ['导航到 2 号桌', '真机执行未开启', '等待人工处理',
                      'real_execution_disabled', 'NAVIGATING_TO_TABLE2', 'ca5700b0']:
             self.assertIn(text, line)
         self.assertNotIn('long-environment-revision', line)
@@ -156,7 +170,7 @@ class TaskTextTests(unittest.TestCase):
                 'blocked_reason': 'real_execution_disabled', 'command_unknown': True}
         alert = current_alert({'ready': True, 'state': 'healthy'}, task, {})
         self.assertEqual(alert['level'], 'ERROR')
-        self.assertIn('导航到 2 号桌：真机动作许可未开启', alert['message'])
+        self.assertIn('导航到 2 号桌：真机执行未开启', alert['message'])
         self.assertNotIn('尚未下发', alert['message'])
 
     def test_waiting_task_is_one_bilingual_error_without_analysis_dump(self):
@@ -164,7 +178,7 @@ class TaskTextTests(unittest.TestCase):
             diagnostic={'open_command_id': None, 'command_unknown': False},
             recovery_advice={'action': 'wait', 'reason': 'Long analysis text'})
         line = format_process_event(record)
-        for value in (' - master - ERROR - ', '真机动作许可未开启', 'real_execution_disabled',
+        for value in (' - master - ERROR - ', '真机执行未开启', 'real_execution_disabled',
                       'state=waiting_human', 'NAVIGATING_TO_TABLE2'):
             self.assertIn(value, line)
         for value in ('原始诊断', 'recovery_advice', 'open_command_id', 'Long analysis text'):
@@ -204,7 +218,7 @@ class TaskTextTests(unittest.TestCase):
         ]
         record['step_count'] = 2
         detailed = format_process_event(record)
-        self.assertIn('1.导航到 2 号桌（NAVIGATING_TO_TABLE2，导航，目标 table2，需真机许可）', detailed)
+        self.assertIn('1.导航到 2 号桌（NAVIGATING_TO_TABLE2，导航，目标 table2，需开启真机执行）', detailed)
         self.assertIn('2.抓取饮料（VLA_PICKING，抓取，区域 table_2）', detailed)
         self.assertEqual(len(detailed.splitlines()), 1)
         self.assertNotIn('phase_specs', detailed)

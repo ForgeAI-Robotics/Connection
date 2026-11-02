@@ -28,6 +28,7 @@ from brain.kernel.runner import Runner
 from brain.kernel.verifier import Verifier
 from shared.task_text import failure_text, phase_labels, scope_manipulation_advice
 from contracts.vla import NATIVE_OPERATIONS
+from contracts.vla_direct import o6_feedback_fault
 
 
 _TRANSITIONS = {
@@ -49,6 +50,7 @@ _TRANSITIONS = {
     ("running", "gate"): "waiting_human",
     ("waiting_human", "human_continue"): "running",
     ("waiting_human", "vla_completion_unconfirmed"): "recovery_required",
+    ("waiting_human", "vla_terminal_failed"): "recovery_required",
     ("waiting_human", "pause_ack"): "paused",
     ("waiting_human", "pause_nack"): "recovery_required",
     ("running", "pause_ack"): "paused",
@@ -151,6 +153,9 @@ def status_from_record(record) -> dict:
                                     "downstream": _failure_receipt(raw),
                                     "kind": "rejected" if rejection else "unknown" if old.get("verdict") == "UNKNOWN" else "cancelled" if old_progress.get("terminal") == "cancelled" else "execution_failed",
                                     "message": message, "display_message": failure_text(message, code, record=record, details=error.get('details'))})
+            fault = o6_feedback_fault(raw, task_id=record.get('task_id'), command_id=old.get('command_id'))
+            if fault is not None:
+                failure_history[-1]['feedback_fault'] = fault
         latest = attempts[-1] if attempts else {}
         verdict = latest.get("verdict")
         evidence = (latest.get("progress") or {}).get("evidence") or {}
@@ -199,6 +204,10 @@ def status_from_record(record) -> dict:
             failure = {"kind": "unknown", "message": progress["error"], "not_started": False}
     if failure:
         failure['downstream'] = _failure_receipt(downstream)
+        fault = o6_feedback_fault(downstream, task_id=record.get('task_id'),
+                                  command_id=(attempts[-1].get('command_id') if attempts else None))
+        if fault is not None:
+            failure['feedback_fault'] = fault
         failure["display_message"] = failure_text(failure.get("message"), failure.get("code"), record=record,
                                                  details=remote_error.get('details') if isinstance(remote_error, dict) else None)
     latest = attempts[-1] if attempts else {}
@@ -1053,6 +1062,83 @@ class TaskRuntime:
             return {'accepted': True, 'query_only': sent_action == 'query', 'task_id': task_id,
                     'command_id': command_id, 'state': self.state,
                     'vla_confirmation': deepcopy(self.record['vla_confirmation'])}
+
+    def observe_waiting_vla(self):
+        """Read an existing VLA command without confirming, retrying or driving."""
+        with self._exclusive():
+            self._reload_locked()
+            step = self._current_step()
+            confirmation = self.record.get('vla_confirmation') or {}
+            command_id = self.record.get('open_command_id')
+            if (self.state != 'waiting_human' or not command_id or not step
+                    or step.kind not in NATIVE_OPERATIONS
+                    or self.record.get('control_request') or self.record.get('dispatch_closed')
+                    or confirmation.get('command_id') != command_id
+                    or (confirmation.get('state') == 'succeeded' and self.record.get('command_unknown') is False)
+                    or self.pending_vla_completion()):
+                return False
+            attempt = self._latest(step.step_id)
+            if not attempt or attempt.get('command_id') != command_id:
+                return False
+            contract = self._contract(step, attempt['attempt_id'], command_id, deepcopy(attempt['request']))
+            revision = self.record['revision']
+        try:
+            viewed = self.port.query(command_id, contract.request)
+            if not isinstance(viewed, dict):
+                viewed = {'error': 'VLA 原命令回包无效'}
+        except Exception as exc:
+            viewed = {'error': str(exc)}
+        progress = self.runner._progress(contract, viewed)
+        valid = (viewed.get('command_id') == command_id and not progress.timed_out
+                 and progress.evidence.get('identity_ok') is True
+                 and (not progress.terminal or progress.evidence.get('time_ok') is True))
+        with self._exclusive():
+            self._reload_locked()
+            if (self.record.get('task_id') != contract.task_id or self.record['revision'] != revision
+                    or self.state != 'waiting_human' or self.record.get('open_command_id') != command_id
+                    or self.record.get('control_request') or self.record.get('dispatch_closed')
+                    or self.pending_vla_completion()):
+                return False
+            attempt = self._latest(step.step_id)
+            if not attempt or attempt.get('attempt_id') != contract.attempt_id:
+                return False
+            previous = self.record['vla_confirmation']
+            if not valid:
+                error = progress.error or 'VLA 原命令回包身份或时间未核清'
+                if previous.get('observation_error') == error:
+                    return False
+                attempt['vla_query_error'] = deepcopy(viewed)
+                self.record['vla_confirmation'] = dict(previous, observation_error=error)
+                self.record.update(command_unknown=True, stopped_confirmed=False, resources_cleared=False,
+                                   blocked_reason='vla_status_unconfirmed')
+                self._save('vla_status_unconfirmed')
+                return True
+            raw = viewed.get('raw') or {}
+            latest = deepcopy(previous)
+            latest.update(progress.evidence.get('vla_confirmation') or dict(
+                state=progress.terminal, completion=deepcopy(raw.get('completion'))))
+            latest.pop('observation_error', None)
+            if not progress.terminal and latest == previous:
+                return False  # Do not append identical running snapshots on every poll.
+            self._stamp_attempt(step, progress, finished=bool(progress.terminal))
+            self.record['vla_confirmation'] = latest
+            self.record['pending_progress'] = progress.as_dict()
+            known = progress.terminal in {'succeeded', 'failed', 'cancelled'}
+            stopped = known and progress.publisher_stopped is True
+            self.record.update(command_unknown=not known, stopped_confirmed=stopped,
+                               resources_cleared=stopped and progress.evidence.get('resources_released') is True)
+            if progress.terminal in {'failed', 'cancelled'}:
+                attempt['verdict'] = self.verifier.judge(contract, progress)
+                self.record.update(blocked_reason=((raw.get('error') or {}).get('message')
+                                   or (raw.get('result') or {}).get('message') or progress.terminal),
+                                   breakpoint_phase=step.step_id)
+                self.record.pop('recovery_advice', None)
+                self.apply('vla_terminal_failed')
+            else:
+                self.record['blocked_reason'] = ('vla_success_pending_verification' if known
+                                                 else 'vla_effect_confirmation')
+            self._save('vla_terminal_observed' if known else 'vla_status_observed')
+            return True
 
     def pending_vla_completion(self):
         """Only a persisted human finish intent can authorize automatic progression."""
@@ -1925,7 +2011,7 @@ class TaskRuntime:
                         ("attempt_id", attempt["attempt_id"]), ("command_id", command_id)))
                     or body.get("command_id") != command_id or body.get("task_id") != self.record["task_id"]):
                 return False
-            match = re.match(r"^HTTP (400|403|409|422) https?://\S+: ", old.get("error") or "")
+            match = re.match(r"^HTTP (400|403|409|422|503) https?://\S+: ", old.get("error") or "")
             raw = (old.get("evidence") or {}).get("downstream")
             receipt = submission_refusal(int(match[1]), raw, command_id=command_id,
                                          task_id=self.record["task_id"]) if match else None

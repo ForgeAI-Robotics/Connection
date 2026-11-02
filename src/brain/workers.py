@@ -90,6 +90,7 @@ class RuntimeOwner:
         self._guard = threading.Lock()
         self._control_depth = 0
         self._wait_generation = 0
+        self.on_idle = None
 
     def interrupt_waits(self):
         """Release the task owner from abandoned I/O without sending remote controls."""
@@ -154,6 +155,12 @@ class RuntimeOwner:
                     item = self.work.get(timeout=.02)
                     control = False
                 except queue.Empty:
+                    if self.on_idle is not None:
+                        try:
+                            self.on_idle()
+                        except Exception:
+                            import logging
+                            logging.getLogger('runtime').exception('Runtime idle observation failed')
                     continue
             self._execute(item, control=control)
 

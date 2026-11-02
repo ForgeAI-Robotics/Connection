@@ -355,6 +355,15 @@ class BrainService:
         snapshot = runtime.snapshot()
         if snapshot.get("state") not in RECOVERY_STATES:
             return
+        confirmation = snapshot.get('vla_confirmation') or {}
+        if (snapshot.get('state') == 'waiting_human'
+                and snapshot.get('blocked_reason') == 'vla_effect_confirmation'
+                and confirmation.get('state') in {'running', 'waiting_result_confirmation'}
+                and not confirmation.get('observation_error')
+                and not confirmation.get('finish_rejection')):
+            # Normal effect confirmation is not a recovery incident. The owner
+            # continues querying the original command independently of advice.
+            return
         # Do not repeat a model call merely because drive is called again.
         if (snapshot.get("recovery_advice") or {}).get("record_revision") == snapshot["revision"]:
             return

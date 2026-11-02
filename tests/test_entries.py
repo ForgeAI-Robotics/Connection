@@ -15,6 +15,37 @@ from brain.learning.demo import DemoLearning
 
 
 class EntryTests(unittest.TestCase):
+    def test_web_finish_supplies_private_credential_without_browser_input(self):
+        proxy=Mock()
+        proxy.request.return_value=Mock(content=b'{"accepted":true}',status_code=200,
+                                       headers={'content-type':'application/json'})
+        client=create_web(client=proxy).test_client()
+        body={'task_id':'task','command_id':'command','evidence':{'source':'operator_observation'},'auto_advance':True}
+        with tempfile.TemporaryDirectory() as root:
+            credential=Path(root)/'completion';credential.write_text('first-private-token');credential.chmod(0o600)
+            with patch.dict('os.environ',{'BRAIN_VLA_VERIFIER_TOKEN_FILE':str(credential),
+                                         'BRAIN_VLA_VERIFIER_TOKEN':'no-fallback'}):
+                for token in ('first-private-token','rotated-private-token'):
+                    credential.write_text(token)
+                    response=client.post('/api/task_vla/finish',json=body)
+                    self.assertEqual(response.status_code,200)
+                    self.assertEqual(proxy.request.call_args.kwargs['headers']['Authorization'],'Bearer '+token)
+                    self.assertEqual(proxy.request.call_args.kwargs['json'],body)
+                    self.assertNotIn(token,response.get_data(as_text=True))
+                    page=client.get('/').get_data(as_text=True)
+                    self.assertNotIn(token,page)
+                    self.assertNotIn('id="vla-verifier"',page)
+                proxy.reset_mock();credential.chmod(0o644)
+                response=client.post('/api/task_vla/finish',json=body)
+                self.assertEqual(response.status_code,503)
+                proxy.request.assert_not_called()
+                self.assertNotIn(str(credential),response.get_data(as_text=True))
+                self.assertNotIn('private-token',response.get_data(as_text=True))
+                client.post('/api/task_vla/query',json={'task_id':'task','command_id':'command'})
+                self.assertNotIn('Authorization',proxy.request.call_args.kwargs['headers'])
+                client.post('/api/task_vla/finish',json=body,headers={'Authorization':'Bearer explicit-verifier'})
+                self.assertEqual(proxy.request.call_args.kwargs['headers']['Authorization'],'Bearer explicit-verifier')
+
     def test_sop_view_reads_runtime_generation_without_mutating_or_dispatching(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'CONNECTION_WORKSPACE': directory}):
             root = Path(directory)

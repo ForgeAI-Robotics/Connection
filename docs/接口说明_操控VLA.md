@@ -25,6 +25,27 @@ VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}
 
 > 当前 source_gate 以文首 direct-v1 和大脑接口为准；“新动作接入”保留业务效果及旧后端范围；2026-10-09 及更早章节描述旧抓放链路。源码接入、运行实例更新和真机验收分别确认。
 
+## O6 反馈故障首因（兼容新增）
+
+2026-10-29 对齐操控侧《大脑调用接口》的 `fq/o6-feedback-fault/v1`。查询原命令的失败／取消回包可带 `result.feedback_fault` 和 `error.details.feedback_fault`，两处内容相同。原始快照也可能位于 `handoff.o6_execution_failure.feedback_fault` 或 `exit_state.runtime.feedback_fault`。旧任务缺省不补造；没有字段不代表没有故障。
+
+| 字段 | 含义 |
+| --- | --- |
+| schema、fault_id、code | 首因版本、首次记录身份；当前 code 为 ENCODER_TIMEOUT／CAN_READ_FAILED |
+| side、can_interface、can_id | 左／右手、CAN 接口、十进制 CAN ID；页面另显示十六进制 |
+| first_fault_at | 首次异常的带时区时间；页面标为北京时间 |
+| timeout_ms、elapsed_ms | 当次读取预算和实际总耗时，单位 ms；总耗时包含清旧帧、查询、等待与调度，不是设备独占应答延迟 |
+| last_valid_feedback_age_ms | 故障侧最后有效反馈年龄；null 保留为未提供，不显示成 0 |
+| feedback_at_fault | 故障时双方 received_at（Unix 秒）和 age_ms 的冻结快照 |
+| exception_type、errno、message | 原始异常类型、错误号和信息；普通超时 errno 可为 null |
+| task_id、command_id、input_session_id | 原任务、命令和输入会话身份 |
+| receiver_instance_id、robot_serial、pid | 原 O6 实例、机器人和进程身份 |
+| detected_monotonic_s、read_started_monotonic_s、timing_scope | 同一 NX 启动周期的单调时间与计时范围；不与工作站单调时钟直接相减 |
+
+大脑保留原始完整 error／result 和停止字段，按原任务、命令匹配并在有上下文时核对 O6 实例／会话／机器人后，投影当前及历史失败的 feedback_fault。双位置冲突、身份不符或未知 schema 不作为已归属首因展示，原回包继续保留。字段只作诊断，不证明成功、停止、资源释放或允许重试；不改变 VLA 的 200 ms 预算、250 ms 新鲜度或封禁逻辑。状态查询仍以业务 state 判定，不能凭 GET HTTP 200 宣称成功。
+
+离线示例来自操控侧 `contracts/o6_feedback_fault.example.json`，本仓库测试副本使用合成机器人身份，见 [O6 故障字段夹具](../tests/contracts/o6_feedback_fault.example.json)。首次记录冻结和进程退出持久化由 VLA／O6 负责，大脑不为旧任务合成记录；联调验证见[操控故障字段接入](多端联调_操控与抓取.md#brain-o6-feedback-fault)。
+
 ## 大脑统一授权对接（2026-10-23，接口离线串联通过）
 
 > 历史 relay 接线，以下至“新动作接入”保留当时行为；当前 direct-v1 不执行这些交接。

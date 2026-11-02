@@ -28,6 +28,45 @@ def adapter(error):
 
 
 class SubmissionRefusalTests(unittest.TestCase):
+    def test_vla_503_repair_preserves_original_and_waits_for_human_retry(self):
+        raw = {'success': False, 'error': {'code': 'VLA_EXECUTION_NOT_READY',
+               'details': {'action_started': False, 'action_state_uncertain': False}}}
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.legacy(root, payload=raw,
+                error='HTTP 503 http://vla:8091/v1/vla/tasks: not ready')
+            old = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]['progress'])
+            self.assertTrue(runtime.reconcile_submission_rejection())
+            self.assertFalse(runtime.reconcile_submission_rejection())
+            attempt = runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]
+            self.assertEqual(attempt['original_unknown_progress'], old)
+            self.assertEqual(attempt['outcome'], 'rejected')
+            self.assertFalse(runtime.record['command_unknown'])
+            runtime.drive()
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            self.assertTrue(runtime.continue_current()['retry_prepared'])
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            port.dream.command.assert_not_called()
+            port.dream.cancel.assert_not_called()
+
+    def test_vla_503_requires_both_explicit_flags_and_consistent_identity(self):
+        from contracts.submission import submission_refusal
+        raw = {'success': False, 'error': {'code': 'VLA_EXECUTION_NOT_READY',
+               'details': {'action_started': False, 'action_state_uncertain': False}}}
+        cases = [(s, raw) for s in (404, 409, 500, None)]
+        for key in ('action_started', 'action_state_uncertain'):
+            for value in (True, None):
+                changed = deepcopy(raw); changed['error']['details'][key] = value
+                cases.append((503, changed))
+            cases.append((503, dict(raw, **{key: True})))
+        for key, value in (('command_id', 'foreign'), ('task_id', 'foreign'),
+                           ('accepted', True), ('started', True), ('state', 'running')):
+            cases.append((503, dict(raw, **{key: value})))
+        generic = deepcopy(raw); generic['error']['code'] = 'SERVICE_UNAVAILABLE'
+        cases.append((503, generic))
+        for status, payload in cases:
+            with self.subTest(status=status, payload=payload):
+                self.assertIsNone(submission_refusal(status, payload, command_id='cmd', task_id='task'))
+
     def test_native_admission_refusals_preserve_attempts_without_automatic_retry(self):
         for code in ('NATIVE_SAFETY_LATCHED', 'NATIVE_SAFETY_STATE_UNAVAILABLE'):
             raw = {'success': False, 'error': {'code': code, 'message': 'native unavailable',

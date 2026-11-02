@@ -204,14 +204,14 @@ class DirectVlaTests(unittest.TestCase):
 
     def test_explicit_service_disabled_is_rejected_but_generic_503_stays_unknown(self):
         self.setup_vla()
-        for index, code in enumerate(('REAL_ACTIONS_DISABLED', 'SERVICE_UNAVAILABLE')):
+        for index, code in enumerate(('REAL_ACTIONS_DISABLED', 'VLA_EXECUTION_NOT_READY', 'SERVICE_UNAVAILABLE')):
             r=vla_request('disabled-'+str(index));self.schedule(r,'reception_real')
             def reject(body, code=code):
                 raise HttpContractError(code,status_code=503,payload={'success':False,'error':{
                     'code':code,'message':code,'details':{'action_started':False,'action_state_uncertain':False}}})
             self.vla.submit_task=reject
             value=self.port.submit(r['body']['command_id'],r)
-            self.assertEqual(value['unclear'],code!='REAL_ACTIONS_DISABLED')
+            self.assertEqual(value['unclear'],code=='SERVICE_UNAVAILABLE')
 
     def test_gate_closed_never_certifies_vla_body_stop(self):
         self.setup_vla();r=vla_request();self.start(r)

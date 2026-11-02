@@ -8,6 +8,39 @@ FINISH_REVISION = '20261029-direct-running-finish-v1'
 FIELDS = ('contract_version', 'task_id', 'command_id', 'operation', 'object_id', 'target_area')
 
 
+def o6_feedback_fault(raw, *, task_id, command_id):
+    """Project optional first-fault diagnostics; never use them as execution proof."""
+    if not isinstance(raw, dict) or not task_id or not command_id:
+        return None
+    if raw.get('task_id') != task_id or raw.get('command_id') != command_id:
+        return None
+    def mapping(value):
+        return value if isinstance(value, dict) else {}
+    result, error = mapping(raw.get('result')), mapping(raw.get('error'))
+    candidates = [value for value in (result.get('feedback_fault'),
+        mapping(error.get('details')).get('feedback_fault')) if value is not None]
+    if not candidates:
+        # Older/partial envelopes may expose the same diagnostic only in cleanup.
+        candidates = [value for value in (
+            mapping(mapping(raw.get('exit_state')).get('runtime')).get('feedback_fault'),
+            mapping(mapping(result.get('exit_state')).get('runtime')).get('feedback_fault'),
+            mapping(mapping(raw.get('handoff')).get('o6_execution_failure')).get('feedback_fault'))
+            if value is not None]
+    if not candidates or any(value != candidates[0] for value in candidates[1:]):
+        return None
+    fault = candidates[0]
+    if (not isinstance(fault, dict) or fault.get('schema') != 'fq/o6-feedback-fault/v1'
+            or fault.get('task_id') != task_id or fault.get('command_id') != command_id):
+        return None
+    execution = mapping(mapping(raw.get('handoff')).get('execution'))
+    identity = mapping(execution.get('identity'))
+    for key in ('receiver_instance_id', 'input_session_id', 'robot_serial'):
+        expected = [value[key] for value in (raw, execution, identity) if value.get(key)]
+        if any(fault.get(key) != value for value in expected):
+            return None
+    return deepcopy(fault)
+
+
 def effect_window(raw, evidence):
     """Use the executor's original observation window, never move the observation time."""
     completion = raw.get('completion') or {}

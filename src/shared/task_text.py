@@ -107,7 +107,9 @@ REASONS = {
     'real_execution_disabled': '真机执行未开启',
     'navigation_gate': '导航执行条件尚未满足',
     'command_unknown': '原动作指令的执行状态尚未确认',
-    'vla_effect_confirmation': '操控等待暂停及真实效果核验；完成确认后继续核验原命令',
+    'vla_effect_confirmation': '等待现场确认动作效果；确认完成后核验原命令并继续',
+    'vla_status_unconfirmed': '操控状态暂未核清，正在查询原命令，不会自动重发',
+    'vla_success_pending_verification': '操控已报告成功，点击继续核验原结果',
     'handoff_blocked': '导航与操控之间的控制权交接尚未确认',
     'Task accepted': '任务已接收', 'Task was not accepted': '任务未被接受',
 }
@@ -148,6 +150,7 @@ EVENTS = {
     'recovery_plan_applied': '已接受恢复方案，等待执行与核验',
     'submit_intent': '准备下发动作指令', 'observe_intent': '准备读取现场状态',
     'action_finished': '已收到动作返回，等待核验', 'step_passed': '当前步骤核验通过',
+    'vla_effect_waiting': '操控执行中，动作效果尚未确认；继续查询原命令',
     'task_succeeded': '任务完成', 'task_finished_with_skips': '流程结束，含人工跳过的步骤',
     'execution_error': '执行异常', 'unconfirmed': '执行结果尚未确认',
     'submission_rejected': '指令被下游拒绝，未开始执行',
@@ -375,8 +378,12 @@ def format_process_event(record):
         return ''
     phase = record.get('step_id')
     task = str(record.get('task_id') or record.get('id') or '')
+    effect_wait = (kind == 'TASK' and record.get('state') == 'waiting_human'
+                   and record.get('blocked_reason') == 'vla_effect_confirmation')
     message, tag = None, '任务'
-    if kind == 'CONTROL':
+    if effect_wait and event == 'drive_stopped':
+        message = '后续步骤等待效果确认；原操控命令未因此暂停，状态查询继续'
+    elif kind == 'CONTROL':
         action = {'continue': '继续', 'skip': '跳过', 'pause': '暂停', 'cancel': '取消任务'}.get(record.get('action'), record.get('action') or '')
         message = {'received': '收到控制请求，等待处理', 'processing': '正在处理控制请求',
                    'accepted': '控制请求已处理；下发与执行结果见后续日志',
@@ -497,7 +504,8 @@ def format_process_event(record):
     if not message:
         return None
     diagnostic = record.get('diagnostic') or {}
-    failed = bool(record.get('blocked_reason') or record.get('error') or record.get('exception')
+    failed = bool((record.get('blocked_reason') and not effect_wait)
+                  or record.get('error') or record.get('exception')
                   or diagnostic.get('error') or advice.get('error')
                   or record.get('ok') is False or record.get('state') == 'failed'
                   or (kind == 'PREFLIGHT' and record.get('ready') is False))

@@ -80,6 +80,27 @@ class BrainApplication:
         service._launch = lambda rt: self.owner.submit(service._drive, rt)
         service.refresh_advice = lambda rt: self.owner.submit(service._advise, rt)
         service.reflection = self.learning.enqueue
+        self._next_vla_observation = 0.
+        self.owner.on_idle = self._observe_waiting_vla
+
+    def _observe_waiting_vla(self):
+        """One read-only observation on the existing owner, with cooperative I/O."""
+        if self._closing or not self._started or time.monotonic() < self._next_vla_observation:
+            return
+        self._next_vla_observation = time.monotonic() + 1.
+        try:
+            record = load_existing(runtime_dir(self.config)) or {}
+            if record.get('state') != 'waiting_human' or not record.get('vla_confirmation'):
+                return
+            runtime = self.service.attach()
+            if runtime.observe_waiting_vla():
+                if runtime.state == 'recovery_required':
+                    self.learning.enqueue(runtime.record)
+                    self._schedule_advice(runtime)
+        except Rejected:
+            pass  # A concurrent control or changed task owns the next decision.
+        finally:
+            self._next_vla_observation = time.monotonic() + 1.
 
     def _advice_log(self, event, context, **details):
         from shared.brain_journal import emit as journal

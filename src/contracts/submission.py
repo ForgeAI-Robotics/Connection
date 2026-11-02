@@ -38,9 +38,11 @@ def submission_refusal(status_code, payload, *, command_id, task_id):
     unavailable = (error.get('code') == 'CAPABILITY_UNAVAILABLE'
                    and details.get('action_started') is False
                    and details.get('action_state_uncertain') is False)
-    disabled = (status_code == 503 and error.get('code') == 'REAL_ACTIONS_DISABLED'
+    disabled = (status_code == 503 and error.get('code') in {'REAL_ACTIONS_DISABLED', 'VLA_EXECUTION_NOT_READY'}
                 and details.get('action_started') is False
-                and details.get('action_state_uncertain') is False)
+                and details.get('action_state_uncertain') is False
+                and payload.get('action_started') is not True
+                and payload.get('action_state_uncertain') is not True)
     if status_code == 503 and not disabled:
         return None
     if status_code == 501 and not unavailable:

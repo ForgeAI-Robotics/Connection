@@ -72,10 +72,6 @@
             <div class="task-progress" id="task-progress"></div>
             <div id="task-freshness" style="font-size:12px;color:#94a3b8" aria-live="polite"></div>
             <div id="task-command-feedback" style="white-space:pre-wrap;font-size:13px" aria-live="polite"></div>
-            <div id="vla-verifier-panel" hidden style="margin-top:8px">
-                <label for="vla-verifier">操控效果核验凭据（仅本页使用，不保存）</label>
-                <input id="vla-verifier" type="password" autocomplete="off" placeholder="输入原 VLA verifier token">
-            </div>
             <div class="report-card" id="report-card"></div>
             <div class="btn-row" style="margin-top:10px">
                 <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception('开始接待（导航真机＋操控真机）')">🤝 开始接待（导航真机＋操控真机）</button>
@@ -233,16 +229,14 @@
         async function confirmVlaCompletion() {
             const current = displayedTask, vla = current?.vla_confirmation;
             if (!taskStatusKnown || taskControlPending || !vla || current.state !== 'waiting_human'
-                || current.pause_requested || vla.finish_intent || vla.finish_requested
+                || current.pause_requested || vla.observation_error || vla.finish_intent || vla.finish_requested
                 || !['running', 'waiting_result_confirmation'].includes(vla.state)) return;
             const key = current.task_id + ':' + vla.command_id;
             if (vlaFinishIntents.has(key)) {
                 await vlaEffectControl('query'); // A lost reply never creates another confirmation.
                 return;
             }
-            const token = document.getElementById('vla-verifier').value.trim();
             const feedback = document.getElementById('task-command-feedback');
-            if (!token) { feedback.textContent = '请先填写操控效果核验凭据，再确认现场动作完成。'; return; }
             const reference = Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, '0')).join('');
             const evidence = {source:'operator_observation', reference:'web-confirm-' + reference,
                 observed_at:new Date().toISOString()};
@@ -254,7 +248,7 @@
             taskControlPending = true;
             try {
                 const response = await fetch('/api/task_vla/finish', {method:'POST',
-                    headers:{'Content-Type':'application/json', Authorization:token.startsWith('Bearer ') ? token : 'Bearer ' + token},
+                    headers:{'Content-Type':'application/json'},
                     body:JSON.stringify(body)});
                 const result = await response.json();
                 if (displayedTask?.task_id === body.task_id) feedback.textContent = result.accepted
@@ -534,7 +528,7 @@
                 statusLabel = '已暂停';
                 statusCls = 'status-run';
             } else if (data.state === 'waiting_human') {
-                statusLabel = '等待人工';
+                statusLabel = awaitingVlaEffect(data) ? '等待现场确认完成' : '等待人工';
                 statusCls = 'status-run';
             } else if (data.state === 'cancelling') {
                 statusLabel = '取消中，停止尚未核清';
@@ -579,7 +573,6 @@
                 任务 ID：${taskText(data.task_id)} · 任务环境：${taskText((TASK_LABELS.backends || {})[data.execution_backend] || data.execution_backend || '尚未选择')}</div>`;
 
             const vla = data.vla_confirmation;
-            document.getElementById('vla-verifier-panel').hidden = !(vla && vla.execution_mode === 'direct');
             const holdingStatus = data.failure_detail?.downstream?.error?.details?.holding_status
                 || data.handoff_observation?.idle_evidence?.vla;
             const holdingProof = holdingStatus?.holding_evidence || vla?.holding_evidence;
@@ -595,7 +588,8 @@
                         : holdingProof.valid === true ? '每段运送前重新核查当前证明，不自动续期' : '证明无效，等待核清'))
                     + '</div>';
             }
-            if (vla && vla.execution_mode === 'direct' && !data.pause_requested) {
+            if (vla && vla.execution_mode === 'direct' && !data.pause_requested
+                && !['succeeded', 'failed', 'cancelled'].includes(vla.state)) {
                 const key = data.task_id + ':' + vla.command_id;
                 const pending = vlaFinishIntents.get(key);
                 if (!vla.finish_intent && pending && vla.finish_rejection?.evidence?.reference === pending.evidence.reference)
@@ -603,9 +597,10 @@
                 const submitted = !!vla.finish_intent || vla.finish_requested || vlaFinishIntents.has(key);
                 const open = vla.operation === 'open_fridge';
                 const text = open ? '确认冰箱已打开且双手离门' : '确认后退撤离完成且可乐仍在手';
-                const canConfirm = taskStatusKnown && !taskControlPending && data.state === 'waiting_human'
+                const canConfirm = taskStatusKnown && !taskControlPending && !vla.observation_error && data.state === 'waiting_human'
                     && !submitted && ['running', 'waiting_result_confirmation'].includes(vla.state);
                 const message = data.state === 'recovery_required' ? '操控结果需要处理，请查看原始原因；不会自动进入下一步。'
+                    : vla.observation_error ? '操控状态暂未核清，正在查询原命令：' + vla.observation_error
                     : submitted ? '完成确认已记录，正在查询 VLA 收尾；成功后自动进入下一步。'
                     : open ? '请观察门已打开且稳定、双手离门后确认。'
                     : '请等待抓取、收手、后退全部完成，确认已退出冰箱接触区且可乐仍在手。';
@@ -630,7 +625,10 @@
                 const stages = {prepared:'新命令已准备，尚未下发', submitted:'下发已登记，等待执行回执',
                     unknown:'执行结果待确认，不会自动补发', rejected:'指令被拒绝，未开始执行',
                     succeeded:'已核验成功', failed:'执行失败', cancelled:'命令已取消', terminal:'已收到终态，等待核验'};
-                html += '<div style="font-size:12px;overflow-wrap:anywhere">' + taskText(stages[command.stage] || '等待核对')
+                const commandText = awaitingVlaEffect(data)
+                    ? (vla.state === 'running' ? '操控策略运行中，等待现场确认完成' : '策略已暂停，等待现场确认完成')
+                    : stages[command.stage] || '等待核对';
+                html += '<div style="font-size:12px;overflow-wrap:anywhere">' + taskText(commandText)
                     + ' · ' + taskText(command.command_id) + '</div>';
             }
             const phase = data.phase || data.control_step_id;
@@ -726,9 +724,33 @@
             return TASK_LABELS.reasons[failure.code] || TASK_LABELS.reasons[raw]
                 || '下游返回了新的错误原因，请查看原文及回包详情。';
         }
+        function renderFeedbackFault(fault, commandId) {
+            if (!fault || fault.schema !== 'fq/o6-feedback-fault/v1' || fault.command_id !== commandId) return '';
+            const ms = value => typeof value === 'number' && Number.isFinite(value) && value >= 0
+                ? value.toFixed(1) + ' ms' : '未提供';
+            const side = {left:'左手', right:'右手'}[fault.side] || '手侧未提供';
+            const can = Number.isInteger(fault.can_id) && fault.can_id >= 0 && fault.can_id <= 0x1fffffff
+                ? '0x' + fault.can_id.toString(16).toUpperCase() : '未提供';
+            const stamp = typeof fault.first_fault_at === 'string' && /(?:Z|[+-]\d\d:\d\d)$/.test(fault.first_fault_at)
+                ? Date.parse(fault.first_fault_at) : NaN;
+            const time = Number.isFinite(stamp)
+                ? new Date(stamp).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', hour12:false}) + '（北京时间）' : '未提供';
+            const lines = [side + ' · ' + (fault.can_interface || '接口未提供') + ' · CAN ' + can + ' · ' + (fault.code || '未提供错误码'),
+                '首次异常：' + time,
+                '读取预算：' + ms(fault.timeout_ms) + '；总耗时：' + ms(fault.elapsed_ms),
+                '故障侧最后有效反馈年龄：' + ms(fault.last_valid_feedback_age_ms),
+                '原始异常：' + (fault.exception_type || '未提供')
+                    + (Number.isInteger(fault.errno) ? ' · errno=' + fault.errno : '') + ' · ' + (fault.message || '未提供')];
+            return '<div class="task-command-feedback"><strong>O6 反馈故障首因</strong><br>'
+                + lines.map(taskText).join('<br>')
+                + '<br><small>总耗时包含清理旧帧、查询、等待和调度，不等于设备自身应答延迟。首因不代表动作成功或停止已确认。</small>'
+                + '<details data-task-detail="o6-fault:' + encodeURIComponent(commandId) + '"><summary>故障时双手反馈与实例详情</summary>'
+                + '<pre style="white-space:pre-wrap;overflow-wrap:anywhere">' + taskText(JSON.stringify(fault, null, 2)) + '</pre></details></div>';
+        }
         function failureReceiptDetails(failure, commandId) {
-            if (!failure?.downstream || !Object.keys(failure.downstream).length) return '';
-            return '<details data-task-detail="receipt:' + encodeURIComponent(commandId || '')
+            const firstFault = renderFeedbackFault(failure?.feedback_fault, commandId);
+            if (!failure?.downstream || !Object.keys(failure.downstream).length) return firstFault;
+            return firstFault + '<details data-task-detail="receipt:' + encodeURIComponent(commandId || '')
                 + '"><summary>下游原始错误与结果</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">'
                 + taskText(JSON.stringify({command_id: commandId, downstream: failure.downstream}, null, 2))
                 + '</pre></details>';
@@ -741,7 +763,15 @@
                     error: advice.error, confirmations: (data.advice_confirmations || []).filter(r => r.advice_id === advice.advice_id)}, null, 2))
                 + '</pre></details>';
         }
+        function awaitingVlaEffect(data) {
+            const vla = data.vla_confirmation;
+            return data.state === 'waiting_human' && data.blocked_reason === 'vla_effect_confirmation'
+                && !data.pause_requested && !data.failure_detail && vla?.execution_mode === 'direct'
+                && !vla.observation_error && !vla.finish_requested && !vla.finish_intent && !vla.finish_rejection
+                && ['running', 'waiting_result_confirmation'].includes(vla.state);
+        }
         function renderRecoveryAdvice(data) {
+            if (awaitingVlaEffect(data)) return '';
             if (data.terminal || ['running', 'verifying', 'succeeded', 'failed', 'cancelled'].includes(data.state)) return '';
             const advice = currentRecoveryAdvice(data);
             const failure = data.failure_detail || (data.state === 'recovery_required' && data.blocked_reason

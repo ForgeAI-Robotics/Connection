@@ -52,8 +52,18 @@ def create_app(brain_url=None, *, client=None, ops_client=None):
                    'X-FQ-Via': 'web'}
         if request.headers.get('X-FQ-Operator'):
             headers['X-FQ-Operator'] = request.headers['X-FQ-Operator']
-        if request.path == '/api/task_vla/finish' and request.headers.get('Authorization'):
-            headers['Authorization'] = request.headers['Authorization']
+        if request.path == '/api/task_vla/finish':
+            authorization = request.headers.get('Authorization', '')
+            if not authorization:
+                from shared.service_credentials import service_token
+                try:
+                    token = service_token('BRAIN_VLA_VERIFIER_TOKEN')
+                    if not token:
+                        raise ValueError('服务端尚未配置操控完成确认凭据')
+                except ValueError as exc:
+                    return jsonify(accepted=False, error=str(exc)), 503
+                authorization = 'Bearer ' + token
+            headers['Authorization'] = authorization
         kwargs = {'headers': headers, 'params': request.args}
         if request.path == '/api/task_status':
             kwargs['timeout'] = 5

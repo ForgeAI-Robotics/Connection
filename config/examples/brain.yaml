@@ -98,7 +98,7 @@ reception_real:
     token_env: BRAIN_CONTROL_TOKEN
     # NAV HTTP 若使用独立 --api-token，可填保存该 token 的环境变量名；空值沿用上项。
     nav_token_env: ""
-    vla_token_env: ""  # 空值沿用 token_env；效果 finish 仍使用请求级 verifier 凭据。
+    vla_token_env: ""  # 空值沿用 token_env；finish 使用独立核验凭据；网页由 BRAIN_VLA_VERIFIER_TOKEN_FILE 配置。
     operation_timeout_sec: 10
     poll_interval_sec: 0.05
     evidence_max_age_sec: 10

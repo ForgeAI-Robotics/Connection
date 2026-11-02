@@ -1,0 +1,90 @@
+{
+  "example_only": true,
+  "note": "Offline illustrative fields; not a robot failure observation or success/stop receipt.",
+  "response_excerpt": {
+    "task_id": "example-task",
+    "command_id": "example-open-fridge",
+    "state": "failed",
+    "result": {
+      "success": false,
+      "feedback_fault": {
+        "schema": "fq/o6-feedback-fault/v1",
+        "fault_id": "example-fault-001",
+        "code": "ENCODER_TIMEOUT",
+        "component": "o6_feedback",
+        "operation": "read_positions",
+        "side": "right",
+        "can_interface": "can1",
+        "can_id": 39,
+        "first_fault_at": "2026-10-29T11:00:00+00:00",
+        "detected_monotonic_s": 1000.211,
+        "read_started_monotonic_s": 1000.0,
+        "timeout_ms": 200.0,
+        "elapsed_ms": 211.0,
+        "last_valid_feedback_age_ms": 234.0,
+        "feedback_at_fault": {
+          "left": {
+            "received_at": 1793271599.977,
+            "age_ms": 23.0
+          },
+          "right": {
+            "received_at": 1793271599.766,
+            "age_ms": 234.0
+          }
+        },
+        "exception_type": "TimeoutError",
+        "errno": null,
+        "message": "未收到 O6 六轴位置反馈 (CAN ID=0x27)",
+        "receiver_instance_id": "example-o6-instance",
+        "robot_serial": "example-robot",
+        "pid": 12345,
+        "task_id": "example-task",
+        "command_id": "example-open-fridge",
+        "input_session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "timing_scope": "whole read call including drain, query, wait and scheduling; not device-only latency"
+      }
+    },
+    "error": {
+      "code": "TASK_EXECUTOR_FAILED",
+      "message": "O6 execution stopped: ENCODER_TIMEOUT",
+      "details": {
+        "feedback_fault": {
+          "schema": "fq/o6-feedback-fault/v1",
+          "fault_id": "example-fault-001",
+          "code": "ENCODER_TIMEOUT",
+          "component": "o6_feedback",
+          "operation": "read_positions",
+          "side": "right",
+          "can_interface": "can1",
+          "can_id": 39,
+          "first_fault_at": "2026-10-29T11:00:00+00:00",
+          "detected_monotonic_s": 1000.211,
+          "read_started_monotonic_s": 1000.0,
+          "timeout_ms": 200.0,
+          "elapsed_ms": 211.0,
+          "last_valid_feedback_age_ms": 234.0,
+          "feedback_at_fault": {
+            "left": {
+              "received_at": 1793271599.977,
+              "age_ms": 23.0
+            },
+            "right": {
+              "received_at": 1793271599.766,
+              "age_ms": 234.0
+            }
+          },
+          "exception_type": "TimeoutError",
+          "errno": null,
+          "message": "未收到 O6 六轴位置反馈 (CAN ID=0x27)",
+          "receiver_instance_id": "example-o6-instance",
+          "robot_serial": "example-robot",
+          "pid": 12345,
+          "task_id": "example-task",
+          "command_id": "example-open-fridge",
+          "input_session_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timing_scope": "whole read call including drain, query, wait and scheduling; not device-only latency"
+        }
+      }
+    }
+  }
+}

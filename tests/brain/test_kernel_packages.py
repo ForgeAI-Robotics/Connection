@@ -45,6 +45,7 @@ _FROZEN_TRANSITIONS = {
     ("running", "gate"): "waiting_human",
     ("waiting_human", "human_continue"): "running",
     ("waiting_human", "vla_completion_unconfirmed"): "recovery_required",
+    ("waiting_human", "vla_terminal_failed"): "recovery_required",
     ("waiting_human", "pause_ack"): "paused",
     ("waiting_human", "pause_nack"): "recovery_required",
     ("running", "pause_ack"): "paused",

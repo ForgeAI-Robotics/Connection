@@ -272,6 +272,7 @@ venv/core/bin/python scripts/reception_skill.py --file /path/to/reception_skill.
 
 控制请求进入大脑应用后立即记录收到、开始处理及受理／拒绝结果，用 `control_id` 关联；
 下游实际调用、受理、状态与结果继续沿原命令日志记录。异常分析也记录后台开始、等待、完成或过期丢弃。
+正常 VLA 效果等待（`waiting_human`／`vla_effect_confirmation`，原命令仍运行且无查询或确认错误）不触发异常建议；等待事件使用 INFO，明确只暂停后续步骤推进，不代表暂停 VLA。既有原命令轮询继续，每次查询结束后约 1 秒再查询；相同运行状态不重复写业务日志或账本。真实失败、停止未确认和查询异常仍按原错误处理。
 页面在 `running` 且当前尝试尚未登记下发时显示“等待下发当前步骤”，登记后显示“等待动作执行结果”，
 核验阶段显示“正在核验执行结果”。这些标签不声称导航已行走，真实下游受理和状态可在大脑日志核对。
 
@@ -380,6 +381,8 @@ Runtime 在保存建议、确认及应用时检查；当前方案引用的证据
 
 新动作的 `vla_confirmation` 包含 `command_id`、`operation`、VLA `state`、`pause_requested`、`verification_ready_at`、`finish_requested`，用于网页区分仍在执行、已暂停待核验、正在停止／归还、已到终态。它是 Runtime 保存的下游观察，不是另一套任务状态。请求受理、效果证据提交与大脑任务通过分别展示；新增 execution_mode、object_id、execution_ready_at、completion、finish_intent／finish_rejection 供确认按钮显示，凭据不返回。普通状态轮询不主动查询或重发动作；已记录 auto_advance 的确认由后台工作器查询并经 Runtime 核验推进。
 
+**等待确认期间的执行端终态同步：** Runtime 主线程在空闲时使用现有 I/O 工作器查询原 VLA command_id，每次查询结束至少间隔约 1 秒，不依赖网页是否打开，也不新建任务循环。匹配任务／尝试／命令身份和完成时间的 failed／cancelled 回包写入原尝试并进入 recovery_required，停止、资源释放分别按原证据更新；查询错误或无效回包保留未知并继续只读查询，页面停用完成确认。查询到 succeeded 仅保存待核验结果，不自动通过或推进；已提交人工 finish 意图的收尾仍由原完成确认工作器负责。暂停、取消、换命令或新的 finish 意图使迟到查询失效。重复 running 或相同查询错误不反复追加账本；大脑重启后恢复该只读同步。验证见[等待确认终态同步](多端联调_大脑任务与恢复.md#vla-terminal-observation)。
+
 请求规则：
 
 - 暂停、继续、取消可传 `task_id`，调用方应绑定已显示的任务，避免操作新任务；传入任务与当前不符时拒绝。
@@ -439,6 +442,7 @@ POST /api/task_cancel
 | `failure_detail.kind` | `rejected` 为已识别的提交前拒绝，`execution_failed` 为有失败／取消终态回执，`unknown` 为结果未明确 |
 | `failure_detail.not_started` | 只有已识别的提交拒绝才为 true；false 不等于已确认运动发生 |
 | `failure_detail.downstream`、`failure_history[].downstream` | 当前尝试的下游任务／命令身份、`state`、完整 `error` 和 `result` 原始字段副本；未知嵌套字段原样保留，未提供的字段不补造 |
+| `failure_detail.feedback_fault`、`failure_history[].feedback_fault` | 可选 O6 首因诊断，按原任务／命令及已提供的实例身份核对后投影。网页显示手侧、CAN、首次故障时间、预算／总耗时和反馈年龄；原字段与边界见[O6 首因合同](接口说明_操控VLA.md#o6-反馈故障首因兼容新增)，不用于改变成败或停止判定 |
 | `failure_history` | 按尝试保留失败步骤、命令、错误码、原文与中文说明；不是逐行异常日志总数 |
 | `attempt_summary` | `failure_count`、`retry_count`、`manual_retry_count`；查询原命令不算新尝试 |
 | `manual_skips`、`flow_finished` | 人工跳过及流程是否因含跳过而结束；含人工跳过不记为全部成功 |
@@ -589,6 +593,8 @@ AND result.navigation_stopped == true
 ### 8.1 流程与请求身份
 
 **2026-10-29 一次确认接入（大脑／网页已重载，VLA 应用由操控侧确认）：** 真实操控只在开门完成、抓取并后退撤离完成时各确认一次。网页发送原 finish API，附 auto_advance=true；Runtime 保存原观察与确认意图，复用既有 I/O 工作器查询 VLA 正式终态，经原 Verifier 通过后自动推进。等待、暂停完成和受理均不能替代成功；取消、暂停、换任务后的迟到结果不能驱动后续动作。模拟操控仍自动通过模拟步骤，不增加实物确认。具体字段与原接口兼容性见[完成确认](接口说明_操控VLA.md#暂停效果确认与大脑继续)。
+
+网页完成确认无需输入 token。网页服务从服务端 `BRAIN_VLA_VERIFIER_TOKEN_FILE` 指向的私有普通文件读取原 VLA completion token，仅在转发 `/api/task_vla/finish` 时添加 Authorization；每次读取支持凭据轮换，未配置或文件不合规则明确拒绝转发。凭据不进入 HTML、浏览器存储、请求正文或任务账本。独立 API 调用仍可提交自己的 Authorization，真实效果字段、任务／命令绑定和 Verifier 标准不变。正常 `waiting_human`＋`vla_effect_confirmation` 的运行／待确认阶段显示“等待现场确认完成”，不展示异常恢复建议；实际失败、暂停和完成确认拒绝仍按原状态展示。
 
 
 source_gate 模式三个按钮均已适配。左上“导航真机＋操控真机”走真实 NAV＋direct-v1 VLA；右上“导航真机＋操控模拟”保持本地模拟操控；左下“导航模拟＋操控真机”不访问真实 NAV，现场确认作业位置后调用真实 VLA。direct 业务与回执见[操控接口](接口说明_操控VLA.md#direct-v1直连操控与接收源选择)。整轮取消会按实际提交的原命令分别请求 NAV／VLA 取消，并记录接收源全关，页面保留未确认收尾提示，但历史未知不阻止新任务；不将关闸结果写成身体已停止。旧任务恢复遇到控制模式改变会拒绝，不换后端重跑。
@@ -764,6 +770,7 @@ direct-v1 开门／抓可乐的效果、原命令身份与独立收尾字段见[
 - 只有 HTTP 400／403／409／422 且错误结构、身份和错误码符合 `src/contracts/submission.py` 的识别规则，才视为明确提交拒绝，记录 `failure_detail.kind=rejected`、`not_started=true`。忙碌错误还需明确占用者是其他命令。
 - `STOP_NOT_CONFIRMED` 属于提交准入拒绝：导航未收到新鲜停止反馈，未受理本次新目标。符合上述拒绝合同才记录为未开始；这不证明此前动作已经停止。已保存为 UNKNOWN 的同类原始拒绝回包可由现有拒绝核对流程重新分类，保留 `original_unknown_progress`，不自动继续或重发。
 - `NATIVE_SAFETY_LATCHED`、`NATIVE_SAFETY_STATE_UNAVAILABLE` 仅在提交接口返回 HTTP 409、身份一致且没有已接受／已开始／执行状态或动作不确定等矛盾证据时，识别为本次命令受理前拒绝。运行中查询返回同名错误仍按原执行结果处理；不表示旧动作已停止或 SONIC 已解除保护。原 UNKNOWN 可由既有拒绝核对流程按原回包重新分类并保留证据，不自动重发。
+- HTTP 503 的 `VLA_EXECUTION_NOT_READY` 只有原回包同时明确 `action_started=false`、`action_state_uncertain=false`，且身份／接受状态无矛盾时，才归为受理前拒绝；不泛化到普通 503。已有 UNKNOWN 可按保存的原始 503 回包核对，保留 `original_unknown_progress`，不以 404 或服务空闲推断未执行，不自动重发。
 - 任意 HTTP 400 不能一概视为未执行；HTTP 500、裸 404、同 ID 冲突或不符合拒绝合同的回包，也不能证明动作未执行。适配器保留结果未知。
 - 人工跳过明确拒绝且未执行的步骤时，复用与当前任务、尝试、命令绑定的原始拒绝回执，不查询未创建的下游命令。若此前还有实际提交的命令，仍查询其停止和资源释放；拒绝当前命令不证明其它动作已停止。跳过抓取／放置同时标记关联效果核验为人工跳过，保留全部失败尝试，不写为成功。
 - 导航 POST 连接断开或超时时，客户端有界查询原命令；查到则继续跟踪，查不到进入恢复处理，不自动重新 POST。
