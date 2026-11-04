@@ -23,12 +23,12 @@ class ProfileRoutingTests(unittest.TestCase):
             self.assertFalse(port.submit('nav-test', {})['accepted'])
             body.return_value.submit.assert_not_called()
 
-    def test_global_real_refuses_unimplemented_modules(self):
+    def test_global_real_enables_head_observation_but_refuses_desk(self):
         with patch('shared.execution_profile.applied_profile', return_value=resolve({'mode': 'real'}, {})):
             self.assertEqual(select_backend({}, 'generic'), 'body_real')
-            for package in ['desk', 'look']:
-                with self.assertRaises(Rejected):
-                    select_backend({}, package)
+            self.assertEqual(select_backend({}, 'look'), 'camera')
+            with self.assertRaises(Rejected):
+                select_backend({}, 'desk')
 
     def test_generic_real_uses_shared_body_and_motion_gate(self):
         with patch('brain.adapters.ports.BodyAdapter.from_config') as body:

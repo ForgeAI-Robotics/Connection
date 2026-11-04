@@ -66,8 +66,8 @@ def resolve(value, robot_config):
         elif mode == 'real' and name == 'execution':
             route.update(backend='body_real')
         elif mode == 'real':
-            route.update(backend='unavailable', available=False,
-                         reason=f'{name} 尚无已接入的完整真机适配；不会回落仿真')
+            from shared.networks import lan
+            route.update(backend='vla_camera', url=lan().http('control'))
         elif name == 'observation' and backend == 'desk':
             route.update(available=False, reason='Desk 不提供图像；可将观察模块显式指定为 3DGS 或 MuJoCo')
         elif name == 'observation' and backend == 'simple_o7':

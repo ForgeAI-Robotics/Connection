@@ -12,7 +12,7 @@ def create_app(*, switch_pool=None):
 
     def panel_services():
         return [service for service in catalog()
-                if service.layer in {'brain', 'robot'} or service.id == 'simple_o7']
+                if service.id != 'vla_camera' and (service.layer in {'brain', 'robot'} or service.id == 'simple_o7')]
 
     @app.get("/")
     def index():
@@ -173,10 +173,10 @@ def create_app(*, switch_pool=None):
             service = by_id(service_id)
         except KeyError:
             return jsonify({"error": "未知服务"}), 404
-        if service.remote_control == "ssh_dream":
+        if service.remote_control in {"ssh_dream", "ssh_vla", "ssh_vla_camera"}:
             required = {"start", "stop"} if action == "restart" else {action}
-            if not required.issubset(service.remote_actions):
-                return jsonify(ok=False, error=service.disabled_reason), 400
+            if not required.issubset(service.remote_actions) or service.remote_control == 'ssh_vla' and action == 'restart':
+                return jsonify(ok=False, error=service.disabled_reason or 'VLA 只支持分别启动与停止 HTTP'), 400
         allowed = {"start", "stop", "restart"} | set(service.remote_actions)
         if action not in allowed:
             return jsonify({"error": "不支持的操作"}), 400
@@ -184,17 +184,22 @@ def create_app(*, switch_pool=None):
         from shared.execution_profile import admission
         try:
             with nullcontext() if service.remote_control else admission(check_block=False):
+                result = None
                 if action == "start":
-                    _start(service)
+                    result = _start(service)
                 elif action == "stop":
-                    _stop(service)
+                    result = _stop(service)
                 elif action == "restart":
                     _stop(service)
                     _start(service)
                 else:
                     _remote_extra(service, action)
         except Exception as exc:
-            return jsonify({"ok": False, "error": str(exc)}), 400
+            return jsonify({"ok": False, "confirmed": False, "error": str(exc)}), 400
+        if service.remote_control == 'ssh_vla':
+            if not isinstance(result, dict) or result.get('confirmed') is not True or result.get('ok') is not True:
+                return jsonify(ok=False, confirmed=False, error='VLA 未返回确认的启停结果'), 502
+            return jsonify(ok=True, confirmed=True, message=result['message'], runtime=result['status'])
         return jsonify({"ok": True, "service": _service_status(service)})
 
 

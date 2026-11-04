@@ -31,8 +31,8 @@ function choose(mode) { for(const c of choices) c.checked=c.value===mode; choice
 function profile(mode) {
   return {revision:mode, routes:{
     reception:{mode, backend:mode==='real'?'reception_real':'reception_simple',available:true},
-    execution:{mode, backend:mode==='real'?'unavailable':'simple_o7',available:mode!=='real'},
-    observation:{mode, backend:mode==='real'?'unavailable':'simple_o7',available:false}
+    execution:{mode, backend:mode==='real'?'body_real':'simple_o7',available:true},
+    observation:{mode, backend:mode==='real'?'vla_camera':'simple_o7',available:mode==='real'}
   }};
 }
 const current = {applied:profile('real'),draft:{mode:'simulation'},applying:false,

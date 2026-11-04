@@ -25,6 +25,17 @@ def register_views(app, application):
     def raw_proxy(path, *, method='GET', payload=None):
         g.poll_diagnostic = {'reason': '大脑观察模块不可用，尚未发出下游请求'}
         try:
+            from brain.adapters.vla_camera import real_camera_route, capture_head
+            route = real_camera_route()
+            if route:
+                if path != '/camera/latest' or method != 'GET':
+                    raise ValueError('真机观察仅提供头部画面，不提供仿真场景或录像控制')
+                g.poll_diagnostic = {'target': route['url'] + '/v1/camera/frames/latest?camera=ego_view',
+                                     'reason': '真机头部画面不可用'}
+                metadata, image = capture_head(config=service.config, route=route)
+                return Response(image, content_type='image/jpeg', headers={
+                    'Cache-Control': 'no-store', 'X-Frame-Id': metadata['frame_id'],
+                    'X-Captured-At': metadata['captured_at'], 'X-Content-SHA256': metadata['sha256']})
             url = observation_url() + path
             g.poll_diagnostic = {'target': url, 'reason': '下游观察服务返回异常'}
             response = requests.request(method, url, json=payload, timeout=30)

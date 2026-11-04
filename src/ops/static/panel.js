@@ -6,6 +6,7 @@ const STATE_LABEL = {
   stopped: "已停止",
   up: "通",
   down: "不通",
+  partial: "部分就绪",
 };
 
 const REMOTE_ACTION_LABEL = {restart: "重启",
@@ -117,6 +118,38 @@ function healthLine(item) {
   return [health.detail, latency].filter(Boolean).join(" · ");
 }
 
+function vlaComponentLines(item) {
+  const runtime = item.health?.runtime;
+  if (!runtime) return ["组件状态尚未核验"];
+  const states = {running: "运行中", stopped: "已停止", unknown: "未知"};
+  const http = runtime.http || {};
+  const camera = runtime.camera || {};
+  const o6 = runtime.o6 || {};
+  const readiness = (part) => part.ready === true ? "检查通过" : part.ready === false ? "未就绪" : "就绪情况未知";
+  const frameSummary = camera.frames_verified ? "检查时三路均有新鲜帧"
+    : Object.keys(camera.streams || {}).length ? "三路未全部通过，见分路状态" : "尚未核验当前出帧";
+  const lines = [
+    `HTTP：${states[http.state] || "未知"} · ${readiness(http)}`,
+    `实例管理：${http.managed === true ? "已识别为官方启动器实例（手动或面板启动）" : http.managed === false ? "外部实例，未托管" : "归属未核清"}`,
+    `相机：${states[camera.state] || "未知"} · ${frameSummary}${camera.reason ? " · " + camera.reason : ""}`,
+  ];
+  if (typeof camera.managed === "boolean") lines.push(`采集管理：${camera.managed ? "VLA 统一管理" : "已识别外部启动的采集服务"}`);
+  for (const [key, label] of [["ego_view", "头部"], ["left_wrist", "左腕"], ["right_wrist", "右腕"]]) {
+    const frame = camera.streams?.[key];
+    if (!frame || Object.keys(frame).length === 0) {
+      lines.push(`${label}：帧状态未知`);
+      continue;
+    }
+    const fps = Number.isFinite(frame.fps) ? ` · ${frame.fps.toFixed(1)} FPS` : "";
+    const age = Number.isFinite(frame.age_ms) ? ` · 采集年龄 ${Math.round(frame.age_ms)} ms` : "";
+    lines.push(`${label}：${frame.ready === true ? "检查时帧新鲜" : frame.ready === false ? "无新鲜帧" : "未知"}${fps}${age}${frame.reason ? " · " + frame.reason : ""}`);
+  }
+  lines.push(`O6：${states[o6.state] || "未知"} · ${readiness(o6)}${o6.reason ? " · " + o6.reason : ""}`);
+  lines.push(`停止 HTTP：${http.can_stop === true ? "可请求（执行时再次核验）" : "当前不可停止"}${http.reason ? " · " + http.reason : ""}`);
+  if (runtime.observed_at) lines.push(`状态检查时间：${runtime.observed_at}`);
+  return lines;
+}
+
 // 9882 从不通变通时自动弹一次；浏览器拦弹窗就用卡片上的按钮。
 function popReviewPage(robot) {
   const dream = robot.find((item) => item.id === "dream");
@@ -157,6 +190,7 @@ function card(item) {
       ${item.health && item.health.url ? `<div class="detail">${escapeHtml(item.health.url)}</div>` : ""}
       ${item.note ? `<div class="detail">${escapeHtml(item.note)}</div>` : ""}
       <div class="health">${escapeHtml(line)}</div>
+      ${item.id === "vla" ? `<div class="vla-components">${vlaComponentLines(item).map((text) => `<div>${escapeHtml(text)}</div>`).join("")}</div>` : ""}
     </div>
   `;
   const actions = document.createElement("div");
@@ -190,8 +224,13 @@ function card(item) {
     hasActions = true;
   }
   (item.remote_actions || []).forEach((action) => {
-    const label = REMOTE_ACTION_LABEL[action] || action;
-    actions.append(actionButton(label, () => act(item, action), action !== "start"));
+    const label = item.id === "vla" && action === "stop" ? "停止 HTTP" : REMOTE_ACTION_LABEL[action] || action;
+    const button = actionButton(label, () => act(item, action), action !== "start");
+    if (item.id === "vla" && action === "stop") {
+      button.disabled = item.health?.runtime?.http?.can_stop !== true;
+      button.title = item.health?.runtime?.http?.reason || "停止前需确认 HTTP 实例及任务状态";
+    }
+    actions.append(button);
     hasActions = true;
   });
   if (item.review_url) {
@@ -295,7 +334,7 @@ function showLogPlaceholder() {
 
 function patchCard(el, item) {
   // State changes also change the entry toggle and remote review button.
-  if (el.dataset.state !== item.state || el.dataset.review !== String(item.review_ok)) {
+  if (item.id === "vla" || el.dataset.state !== item.state || el.dataset.review !== String(item.review_ok)) {
     el.replaceWith(card(item));
     return;
   }
@@ -319,7 +358,7 @@ function render(full) {
   $("layer-hint").textContent = {
     brain: "点击上方卡片查看对应服务的运行日志。",
     environment: "选择 SIMPLE 仿真或真机，应用后到任务网页开始测试。",
-    robot: "先启动 VLA 相机，再启动 VLA 接口；导航与网关独立管理。服务在线不代表机器人已就绪。",
+    robot: "VLA 启动统一管理相机、O6 与 HTTP；停止只关闭 HTTP，保留相机和 O6。导航与网关独立管理。",
   }[selectedLayer];
   document.querySelector(".workspace").classList.toggle("environment", environment);
   $("execution-settings").hidden = !environment;
@@ -407,16 +446,18 @@ async function act(item, action) {
       : item.id === "dream" && action === "stop"
         ? "已收到停止。正在关闭 NAV 工作流，保留网关和 NX SONIC …"
         : item.id === "vla" && action === "start"
-          ? "已收到启动。正在执行操控端 VLA 运行时检查与启动 …"
+          ? "已收到启动。正在核验或准备相机、O6，并启动 VLA HTTP …"
           : item.id === "vla" && action === "stop"
-            ? "已收到停止。正在执行操控端 VLA 停止流程，NX 网关独立运行 …"
+            ? "已收到停止。正在确认 VLA HTTP 退出；相机和 O6 保留运行 …"
             : `正在${{start: "启动", stop: "停止", restart: "重启"}[action] || action} ${item.name} …`;
   try {
     const response = await fetch(`/api/services/${item.id}/${action}`, { method: "POST" });
     const payload = await response.json();
-    if (!response.ok) {
+    if (!response.ok || payload.ok === false || item.id === "vla" && payload.confirmed !== true) {
       status.textContent = payload.error || "操作失败";
       status.classList.add("error");
+    } else if (item.id === "vla") {
+      status.textContent = payload.message || "启停结果已核验，请查看组件状态。";
     } else {
       status.textContent = `${item.name}：${{start: "启动", stop: "停止", restart: "重启"}[action] || REMOTE_ACTION_LABEL[action] || action}操作已完成。`;
     }

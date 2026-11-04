@@ -72,7 +72,8 @@ class ExecutionSwitchTests(unittest.TestCase):
         routes = resolve({'mode': 'real'}, ROBOT)['routes']
         self.assertTrue(routes['execution']['available'])
         self.assertEqual(routes['execution']['backend'], 'body_real')
-        self.assertFalse(routes['observation']['available'])
+        self.assertTrue(routes['observation']['available'])
+        self.assertEqual(routes['observation']['backend'], 'vla_camera')
         self.assertEqual(routes['execution']['mode'], 'real')
         self.assertTrue(routes['reception']['available'])
 
@@ -326,6 +327,7 @@ class ObservationPageTests(unittest.TestCase):
         application.service.config = {}
         app = create_app(application)
         with patch('brain.api.views.observation_url', side_effect=ValueError('当前观察模块不可用')), \
+             patch('brain.adapters.vla_camera.real_camera_route', return_value=None), \
              patch('brain.api.views.requests.request') as get:
             response = app.test_client().get('/api/robot_status')
             self.assertEqual(response.status_code, 503)

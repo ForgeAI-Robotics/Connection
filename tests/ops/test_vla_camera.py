@@ -89,21 +89,20 @@ if a[0]=='new-session' and os.environ.get('CAMERA_TEST_RUN')=='1':subprocess.run
 
 
 class CameraPanelTests(unittest.TestCase):
-    def test_card_routes_only_to_camera_launcher(self):
+    def test_legacy_camera_controls_disabled_and_card_merged(self):
         app=create_app()
         self.addCleanup(lambda:[w.shutdown(wait=False) for w in app.extensions['workers']])
         client=app.test_client()
-        with patch('ops.vla_camera.run') as camera, patch('ops.vla_remote.run') as vla, \
-                patch('ops.app._service_status',return_value={'id':'vla_camera'}):
-            self.assertTrue(client.post('/api/services/vla_camera/start').get_json()['ok'])
-            camera.assert_called_once_with('start');vla.assert_not_called()
+        with patch('ops.vla_camera.run') as camera, patch('ops.vla_remote.run') as vla:
+            for action in ('start', 'stop', 'restart'):
+                result=client.post('/api/services/vla_camera/'+action)
+                self.assertEqual(result.status_code, 400)
+            camera.assert_not_called(); vla.assert_not_called()
         with patch('ops.vla_camera.logs',return_value=('camera output','camera.log',None)):
             self.assertEqual(client.get('/api/services/vla_camera/logs').get_json()['text'],'camera output')
         html=client.get('/').get_data(as_text=True)
-        self.assertIn('"id": "vla_camera"',html)
-        data=json.loads(html.split('<script id="initial-services" type="application/json">')[1].split('</script>')[0])
-        camera=next(s for s in data['robot'] if s['id']=='vla_camera')
-        self.assertIn('先启动头部',camera['note'])
+        self.assertNotIn('"id": "vla_camera"',html)
+        self.assertIn('"id": "vla"',html)
 
     def test_tcp_connectivity_is_not_reported_as_three_camera_frames(self):
         with patch('ops.services._tcp_open',return_value=True), patch('ops.services._record_probe'):

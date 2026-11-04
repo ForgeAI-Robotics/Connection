@@ -145,6 +145,9 @@ nav {
 .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #0b1220; }
 .badge.tmux, .badge.up { color: var(--ok); }
 .badge.unmanaged { color: var(--warn); }
+.badge.partial, .dot.partial { color: var(--warn); }
+.dot.partial { background: var(--warn); }
+.vla-components { margin-top: 8px; display: grid; gap: 4px; white-space: normal; }
 .badge.stopped, .badge.down { color: var(--bad); }
 .meta { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .meta div { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

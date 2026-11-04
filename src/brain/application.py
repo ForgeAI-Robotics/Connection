@@ -35,7 +35,7 @@ class BrainApplication:
         self.extra_workers = []
         self._execution_ports = []
         from brain.api.media import MediaService
-        self.media = MediaService(service.status)
+        self.media = MediaService(service.status, self.config)
         self._lease = None
         self._started = False
         self._closing = False

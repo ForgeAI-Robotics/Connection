@@ -595,7 +595,20 @@ def parse_capture_scene(raw, *, ttl_sec=None) -> dict | None:
     body = body.strip()
     if not source or not body:
         return None
-    observed = datetime.now().astimezone()
+    completed = datetime.now().astimezone()
+    observed = completed
+    frame = data[1].get('camera_frame')
+    if frame is not None:
+        from brain.adapters.vla_camera import timestamp, FRAME_SCHEMA
+        try:
+            if (not isinstance(frame, dict) or frame.get('schema') != FRAME_SCHEMA
+                    or frame.get('camera_key') != 'ego_view' or not frame.get('frame_id')):
+                return None
+            observed = timestamp(frame.get('captured_at'))
+            if not 0 <= (completed - observed).total_seconds() <= _observation_ttl(ttl_sec):
+                return None
+        except (ValueError, TypeError, OverflowError):
+            return None
     observed_at = observed.isoformat(timespec="milliseconds")
     valid_until = (observed + timedelta(seconds=_observation_ttl(ttl_sec))).isoformat(
         timespec="milliseconds"
@@ -608,7 +621,8 @@ def parse_capture_scene(raw, *, ttl_sec=None) -> dict | None:
         "grade": "description",
         "text": body,
         "source": source,
-        "completed_at": observed_at,
+        "completed_at": completed.isoformat(timespec='milliseconds'),
+        **({'camera_frame': dict(frame)} if frame is not None else {}),
         "observation": {
             "subject": "scene_description",
             "value": body,

@@ -123,6 +123,31 @@ Slaver 诊断遇到空回答、模型失败或无合法状态时返回 unknown�
 接待核验配置在大脑初始化时绑定，旧 Slaver 相机配置在模块导入时读取，修改文件不等于既有进程生效。
 本机配置、调用范围、真实测试与部署限制见[本地图像 API 替换](多端联调_模型接入与评测.md#e-m6)。
 
+#### 真机头部看图（2026-11-04 已重载并验证取图）
+
+新应用的真机观察路由使用 `vla_camera`，地址复用 `config/networks.yaml` 的 control HTTP。
+原已应用快照不会自动更新；部署两端匹配版本并重新应用观察环境后才可使用。
+普通“看看前面／桌上有什么”沿原 LookAdapter、Runtime 和 I/O 工作器执行，
+只请求 VLA `GET /v1/camera/frames/latest?camera=ego_view`，不创建抓放任务、选源或启动服务。
+鉴权沿 `reception_real.body_control.vla_token_env`／`token_env`，缺省 `BRAIN_CONTROL_TOKEN`，
+支持同名 `_FILE` 私有凭据；凭据不进入任务账本。
+
+一次只取头部 `ego_view`，不把仿真 `overhead_cam` 或腕部视角替代成头部图。
+客户端有界读取并核验 `fq/vla-camera-frame/v1`：帧 ID、带时区源采集／接收时间、
+来源与接收年龄、JPEG 尺寸和 SHA256 必须匹配；图片不超过 2 MiB，源及接收年龄上限 500 ms，
+含传输等待，并检查跨端时钟。缺时间、过旧、时钟不一致、错误视角、HTTP 不可达或鉴权失败均明确失败，
+不回落仿真、不返回历史缓存。随后使用现有 `camera.vlm` 调云端图片 API；
+本机目前选用千问云端，公开模板不包含凭据。
+
+描述证据保留 `camera_frame` 元数据和原采集时间；模型完成时间另记，
+事件有效期从采集时间计算，不能因模型返回较晚而刷新旧图时效。
+原 Runtime 继续隔离超时、取消及旧任务迟到结果。描述成功只证明取图／描述链路完成，
+不作为开门、抓取效果自动通过的证据。
+网页 `/api/quad_latest` 返回同一来源的头部 JPEG 与帧 ID／采集时间／SHA256 响应头；
+真机观察不提供仿真 `/scene` 或录像控制。任务回放沿原 MediaService 保存图片及来源元数据。
+VLA 启停和监测见[统一 VLA 服务](接口说明_控制面板.md#vla-unified-runtime)，
+验证层次见[头部看图联调](多端联调_模型接入与评测.md#real-camera-check)。
+
 2026-10-21 代理兼容修正：服务启动及模型 SDK 构造前，将当前进程继承的
 `HTTP_PROXY / HTTPS_PROXY / ALL_PROXY`（含小写）中的 `socks://` 别名规范为 `socks5://`。
 保留代理地址、端口、认证和 `NO_PROXY`，不修改桌面系统或 tmux 的全局设置；
@@ -192,7 +217,7 @@ SOP 版本为字符串 `2`；Skill 格式版本与 LAN 请求协议版本是不�
 
 已有任务保持原快照：缺少显示字段时兼容旧中文表，不读取当前 YAML 去改写历史。仅修改配置不会改变正在显示的旧任务名称，新任务才绑定新名称；新后端代码仍需正常重载后生效。
 
-2026-10-22 后续按用户提供的现场截图更新冰箱前位置与朝向，当前坐标统一维护在
+2026-10-22、2026-11-04 按用户提供的现场截图更新冰箱前位置与朝向；最近一次截图朝向按度转为弧度，当前坐标统一维护在
 [`reception_single_can_v2.yaml`](../src/brain/packages/definitions/reception_single_can_v2.yaml) 的 `points.table2.goal_xyt`。
 真机与操控模拟混合流程共用该点，协议 `target_id=table_2`、段序和其它点位不变；
 新任务创建时重新加载定义，无需因本次 YAML 点位修改重启大脑。旧任务继续使用原坐标快照。

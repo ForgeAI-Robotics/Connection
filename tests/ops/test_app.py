@@ -7,7 +7,8 @@ from unittest.mock import patch
 
 from ops.app import create_app
 app = create_app()
-from ops import services
+from ops import services, vla_remote
+from tests.ops.vla_fixture import action_result
 
 
 class PanelAppTests(unittest.TestCase):
@@ -25,6 +26,7 @@ class PanelAppTests(unittest.TestCase):
                 ('ops.tmuxctl.session_alive', False),
                 ('ops.tmuxctl.unmanaged_pids', []),
                 ('ops.services._tcp_open', False),
+                ('ops.vla_remote.runtime_status', vla_remote.unknown_status('offline test')),
                 ('ops.dream_remote.ensure_log_follower', None),
                 ('ops.dream_remote.review_ready', False),
                 ('ops.dream_remote.review_url_for_panel', 'http://127.0.0.1:9882')):
@@ -86,7 +88,7 @@ class PanelAppTests(unittest.TestCase):
     def test_vla_start_uses_ssh_and_does_not_touch_tmux(self):
         from unittest.mock import patch
 
-        with patch("ops.vla_remote.run", return_value="started") as mocked:
+        with patch("ops.vla_remote.run", return_value=action_result()) as mocked:
             response = self.client.post("/api/services/vla/start")
         self.assertEqual(response.status_code, 200, response.get_json())
         self.assertTrue(response.get_json()["ok"])

@@ -221,7 +221,7 @@ def load_robot_api_config() -> RobotApiConfig:
         observation_backend = observation['backend'] if observation['available'] else '__disabled__'
         env_url = None  # An applied profile takes precedence over stale service environments.
         for route in (execution, observation):
-            if route['available'] and route['backend'] != 'body_real':
+            if route['available'] and route['backend'] not in {'body_real', 'vla_camera'}:
                 raw = backends_cfg.setdefault(route['backend'], {})
                 raw.update(enabled=True, url=route['url'])
         if legacy_execution:

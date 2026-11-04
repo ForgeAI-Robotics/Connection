@@ -1,10 +1,12 @@
 import os
+import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from ops import vla_remote
+from tests.ops.vla_fixture import action_result
 
 
 class VlaRemoteTests(unittest.TestCase):
@@ -25,7 +27,7 @@ class VlaRemoteTests(unittest.TestCase):
         self.assertNotIn("run_phase_aware_action_stack.sh", remote)
         self.assertNotIn("navigation relay", remote)
         self.assertIn("./run_agent_vla_runtime.sh start", remote)
-        self.assertIn("./run_agent_vla_runtime.sh status", remote)
+        self.assertNotIn("./run_agent_vla_runtime.sh status", remote)
         self.assertIn("BRAIN_VLA_REAL_ACTION_ACK=PHYSICAL_ESTOP_READY", remote)
         self.assertNotIn("run_real_inference_stack.sh", remote)
         self.assertNotIn("run_phase_aware_action_stack.sh start", remote)
@@ -50,11 +52,11 @@ class VlaRemoteTests(unittest.TestCase):
     def test_successful_start_records_output(self):
         def runner(_argv, _timeout, env=None):
             return subprocess.CompletedProcess(
-                _argv, 0, stdout="AGENT_VLA_RUNTIME_STARTED\n", stderr=""
+                _argv, 0, stdout="AGENT_VLA_RUNTIME_STARTED\nVLA_RUNTIME_RESULT " + json.dumps(action_result()) + "\n", stderr=""
             )
 
         text = vla_remote.run("start", runner=runner)
-        self.assertIn("AGENT_VLA_RUNTIME_STARTED", text)
+        self.assertTrue(text["confirmed"])
         self.assertIn("AGENT_VLA_RUNTIME_STARTED", vla_remote.history())
         self.assertIn("NX 网关独立管理", vla_remote.history())
         files = list(Path(self.logdir.name).glob("*/vla/monitor.log"))

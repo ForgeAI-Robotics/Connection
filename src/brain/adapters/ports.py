@@ -481,7 +481,9 @@ def build_port(config, backend, *, agent=None, body_control=None):
         from brain.adapters.simple_o7 import SimpleO7Adapter
         return SimpleO7Adapter.from_config()
     if backend == "camera":
-        return LookAdapter()
+        from functools import partial
+        from brain.adapters.camera import capture_scene
+        return LookAdapter(capture=partial(capture_scene, brain_config=config))
     if backend in SIMULATED_RECEPTION:
         from copy import deepcopy
         from shared.protocol_simulation import require_simulator_pair

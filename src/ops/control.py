@@ -37,7 +37,7 @@ def _service_status(service, *, include_pids=True) -> dict:
     return {
         **service_description(service),
         **_review_page(service),
-        "state": state if service.controllable else ("up" if health.get("ok") else "down"),
+        "state": state if service.controllable else health.get('state', "up" if health.get("ok") else "down"),
         "health": health,
         "pids": pids,
     }
@@ -120,14 +120,12 @@ def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None
 
 def _start(service) -> None:
     if service.remote_control == 'ssh_vla_camera':
-        vla_camera.run('start')
-        return
+        raise RuntimeError('相机已由 VLA 统一管理，请使用 VLA 启动入口')
     if service.remote_control == "ssh_simple":
         simple_remote.run("start")
         return
     if service.remote_control == "ssh_vla":
-        vla_remote.run("start")
-        return
+        return vla_remote.run("start")
     if service.remote_control == "ssh_dream":
         if "start" not in service.remote_actions:
             raise RuntimeError(service.disabled_reason)
@@ -142,14 +140,12 @@ def _start(service) -> None:
 
 def _stop(service) -> None:
     if service.remote_control == 'ssh_vla_camera':
-        vla_camera.run('stop')
-        return
+        raise RuntimeError('相机由 VLA 保留运行；普通停止只关闭 VLA HTTP')
     if service.remote_control == "ssh_simple":
         simple_remote.run("stop")
         return
     if service.remote_control == "ssh_vla":
-        vla_remote.run("stop")
-        return
+        return vla_remote.run("stop")
     if service.remote_control == "ssh_dream":
         if "stop" not in service.remote_actions:
             raise RuntimeError(service.disabled_reason)

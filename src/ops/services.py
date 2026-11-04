@@ -266,7 +266,7 @@ def feishu_ready_from_text(text: str) -> bool:
 
 def catalog() -> list[Service]:
     _load_dotenv()
-    from ops import simple_remote, gateway_service, vla_camera
+    from ops import simple_remote, gateway_service, vla_camera, vla_remote
     from shared.networks import lan
 
     site = lan()
@@ -408,7 +408,8 @@ def catalog() -> list[Service]:
         ),
         Service(
             id='vla_camera', name='VLA 相机', layer='robot', controllable=False,
-            log_service='vla_camera', remote_control='ssh_vla_camera', remote_actions=('start', 'stop'),
+            log_service='vla_camera', remote_control='ssh_vla_camera', remote_actions=(),
+            disabled_reason='相机已由 VLA 统一管理；普通停止只关闭 HTTP',
             confirm_stop=True,
             confirm_stop_message='将结束本面板启动的三路相机会话，操控会失去图像输入。请先结束操控任务；不停止 VLA 接口、O6 或 SONIC。确定继续？',
             note='① 先启动头部＋左腕＋右腕相机，再启动 VLA 接口',
@@ -416,7 +417,7 @@ def catalog() -> list[Service]:
         ),
         Service(
             id="vla",
-            name="VLA",
+            name="VLA 服务",
             layer="robot",
             controllable=False,
             log_service="vla",
@@ -424,16 +425,16 @@ def catalog() -> list[Service]:
             remote_actions=("start", "stop"),
             confirm_start=True,
             confirm_start_message=(
-                "将按操控工程的 run_agent_vla_runtime.sh 启动 VLA 运行时，"
-                "执行其检查与依赖准备。请先启动 VLA 相机。确认现场急停可用？"
+                "将由 VLA 启动器核验并复用正常的相机与 O6，缺失时准备后启动 HTTP。"
+                "不会重启异常的在用组件。确认现场急停可用？"
             ),
             confirm_stop=True,
             confirm_stop_message=(
-                "将停止 VLA HTTP 接口，O6 反馈与保持服务继续运行；相机、NAV 和 SONIC 不受影响。"
+                "将只停止 VLA HTTP 接口及其图像订阅，相机和 O6 保留运行；NAV 和 SONIC 不受影响。"
                 "若任务正在执行，远端会拒绝停止。确定继续？"
             ),
-            note="② 相机就绪后启动 VLA 接口；任务由大脑下发",
-            health=_health_remote("vla", vla),
+            note="启动统一核验相机、O6 和 HTTP；停止只关闭 HTTP，保留相机与 O6",
+            health=vla_remote.health,
         ),
         Service(
             id="gateway", name="机器人统一网关", layer="robot", controllable=False,

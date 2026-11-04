@@ -29,7 +29,8 @@ def observation_url():
 
 
 class MediaService:
-    def __init__(self, task_status):
+    def __init__(self, task_status, config=None):
+        self.config = config
         self.root = workspace_root() / 'data/timelines'
         self.status = task_status
         self.pool = WorkerPool('brain-media', 1, capacity=8)
@@ -43,9 +44,11 @@ class MediaService:
         if event not in {'task_opened', 'step_passed', 'task_succeeded', 'verdict'}:
             return
         try:
+            from brain.adapters.vla_camera import real_camera_route
+            route = real_camera_route()
             url = observation_url()
             with diagnostic_context(**task_fields(record)):
-                self.pool.submit(self.capture, event, record, url)
+                self.pool.submit(self.capture, event, record, url, route=route)
             self.last_skip_reason = None
         except Exception as exc:
             self.dropped += 1
@@ -56,26 +59,33 @@ class MediaService:
                                      level='WARNING', dropped=self.dropped)
                 self.last_skip_reason = reason
 
-    def capture(self, event, record, url):
+    def capture(self, event, record, url, *, route=None):
         task_id = record['task_id']
         folder_name = hashlib.sha256(task_id.encode()).hexdigest()[:24]
         folder = self.root / folder_name
         manifest = folder / 'timeline.json'
         try:
-            response = requests.get(url + '/camera/latest', timeout=15)
-            response.raise_for_status()
-            if not response.headers.get('content-type', '').startswith('image/'):
-                raise ValueError('观察后端未返回图像')
+            frame = None
+            if route:
+                from brain.adapters.vla_camera import capture_head
+                frame, image = capture_head(config=self.config, route=route)
+            else:
+                response = requests.get(url + '/camera/latest', timeout=15)
+                response.raise_for_status()
+                if not response.headers.get('content-type', '').startswith('image/'):
+                    raise ValueError('观察后端未返回图像')
+                image = response.content
             folder.mkdir(parents=True, exist_ok=True)
             previous = json.loads(manifest.read_text()) if manifest.exists() else {
                 'task': record.get('task_desc'), 'task_id': task_id, 'won': None,
                 'created': datetime.now().astimezone().isoformat(),
-                'cameras': ['Top', 'Front', 'Wrist', 'Agent'], 'frames': []}
+                'cameras': ['ego_view'] if route else ['Top', 'Front', 'Wrist', 'Agent'], 'frames': []}
             filename = f'frame_{len(previous["frames"]):03d}.jpg'
-            (folder / filename).write_bytes(response.content)
+            (folder / filename).write_bytes(image)
             previous['frames'].append({'file': folder_name + '/' + filename,
                 'label': event + ': ' + str(record.get('phase') or ''), 't': (datetime.now().astimezone() - datetime.fromisoformat(previous['created'])).total_seconds(),
-                'observed_at': datetime.now().astimezone().isoformat(), 'source': url})
+                'observed_at': frame['captured_at'] if frame else datetime.now().astimezone().isoformat(),
+                'source': url, **({'camera_frame': frame} if frame else {})})
             if record.get('state') in {'succeeded', 'failed', 'cancelled'}:
                 previous['won'] = record['state'] == 'succeeded'
             write_json(manifest, previous)

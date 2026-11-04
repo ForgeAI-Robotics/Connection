@@ -265,7 +265,7 @@ place 在 DREAM 凭证校验后进入 `waiting_operator_approval`。只有现场
 
 三端冷启动与收工顺序见[控制面板接口说明](接口说明_控制面板.md#三端启动与任务发布)。以下 SSH 别名应事先配置；`<VLA_BRIDGE_ROOT>` 为桥接目录，`<VLA_PROJECT_ROOT>` 为其所属项目目录。面板使用当前网络的操控角色地址，桥接目录可用 `VLA_REMOTE_DIR` 覆盖。
 
-当前独立 NAV 入口启动配套 NAV／SONIC；VLA 相机需另行启动，再启动 VLA HTTP 与其受管 O6。相机使用面板独立卡片，命令与停止范围见[相机入口](接口说明_控制面板.md#vla-三路相机卡片2026-10-29)。不能沿用旧 DREAM 三端一键脚本替代当前流程。
+当前独立 NAV 入口启动配套 NAV／SONIC。2026-11-04 VLA 源码改为由 `run_agent_vla_runtime.sh start` 统一核验／复用相机、受管 O6 和 HTTP；停止仅关闭 HTTP，保留相机与 O6，见[统一 VLA 服务](接口说明_控制面板.md#vla-unified-runtime)。2026-11-04 已按用户授权重载 HTTP 并验证取图，相机／O6 原实例保留；完整统一启动过程没有在本轮重新执行。不能沿用旧 DREAM 三端一键脚本替代当前流程。
 
 ### 操控侧前提
 
@@ -297,7 +297,7 @@ cd <VLA_BRIDGE_ROOT>
 
 ### 独立启动与状态
 
-启动 VLA HTTP `:8091`，由官方启动器完成检查和受管 O6 准备；不启动导航 relay：
+新版启动 VLA HTTP `:8091`，由官方启动器完成相机核验／缺失启动和受管 O6 准备；不启动导航 relay：
 
 ```bash
 cd <VLA_BRIDGE_ROOT>
