@@ -77,6 +77,23 @@ class VlaRuntimeStatusTests(unittest.TestCase):
         report = vla_remote.runtime_status(runner=self.runner(value), force=True)
         self.assertEqual(report['http']['state'], 'unknown')
 
+    def test_o6_recovery_is_partial_without_hiding_http_or_faking_ready(self):
+        for state in ('initializing', 'recovering', 'blocked'):
+            value = status()
+            value['o6'].update(state=state, ready=False, recovery={
+                'schema': 'fq/o6-recovery/v1', 'enabled': True, 'state': state,
+                'restart_count_in_window': 1, 'generation': 1})
+            with self.subTest(state=state), patch('ops.vla_remote._default_runner', side_effect=self.runner(value)):
+                vla_remote.invalidate_status()
+                item = _service_status(by_id('vla'))
+                self.assertEqual(item['state'], 'partial')
+                self.assertTrue(item['health']['runtime']['http']['ready'])
+                self.assertEqual(item['health']['runtime']['o6']['state'], state)
+            value['o6']['ready'] = True
+            self.assertEqual(vla_remote.runtime_status(runner=self.runner(value), force=True)['http']['state'], 'unknown')
+        value = status(); value['http']['state'] = 'recovering'
+        self.assertEqual(vla_remote.runtime_status(runner=self.runner(value), force=True)['http']['state'], 'unknown')
+
     def test_concurrent_poll_singleflight_and_return_values_not_shared(self):
         entered = threading.Event(); release = threading.Event()
         calls = []
@@ -227,6 +244,22 @@ runtime.o6={state:"running",ready:false,feedback_fault:fault};
 assert(vlaSummaryLines({health:{runtime}}).some(x=>x.includes("故障：右手CAN 接口断连")));
 runtime.o6={state:"stopped",ready:false,last_feedback_fault:{...fault,schema:"unknown"}};
 assert(!vlaSummaryLines({health:{runtime}}).some(x=>x.includes("CAN 接口断连")));
+''')
+
+    def test_o6_recovery_progress_does_not_claim_receiver_or_task_success(self):
+        self.browser('''
+const o6={state:"stopped",ready:false,recovery:{schema:"fq/o6-recovery/v1",enabled:true,state:"recovering",reason:"WAIT_CAN_STABLE",restart_count_in_window:1}};
+assert(o6RecoverySummary(o6).includes("恢复中 · 等待 CAN 稳定"));
+assert(o6RecoverySummary(o6).includes("窗口内恢复 1 次"));
+o6.recovery.state="blocked";o6.recovery.reason="RECOVERY_RATE_LIMIT";
+assert(o6RecoverySummary(o6).includes("频繁掉线，自动恢复已暂停"));
+o6.recovery.state="ready";o6.recovery.reason=null;
+assert(o6RecoverySummary(o6).includes("待核验"));
+o6.state="running";o6.ready=true;
+assert(o6RecoverySummary(o6).includes("已就绪"));
+o6.recovery.enabled=false;assert(o6RecoverySummary(o6).includes("已关闭"));
+assert.equal(o6RecoverySummary({}),"");
+assert.equal(o6RecoverySummary({recovery:{schema:"unknown",state:"ready"}}),"");
 ''')
 
     def test_execution_blocker_is_visible_separately_from_component_green(self):

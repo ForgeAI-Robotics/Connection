@@ -130,7 +130,7 @@ function vlaModelSummary(runtime) {
 function vlaComponentLines(item) {
   const runtime = item.health?.runtime;
   if (!runtime) return ["组件状态尚未核验"];
-  const states = {running: "运行中", stopped: "已停止", unknown: "未知"};
+  const states = {running: "运行中", stopped: "已停止", unknown: "未知", initializing: "初始化中", recovering: "恢复中", blocked: "恢复受阻"};
   const http = runtime.http || {};
   const camera = runtime.camera || {};
   const o6 = runtime.o6 || {};
@@ -154,6 +154,8 @@ function vlaComponentLines(item) {
     lines.push(`${label}：${frame.ready === true ? "检查时帧新鲜" : frame.ready === false ? "无新鲜帧" : "未知"}${fps}${age}${frame.reason ? " · " + frame.reason : ""}`);
   }
   lines.push(`O6：${states[o6.state] || "未知"} · ${readiness(o6)}${o6.reason ? " · " + o6.reason : ""}`);
+  const recoveryLine = o6RecoverySummary(o6);
+  if (recoveryLine) lines.push(recoveryLine);
   lines.push(vlaModelSummary(runtime));
   lines.push(vlaExecutionSummary(runtime));
   lines.push(`停止 HTTP：${http.can_stop === true ? "可请求（执行时再次核验）" : "当前不可停止"}${http.reason ? " · " + http.reason : ""}`);
@@ -163,7 +165,7 @@ function vlaComponentLines(item) {
 
 function o6FaultSummary(o6 = {}) {
   if (o6.ready === true) return "";
-  const fault = o6.feedback_fault || (o6.state === "stopped" ? o6.last_feedback_fault : null);
+  const fault = o6.feedback_fault || (["stopped", "initializing", "recovering", "blocked"].includes(o6.state) ? o6.last_feedback_fault : null);
   if (!fault || fault.schema !== "fq/o6-feedback-fault/v1") return "";
   const side = {left: "左手", right: "右手"}[fault.side] || "手部";
   const cause = fault.code === "CAN_READ_FAILED"
@@ -171,7 +173,23 @@ function o6FaultSummary(o6 = {}) {
     : fault.code === "ENCODER_TIMEOUT" ? "反馈超时" : "反馈故障";
   // A durable fault belongs to its original receiver. It is not proof that
   // the CAN interface is still down, or that a later instance failed likewise.
-  return ` · ${o6.state === "stopped" ? "最近故障记录" : "故障"}：${side}${cause}`;
+  return ` · ${o6.state === "running" ? "故障" : "最近故障记录"}：${side}${cause}`;
+}
+
+function o6RecoverySummary(o6 = {}) {
+  const recovery = o6.recovery;
+  if (!recovery || recovery.schema !== "fq/o6-recovery/v1") return "";
+  if (recovery.enabled !== true) return "O6 自动恢复：已关闭";
+  const labels = {initializing: "初始化中", recovering: "恢复中", blocked: "恢复受阻", stopped: "已停止"};
+  let state = recovery.state === "ready" ? (o6.ready === true ? "已就绪" : "待核验") : (labels[recovery.state] || "待核验");
+  const reasons = {WAIT_CAN_STABLE: "等待 CAN 稳定", CAN_STABLE_NEW_RECEIVER: "重建接收实例",
+    RECOVERY_RATE_LIMIT: "频繁掉线，自动恢复已暂停", RECOVERY_DEADLINE: "等待恢复超时",
+    USB_SOURCE_MISMATCH: "USB 设备来源不符", O6_OWNER_UNVERIFIED: "设备归属未核清",
+    O6_OTHER_OWNER_PROCESS: "存在其他手部控制进程"};
+  const reason = recovery.reason ? (reasons[recovery.reason] || String(recovery.reason).slice(0, 120)) : "";
+  const count = Number.isSafeInteger(recovery.restart_count_in_window) && recovery.restart_count_in_window > 0
+    ? ` · 窗口内恢复 ${recovery.restart_count_in_window} 次` : "";
+  return `O6 自动恢复：${state}${reason ? " · " + reason : ""}${count}`;
 }
 
 function vlaExecutionSummary(runtime) {
@@ -192,6 +210,8 @@ function vlaSummaryLines(item) {
   if (!runtime) return ["状态待核验"];
   const describe = (part = {}) => {
     if (part.state === "stopped") return "已停止";
+    const recovering = {initializing: "初始化中", recovering: "恢复中", blocked: "恢复受阻"};
+    if (recovering[part.state]) return recovering[part.state];
     if (part.state !== "running") return "未知";
     return part.ready === true ? "正常" : part.ready === false ? "未就绪" : "运行中 · 待核验";
   };
@@ -209,6 +229,7 @@ function vlaSummaryLines(item) {
     `接口：${http.draining ? "停止中" : describe(http)}${http.policy_running ? " · 任务执行中" : ""}`,
     `相机：${frames}`,
     `O6：${describe(runtime.o6)}${o6FaultSummary(runtime.o6)}`,
+    ...(o6RecoverySummary(runtime.o6) ? [o6RecoverySummary(runtime.o6)] : []),
     vlaModelSummary(runtime),
     vlaExecutionSummary(runtime),
   ];

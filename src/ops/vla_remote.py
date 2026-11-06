@@ -179,9 +179,22 @@ def _validate_status(value):
         raise ValueError('VLA 状态时间缺失或已过期') from None
     for name in ('http', 'camera', 'o6'):
         part = value.get(name)
-        if (not isinstance(part, dict) or part.get('state') not in {'running', 'stopped', 'unknown'}
-                or part.get('ready') is not None and type(part.get('ready')) is not bool):
+        states = {'running', 'stopped', 'unknown'}
+        if name == 'o6':
+            states |= {'initializing', 'recovering', 'blocked'}
+        if (not isinstance(part, dict) or part.get('state') not in states
+                or part.get('ready') is not None and type(part.get('ready')) is not bool
+                or part.get('state') in {'initializing', 'recovering', 'blocked'} and part.get('ready') is not False):
             raise ValueError('VLA 组件状态合同无效')
+    recovery = value['o6'].get('recovery')
+    if recovery is not None:
+        if (not isinstance(recovery, dict) or recovery.get('schema') != 'fq/o6-recovery/v1'
+                or type(recovery.get('enabled')) is not bool
+                or recovery.get('state') not in {'initializing', 'recovering', 'blocked', 'ready', 'stopped'}):
+            raise ValueError('O6 自动恢复状态合同无效')
+        for field in ('generation', 'restart_count_in_window'):
+            if field in recovery and (type(recovery[field]) is not int or recovery[field] < 0):
+                raise ValueError('O6 自动恢复计数无效')
     if type(value['http'].get('can_stop')) is not bool:
         raise ValueError('VLA 缺少停止能力核查结果')
     if value['http'].get('managed') is not None and type(value['http']['managed']) is not bool:

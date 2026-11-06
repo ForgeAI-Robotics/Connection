@@ -75,11 +75,15 @@ direct 正常执行异常路径在 handoff.original_execution_failure 保留首�
 
 ### O6 进程退出与只读取证（2026-11-06）
 
-新 O6 记录增加 `process_identity`（PID、boot ID、start ticks）及 `can_at_binding/can_at_fault`，用于区分旧进程和 USB 重新枚举后的同名接口。致命 CAN 读取异常先封锁任务输出、保留首因与退出记录，再退出；不自动重连、重播或重启 O6。退出记录描述程序进入清理与预期退出码，不能替代操作系统退出状态或物理停止证明。
+新 O6 记录增加 `process_identity`（PID、boot ID、start ticks）及 `can_at_binding/can_at_fault`，用于区分旧进程和 USB 重新枚举后的同名接口。致命 CAN 读取异常先封锁任务输出、保留首因与接收实例退出记录。2026-11-06 按用户授权，direct O6 对已匹配身份的 CAN_READ_FAILED（errno100／19）在原进程与独占锁内自动恢复；接收实例退出不再意味着管理进程一定退出，记录不能替代物理停止／保持证明。恢复不重播旧命令，也不修改旧任务失败或停止未知。
 
 NX 的 `sonic_managed_o6/last_feedback_fault.json`、`feedback_faults/<fault_id>.json` 和 `last_receiver_exit.json`、`receiver_exits/<receiver_instance_id>.json` 保留最新及逐次记录。工作站沿现有 `g1_brain_vla_bridge/export_o6_diagnostics.sh` 导出，不启动采集、不打开 CAN、不访问相机。自动取证缓存及实机验证见[O6 USB 断连排查](多端联调_操控与抓取.md#o6-usb-forensics-20261106)。历史证据只能解释匹配的故障，不能冒充当前服务状态。
 
 服务启动与执行准入分开：认证 `GET /v1/service/status` 只报告本地 HTTP／模型／任务及输出归属；统一启动器再检查相机与 O6。SONIC、身体状态、输入采纳及最新交接条件在动作阶段检查，服务启动不得生成 `startup_safety_attested=true`。面板使用相同规则，见[统一 VLA 服务](接口说明_控制面板.md#vla-unified-runtime)。
+
+自动恢复先核验已归档首因、机器人、USB来源、CAN类型与当前ifindex，等待UP和设备身份连续稳定3秒，再读取当前双手位置建立保持；新receiver／epoch默认输出封锁，旧输入不能复用。轮询1秒、指数退避2–30秒、两次重建至少间隔10秒，300秒内最多3次自动重建；等待超过120秒或归属／标定不明、限速触发时进入blocked，要求人工检查。手动停止结束恢复循环；正常服务复用，不另起第二个O6。状态合同 `fq/o6-recovery/v1` 通过原运行状态的 `o6.recovery` 暴露，进程存活以PID／boot／start ticks核验，旧状态不能冒充当前恢复。
+
+停止检查独立收集原控制器的身体证据和原O6实例的手部证据。缺失status或接收实例已换时，身体检查继续执行，手部保持仍为unknown并保留匹配的原故障；不会再由KeyError跳过后续检查。新服务ready不回填旧命令的hold_verified。
 
 ## 大脑统一授权对接（2026-10-23，接口离线串联通过）
 
