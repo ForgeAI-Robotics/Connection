@@ -75,7 +75,10 @@ def _remote_script(action: str) -> tuple[str, float]:
             f"cd {remote_dir} && "
             f"BRAIN_VLA_REAL_ACTION_ACK={shlex.quote(cfg['ack'])} {runtime} start"
         )
-        return remote, 300.0
+        # Includes peripheral startup plus the preparation manager's separate
+        # static/model/camera budgets (120 + 180 + 15 + 10 seconds by default).
+        # This bounds service startup only, never the per-command 10-second goal.
+        return remote, 600.0
     if action == "stop":
         return f"cd {remote_dir} && {runtime} stop", 60.0
     return f"cd {remote_dir} && {runtime} status-json", 15.0
@@ -148,10 +151,10 @@ def _friendly_error(exc: BaseException, output: str = "") -> str:
             f"请确认 VLA_SSH_PASSWORD 与 {target} 的密码一致。"
         )
     if "timed out" in lowered or "timeout" in lowered:
-        return f"SSH 等待超时: {text}"
+        return "SSH 等待超时，启停结果尚未确认；请查看组件状态与 VLA 日志。"
     if "name or service not known" in lowered or "could not resolve" in lowered:
         return f"找不到操控机 {settings()['ssh_target']}。请核对 config/networks.yaml 里的当前 WiFi。"
-    return text or "SSH 调用失败"
+    return " ".join(text.split())[:400] or "SSH 调用失败"
 
 
 def _sanitize_argv(argv: list[str]) -> str:
@@ -198,6 +201,28 @@ def _validate_status(value):
             if number is not None and (type(number) not in (int, float) or not math.isfinite(number)
                     or number < 0 and (field == 'fps' or stream.get('ready') is True)):
                 raise ValueError('VLA 图像测量字段无效')
+    execution = value.get('execution_readiness')
+    if execution is not None:
+        if not isinstance(execution, dict):
+            raise ValueError('VLA 动作依赖状态合同无效')
+        unchecked = execution.get('checked') is False and execution.get('ready') is None
+        if ((type(execution.get('ready')) is not bool and not unchecked)
+                or execution.get('checked') is False and execution.get('ready') is not None
+                or not isinstance(execution.get('blockers'), list)
+                or any(not isinstance(item, str) for item in execution['blockers'])
+                or execution.get('ready') is True and execution['blockers']):
+            raise ValueError('VLA 动作依赖状态合同无效')
+    preparation = value.get('preparation')
+    if preparation is not None:
+        if (not isinstance(preparation, dict) or preparation.get('schema') != 'fq/vla-preparation/v1'
+                or type(preparation.get('enabled')) is not bool):
+            raise ValueError('VLA 模型准备状态合同无效')
+        if preparation['enabled']:
+            model = (preparation.get('operations') or {}).get('open_fridge') or {}
+            if (type(model.get('warm_ready')) is not bool
+                    or model.get('state') not in {'cold', 'checking', 'loading', 'warming', 'ready', 'busy', 'invalidated', 'failed', 'stopping'}
+                    or model['warm_ready'] is True and model['state'] != 'ready'):
+                raise ValueError('VLA 开门模型准备状态不一致')
     return value
 
 
@@ -237,6 +262,12 @@ def runtime_status(*, runner=None, force=False):
         return value
 
 
+def _model_ready(status):
+    preparation = status.get('preparation') or {}
+    return (preparation.get('enabled') is not True
+            or ((preparation.get('operations') or {}).get('open_fridge') or {}).get('warm_ready') is True)
+
+
 def health(service):
     from ops.services import _record_probe
     value = runtime_status()
@@ -246,8 +277,10 @@ def health(service):
     elif http['state'] == 'stopped':
         state, detail = 'stopped', 'HTTP 已停止；相机与 O6 分别显示实际状态'
     else:
-        ready = all(value[name].get('ready') is True for name in ('http', 'camera', 'o6'))
+        ready = all(value[name].get('ready') is True for name in ('http', 'camera', 'o6')) and _model_ready(value)
         state, detail = ('up', 'VLA 接口、相机与 O6 检查通过') if ready else ('partial', 'HTTP 运行中，组件尚未全部就绪')
+        if (value.get('preparation') or {}).get('enabled') is True:
+            detail = 'VLA 开门模型及组件已就绪' if ready else 'HTTP 运行中，开门模型或组件尚未就绪'
     _record_probe(service.id, detail, ok=state == 'up', signature=(state, detail))
     return {'ok': state == 'up', 'state': state, 'detail': detail,
             'url': settings()['http_base'], 'runtime': value}
@@ -266,7 +299,7 @@ def _action_result(action, stdout):
             raise RuntimeError(result.get('message') or 'VLA 启停结果未确认')
         http = status['http']
         confirmed = (http['state'] == 'stopped' if action == 'stop'
-                     else http['state'] == 'running' and all(status[n].get('ready') is True for n in ('http', 'camera', 'o6')))
+                     else http['state'] == 'running' and all(status[n].get('ready') is True for n in ('http', 'camera', 'o6')) and _model_ready(status))
         if not confirmed:
             raise RuntimeError('VLA 回执与组件状态不一致，不能确认操作完成')
         if not isinstance(result.get('message'), str) or not result['message'].strip():
@@ -288,6 +321,35 @@ def run(action: str, *, runner: Optional[Runner] = None):
     finally:
         invalidate_status()
         _ACTION_LOCK.release()
+
+
+def _action_failure_message(action, completed):
+    """Extract a bounded error summary; the complete receipt stays in the log."""
+    lines = [line[len(RESULT_PREFIX):] for line in (completed.stdout or '').splitlines()
+             if line.startswith(RESULT_PREFIX)]
+    message = None
+    if len(lines) == 1 and len(lines[0]) <= 65536:
+        try:
+            receipt = json.loads(lines[0])
+            if (isinstance(receipt, dict) and receipt.get('schema') == ACTION_SCHEMA
+                    and receipt.get('action') == action and receipt.get('ok') is False
+                    and receipt.get('confirmed') is False
+                    and isinstance(receipt.get('message'), str)):
+                message = ' '.join(receipt['message'].split())[:220]
+        except ValueError:
+            pass
+    # stderr can hold the actionable shell error, but never dump another JSON
+    # envelope or an unbounded traceback into the panel's single status line.
+    stderr = [line.strip() for line in (completed.stderr or '').splitlines()
+              if line.strip() and not any(c in line for c in ('{', '}', '[', ']'))]
+    detail = stderr[-1][:180] if stderr else ''
+    if not message:
+        message = _friendly_error(RuntimeError(f'SSH 退出码 {completed.returncode}'), detail)[:220]
+        detail = ''
+    elif detail and detail in message:
+        detail = ''
+    label = '启动' if action == 'start' else '停止'
+    return f'VLA {label}未完成：{message}' + ('；' + detail if detail else '') + '。详情见 VLA 日志。'
 
 
 def _run_action(action: str, *, runner: Optional[Runner] = None):
@@ -314,10 +376,9 @@ def _run_action(action: str, *, runner: Optional[Runner] = None):
         if part and part.strip()
     )
     if completed.returncode != 0:
-        message = _friendly_error(
-            RuntimeError(f"ssh 退出码 {completed.returncode}"),
-            output,
-        )
+        if output:
+            record(f'ssh 退出码 {completed.returncode} ' + output)
+        message = _action_failure_message(action, completed)
         record(message)
         raise RuntimeError(message)
     if output:

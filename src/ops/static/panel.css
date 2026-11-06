@@ -151,6 +151,28 @@ nav {
 .badge.stopped, .badge.down { color: var(--bad); }
 .meta { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .meta div { margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.robot-card {
+  height: clamp(180px, 26vh, 220px);
+  display: flex;
+  flex-direction: column;
+}
+.robot-card .card-top, .robot-card .actions { flex: 0 0 auto; }
+.robot-card .meta {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+}
+.robot-card .meta > div, .robot-card .vla-components > div, .robot-card .vla-summary > div {
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
+.vla-summary { display: grid; gap: 4px; }
+.vla-details { margin-top: 8px; }
+.vla-details summary { cursor: pointer; color: var(--accent); width: fit-content; }
 .health { color: var(--muted); }
 .detail code { color: var(--accent); font-size: 11px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }

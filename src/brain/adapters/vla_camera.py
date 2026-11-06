@@ -1,16 +1,18 @@
-"""Authenticated, bounded reads of the selected real head camera. No motion API."""
+"""Authenticated, bounded VLA camera reads, including task-bound wrists. No motion API."""
 import base64
 from datetime import datetime, timezone
 import hashlib
 import io
 import math
 import time
+from urllib.parse import urlencode
 from PIL import Image
 
 from brain.adapters.http_client import HttpClient, HttpContractError
 from shared.execution_profile import applied_profile
 
 FRAME_SCHEMA = 'fq/vla-camera-frame/v1'
+BOUND_FRAME_SCHEMA = 'fq/vla-camera-frame/v2'
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 MAX_AGE_SEC = .5
 
@@ -43,15 +45,31 @@ class VlaCameraClient:
         control = ((config or {}).get('reception_real') or {}).get('body_control') or {}
         self.http.auth_token_env = control.get('vla_token_env') or control.get('token_env') or 'BRAIN_CONTROL_TOKEN'
 
-    def latest(self):
+    def latest(self, camera='ego_view', *, task_id=None, command_id=None):
+        if camera not in {'ego_view', 'left_wrist', 'right_wrist'}:
+            raise ValueError('未知相机视角')
+        if bool(task_id) != bool(command_id) or (camera != 'ego_view' and not command_id):
+            raise ValueError('腕部取图必须绑定原任务和命令')
+        params = {'camera': camera}
+        if command_id:
+            params.update(task_id=task_id, command_id=command_id)
         started = time.monotonic()
-        frame = self.http.request_json('GET', '/v1/camera/frames/latest?camera=ego_view',
+        frame = self.http.request_json('GET', '/v1/camera/frames/latest?' + urlencode(params),
             headers={'Cache-Control': 'no-cache'}, max_response_bytes=3 * 1024 * 1024)[0]
         elapsed = time.monotonic() - started
         try:
-            if (frame.get('schema') != FRAME_SCHEMA or frame.get('camera_key') != 'ego_view'
+            if (frame.get('schema') != (BOUND_FRAME_SCHEMA if command_id else FRAME_SCHEMA) or frame.get('camera_key') != camera
                     or frame.get('content_type') != 'image/jpeg'):
                 raise ValueError('头部图片合同不匹配')
+            binding = frame.get('task_binding') or {}
+            if command_id and (not isinstance(binding, dict) or binding.get('task_id') != task_id
+                               or binding.get('command_id') != command_id or binding.get('operation') != 'open_fridge'
+                               or not all(isinstance(frame.get(k), str) and frame[k] for k in
+                                          ('service_instance_id', 'camera_receiver_instance_id', 'robot_serial',
+                                           'frame_receipt_id', 'binding_proof'))
+                               or not all(isinstance(binding.get(k), str) and 0 < len(binding[k]) <= 256
+                                          for k in ('execution_epoch', 'controller_instance_id'))):
+                raise ValueError('图片任务绑定或服务身份不符')
             if not isinstance(frame.get('frame_id'), str) or not 0 < len(frame['frame_id']) <= 256:
                 raise ValueError('图片缺少帧身份')
             captured, received = timestamp(frame.get('captured_at')), timestamp(frame.get('received_at'))
@@ -80,6 +98,7 @@ class VlaCameraClient:
             raise HttpContractError('VLA 头部图片无效：' + str(exc)) from None
         metadata = {k: frame[k] for k in ('schema', 'camera_key', 'frame_id', 'captured_at',
                     'received_at', 'age_ms', 'received_age_ms', 'width', 'height', 'content_type', 'sha256')}
+        metadata.update({k: frame[k] for k in ('task_binding', 'service_instance_id', 'robot_serial', 'camera_receiver_instance_id', 'frame_receipt_id', 'binding_proof') if k in frame})
         return metadata, raw
 
 

@@ -73,6 +73,14 @@ direct 正常执行异常路径在 handoff.original_execution_failure 保留首�
 
 离线示例来自操控侧 `contracts/o6_feedback_fault.example.json`，本仓库测试副本使用合成机器人身份，见 [O6 故障字段夹具](../tests/contracts/o6_feedback_fault.example.json)。首次记录冻结和进程退出持久化由 VLA／O6 负责，大脑不为旧任务合成记录；联调验证见[操控故障字段接入](多端联调_操控与抓取.md#brain-o6-feedback-fault)。
 
+### O6 进程退出与只读取证（2026-11-06）
+
+新 O6 记录增加 `process_identity`（PID、boot ID、start ticks）及 `can_at_binding/can_at_fault`，用于区分旧进程和 USB 重新枚举后的同名接口。致命 CAN 读取异常先封锁任务输出、保留首因与退出记录，再退出；不自动重连、重播或重启 O6。退出记录描述程序进入清理与预期退出码，不能替代操作系统退出状态或物理停止证明。
+
+NX 的 `sonic_managed_o6/last_feedback_fault.json`、`feedback_faults/<fault_id>.json` 和 `last_receiver_exit.json`、`receiver_exits/<receiver_instance_id>.json` 保留最新及逐次记录。工作站沿现有 `g1_brain_vla_bridge/export_o6_diagnostics.sh` 导出，不启动采集、不打开 CAN、不访问相机。自动取证缓存及实机验证见[O6 USB 断连排查](多端联调_操控与抓取.md#o6-usb-forensics-20261106)。历史证据只能解释匹配的故障，不能冒充当前服务状态。
+
+服务启动与执行准入分开：认证 `GET /v1/service/status` 只报告本地 HTTP／模型／任务及输出归属；统一启动器再检查相机与 O6。SONIC、身体状态、输入采纳及最新交接条件在动作阶段检查，服务启动不得生成 `startup_safety_attested=true`。面板使用相同规则，见[统一 VLA 服务](接口说明_控制面板.md#vla-unified-runtime)。
+
 ## 大脑统一授权对接（2026-10-23，接口离线串联通过）
 
 > 当前日志与证据字段补充统一见上方交付映射；下节为历史 relay 接线。
@@ -103,6 +111,25 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 `configured=true` 只表示执行器已配置。2026-10-22 的旧接线中，动作仍检查 `real_action_enabled`、`navigation_handoff_ready`、`recovery_required=false` 和 `policy_state_uncertain=false`；VLA 自身继续核查导航原命令、硬件与租约。新任务中的导航也检查 VLA 已停、无活动命令、导航通路就绪及无恢复要求，避免失败／取消后直接导航。仅导航接待变体不依赖 VLA 能力发现；真机许可关闭保持原门控行为。
 
 当前 source_gate 不采用上一段的 NAV lease、旧恢复／端口门禁或远端 readiness 前置。大脑使用已支持动作目录编排，VLA 内部检查具体执行条件；direct-v1 请求与收尾见文首。
+
+<a id="door-auto-verification"></a>
+### 开门自动视觉确认与准备状态（2026-11-05）
+
+**本机应用状态：**大脑、面板和 VLA HTTP 已按用户授权重载；VLA `preparation.enabled=true`、`visual_evidence.enabled=true`，Brain 新任务 `door_verification.enabled=true/mode=auto`。VLM 改为已授权的云端 `qwen3-vl-plus`（DashScope 国际站），本地 9B VLM 服务已停止。完成凭据通过私有 `_FILE` 引用，不复制进账本。旧任务不会追溯启用自动核验。当前相机/O6停止、SONIC未运行，故操作级 `warm_ready=false`，没有发布实机动作；这不是整体就绪或10秒验收。
+
+开门自动核验仅针对 `open_fridge`。大脑通过既有 RuntimeOwner 空闲调度与 I/O 池观察原执行命令，不新建任务循环；`grasp_cola` 的效果确认保持原流程。VLA 负责动作、相机和原命令收尾；Brain 负责产生外部视觉证据，最终仍由 Runtime／Verifier 核验终态、身份、时间、效果与停止事实。
+
+新任务绑定 `reception_real.door_verification` 设置；`enabled=false` 为默认，`mode=shadow` 只记录观察，`mode=auto` 才允许携带环境变量或对应 `_FILE` 私有文件指定的独立 verifier 凭据提交 finish。旧任务不因修改配置获得自动确认权。VLM 端点复用 `reception_real.verification.vlm`；不再额外调用 LLM 裁决，也不允许模型改命令或选择下一动作。公开模板仍默认关闭／shadow；本机已启用 auto，使用5秒单模型等待预算、220 tokens上限和最多20字中文解释，语义判据与6秒证据新鲜度未放宽。2026-11-06 改为头部短时序＋左右腕图首轮联合核验，提示版本为 `fq/brain-door-prompt/joint-v1`；原任务／finish合同不变。云端返回超过预算仍为 unknown，不因已部署就自动判成功。
+
+候选算法对三张不同的新鲜头图计算缩小灰度图差异，仅筛选稳定画面，不能据此判门开。VLM 观察有时间顺序的头图，必须明确支持门已打开到可取物程度、保持打开、双手离门；候选成立后先收齐三张头部时序和左右腕图，最新头图与双腕采集时间差最多1秒；五张图一次送入云端 VLM，每轮仅调用一次。任一腕图缺失、身份不符或不同步时保留 unknown，不降级为头图单独判定。模型仍返回 `needs_wrist=true` 或看不清时仅表示证据不足，本轮不追加图片或再次询问；可在原有调用／时间预算内等待新的观测窗口，或由人工处理。模型返回后重新获取头图和查询原执行命令，场景变化、执行失败、暂停／取消、命令／尝试／服务身份变化、结果过期均阻止提交。默认工程预算：头图窗口 1–4 秒，像素差 0.025，VLM 报告分数门槛 0.9，单模型请求 3 秒，单次图像／模型等待最多 `vlm_timeout_sec + 2`（默认 5 秒；本机5秒模型预算对应7秒总等待，不含原命令查询）、证据最多 6 秒，每命令最多 10 次模型调用、观察最多 120 秒。它们是可配置的保守初值，**不是已经校准的视觉准确率或延迟保证**；分数不等于统计正确率。多次不确定不宣布成功，不触发动作重试。
+
+绑定取图沿用 `GET /v1/camera/frames/latest`，query 为 `camera`、原 `task_id`、原 `command_id`；支持 `ego_view/left_wrist/right_wrist`。绑定响应 schema 为 `fq/vla-camera-frame/v2`，含 `task_binding`、服务／相机接收器／机器人身份、`frame_receipt_id/binding_proof` 及原帧时间、SHA256、JPEG 字段。旧无绑定 ego 请求沿用 v1，仅作普通场景描述。Brain 校验新鲜度、图像完整性、原执行窗口和绑定；不将旧接口返回的普通图片升格为任务效果证据。对端未部署 v2 时自动观察失败关闭。
+
+原 `/finish` 路径保持不变，外部证据 source 为 `visual_verifier`，扩展 `visual_contract=fq/vla-open-fridge-visual-evidence/v1`，包含原任务／命令／执行 epoch／控制器／服务／机器人 `binding`、支持帧收据、`observation_window` 与 verifier 模型／提示／规则版本。`observed_at` 使用最后一张支持帧的源采集时间，不能用模型返回时间刷新旧证据。VLA 核验本服务发出的帧收据和窗口；Brain 把原 JPEG 与小报告保存到原 Runtime 数据根下 `door_evidence/`，账本仅关联引用与小结果。
+
+视觉通过只产生一个原命令 finish 意图。202、门已开图像、策略暂停都不直接放行抓取；必须等原命令收尾并核验成功，才按既有 SOP 下发独立 `grasp_cola`，由 VLA 选择其独立 checkpoint。finish 回包丢失只查询原命令，不重复 POST、不重新开门；人工确认和任务控制优先于迟到模型结果。
+
+VLA 提前准备状态通过 `fq/vla-preparation/v1` 报告，单列开门模型 `state/warm_ready`，不把 HTTP 在线当模型已加载。纯计算准备不得创建动作发布端或接管机器人；任务仍执行最新观测、安全与交接检查。启用提前准备后，开门模型未就绪返回 `503 VLA_MODEL_NOT_WARM`，相机完整检查缓存失效返回 `VLA_CAMERA_CACHE_INVALID`，准备管理器停止中可返回 `VLA_PREPARATION_STOPPING`；只有明确包含 `action_started=false` 与 `action_state_uncertain=false` 的准入拒绝才可判定本命令未执行，不自动重发，不把一般 503 或超时当作未执行。开门模型已准备后的 10 秒有效动作目标需真机计时，不能用离线假时钟声称达标。准备功能开关、模型资源管理和 VLA 侧实施证据以操控仓库当前交付为准；源码已在上述新实例应用；运行依赖和现场效果仍须独立核验。
 
 ### 作业点与规划配置
 

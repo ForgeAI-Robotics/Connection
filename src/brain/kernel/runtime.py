@@ -648,6 +648,10 @@ class TaskRuntime:
             self.record["task_id"] = str(task_id)
             self._owned_task_id = str(task_id)
             self.record["task_desc"] = task_desc
+            from brain.adapters.door_verification import settings as door_settings
+            door = door_settings(self.config)
+            # Only new tasks opt in. Never retroactively authorize old waiting commands.
+            self.record['door_verification'] = {k: v for k, v in door.items() if k != 'vlm'}
             self.record["package"] = self.package_name
             self.record["phase_order"] = [step.step_id for step in self.phases]
             self.record["phase_specs"] = [step_spec_dict(step) for step in self.phases]
@@ -982,7 +986,7 @@ class TaskRuntime:
                 self._save("resume_original_confirmed")
         return result
 
-    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization='', auto_advance=False):
+    def vla_effect(self, task_id, command_id, action, *, evidence=None, authorization='', auto_advance=False, expected_revision=None):
         """Control only the original VLA command; queries never drive or retry a step."""
         if action not in {'query', 'pause', 'finish'}:
             raise Rejected('未知 VLA 效果核验操作')
@@ -994,6 +998,8 @@ class TaskRuntime:
         with self._exclusive():
             self._reload_locked()
             step = self._current_step()
+            if expected_revision is not None and self.record.get('revision') != expected_revision:
+                raise Rejected('视觉核验期间任务已变化，禁止提交迟到结果')
             if (self.record.get('task_id') != task_id or not command_id
                     or self.record.get('open_command_id') != command_id
                     or not step or step.kind not in NATIVE_OPERATIONS
@@ -1060,12 +1066,83 @@ class TaskRuntime:
                 'execution_mode': raw.get('execution_mode'), 'object_id': request['body']['object_id'],
                 'execution_ready_at': raw.get('execution_ready_at'),
                 'completion': deepcopy(raw.get('completion')),
+                'door_observation': deepcopy(attempt.get('door_observation')),
                 'finish_intent': deepcopy((self._latest(step.step_id).get('effect_controls') or {}).get('finish')),
             }
             self._save('vla_effect_observed')
             return {'accepted': True, 'query_only': sent_action == 'query', 'task_id': task_id,
                     'command_id': command_id, 'state': self.state,
                     'vla_confirmation': deepcopy(self.record['vla_confirmation'])}
+
+    def door_observation_context(self):
+        """An immutable observation lease; no model or image reads under task lock."""
+        with self._exclusive():
+            self._reload_locked()
+            options = self.record.get('door_verification') or {}
+            step = self._current_step()
+            confirmation = self.record.get('vla_confirmation') or {}
+            if (options.get('enabled') is not True or self.state != 'waiting_human'
+                    or self.record.get('execution_backend') not in {'reception_real', 'reception_sim_navigation_real', 'body_real'}
+                    or not step or step.kind != 'open_fridge'
+                    or self.record.get('control_request') or self.record.get('dispatch_closed')
+                    or confirmation.get('state') != 'running' or confirmation.get('observation_error')
+                    or not confirmation.get('execution_ready_at')):
+                return None
+            attempt = self._latest(step.step_id)
+            if (not attempt or attempt.get('command_id') != self.record.get('open_command_id')
+                    or confirmation.get('command_id') != attempt['command_id']
+                    or (attempt.get('effect_controls') or {}).get('finish')):
+                return None
+            previous = attempt.get('door_observation') or {}
+            calls = int(previous.get('total_vlm_calls', 0))
+            from brain.adapters.vla_camera import timestamp
+            age = (datetime.now().astimezone() - timestamp(confirmation['execution_ready_at'])).total_seconds()
+            if calls >= options['max_vlm_calls'] or not 0 <= age <= options['max_observation_sec']:
+                return None
+            return dict(task_id=self.record['task_id'], command_id=attempt['command_id'],
+                        attempt_id=attempt['attempt_id'], revision=self.record['revision'],
+                        vla_url=(self.record.get('execution_target') or {}).get('vla'),
+                        execution_ready_at=confirmation['execution_ready_at'], options=deepcopy(options),
+                        remaining_vlm_calls=options['max_vlm_calls'] - calls)
+
+    def apply_door_observation(self, context, result, *, authorization=''):
+        """Record evidence on the original attempt, then use the existing finish intent."""
+        from brain.adapters.door_verification import SCHEMA, VISUAL_CONTRACT
+        from brain.adapters.vla_camera import timestamp
+        from contracts.vla import validate_evidence
+        with self._exclusive():
+            self._reload_locked()
+            current = self.door_observation_context()
+            if not current or current != context:
+                return False
+            if not isinstance(result, dict) or result.get('schema') != SCHEMA:
+                raise Rejected('开门视觉核验结果合同不符')
+            step = self._current_step()
+            attempt = self._latest(step.step_id)
+            previous = attempt.get('door_observation') or {}
+            observation = deepcopy(result)
+            calls = result.get('vlm_calls', 0)
+            if type(calls) is not int or not 0 <= calls <= min(1, context['remaining_vlm_calls']):
+                raise Rejected('视觉核验调用预算无效')
+            observation['total_vlm_calls'] = int(previous.get('total_vlm_calls', 0)) + calls
+            attempt['door_observation'] = observation
+            self.record['vla_confirmation']['door_observation'] = deepcopy(observation)
+            self._save('door_visual_observed')
+            revision = self.record['revision']
+            evidence = result.get('evidence') or {}
+            if result.get('status') != 'pass' or context['options']['mode'] != 'auto':
+                return False
+            if (evidence.get('source') != 'visual_verifier' or (evidence.get('binding') or {}).get('task_id') != context['task_id']
+                    or (evidence.get('binding') or {}).get('command_id') != context['command_id'] or evidence.get('visual_contract') != VISUAL_CONTRACT):
+                raise Rejected('视觉证据不属于原开门命令')
+            validate_evidence('open_fridge', attempt['request']['body']['object_id'], evidence, context['execution_ready_at'])
+            age = (datetime.now().astimezone() - timestamp(evidence['observed_at'])).total_seconds()
+            if not 0 <= age <= context['options']['max_evidence_age_sec']:
+                return False
+        # vla_effect persists one intent before I/O and never retries a lost POST.
+        self.vla_effect(context['task_id'], context['command_id'], 'finish', evidence=evidence,
+                        authorization=authorization, auto_advance=True, expected_revision=revision)
+        return True
 
     def observe_waiting_vla(self):
         """Read an existing VLA command without confirming, retrying or driving."""
@@ -1164,7 +1241,7 @@ class TaskRuntime:
             pass  # Logging cannot undo the stale-result guard.
 
     def pending_vla_completion(self):
-        """Only a persisted human finish intent can authorize automatic progression."""
+        """Only a persisted authorized finish intent can authorize automatic progression."""
         step = self._current_step()
         if (self.state != 'waiting_human' or not step or step.kind not in NATIVE_OPERATIONS
                 or self.record.get('control_request') or self.record.get('dispatch_closed')):
@@ -1201,7 +1278,7 @@ class TaskRuntime:
             if progress.terminal and ((viewed.get('raw') or {}).get('state') == 'succeeded'):
                 if (completion.get('status') != 'completed' or completion.get('evidence') != intent['evidence']):
                     progress.evidence.update(supports=False, effect_verified=False,
-                                             detail='VLA 完成确认与原人工确认不匹配')
+                                             detail='VLA 完成确认与原核验证据不匹配')
                     progress.effect_ok = False
             if not progress.terminal or progress.evidence.get('identity_ok') is not True:
                 self._stamp_attempt(step, progress, finished=bool(progress.terminal))

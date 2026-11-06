@@ -118,6 +118,15 @@ function healthLine(item) {
   return [health.detail, latency].filter(Boolean).join(" · ");
 }
 
+function vlaModelSummary(runtime) {
+  const prep = runtime.preparation;
+  if (!prep || prep.enabled !== true) return "开门模型：未启用提前准备";
+  const model = prep.operations?.open_fridge || {};
+  const labels = {cold: "未准备", checking: "检查中", loading: "加载中", warming: "预热中",
+    ready: "已就绪", busy: "使用中", invalidated: "需重新准备", failed: "准备失败", stopping: "停止中"};
+  return `开门模型：${model.warm_ready === true ? "已就绪" : labels[model.state] || "未知"}`;
+}
+
 function vlaComponentLines(item) {
   const runtime = item.health?.runtime;
   if (!runtime) return ["组件状态尚未核验"];
@@ -145,9 +154,64 @@ function vlaComponentLines(item) {
     lines.push(`${label}：${frame.ready === true ? "检查时帧新鲜" : frame.ready === false ? "无新鲜帧" : "未知"}${fps}${age}${frame.reason ? " · " + frame.reason : ""}`);
   }
   lines.push(`O6：${states[o6.state] || "未知"} · ${readiness(o6)}${o6.reason ? " · " + o6.reason : ""}`);
+  lines.push(vlaModelSummary(runtime));
+  lines.push(vlaExecutionSummary(runtime));
   lines.push(`停止 HTTP：${http.can_stop === true ? "可请求（执行时再次核验）" : "当前不可停止"}${http.reason ? " · " + http.reason : ""}`);
   if (runtime.observed_at) lines.push(`状态检查时间：${runtime.observed_at}`);
   return lines;
+}
+
+function o6FaultSummary(o6 = {}) {
+  if (o6.ready === true) return "";
+  const fault = o6.feedback_fault || (o6.state === "stopped" ? o6.last_feedback_fault : null);
+  if (!fault || fault.schema !== "fq/o6-feedback-fault/v1") return "";
+  const side = {left: "左手", right: "右手"}[fault.side] || "手部";
+  const cause = fault.code === "CAN_READ_FAILED"
+    ? (fault.errno === 100 ? "CAN 接口断连" : "CAN 读取失败")
+    : fault.code === "ENCODER_TIMEOUT" ? "反馈超时" : "反馈故障";
+  // A durable fault belongs to its original receiver. It is not proof that
+  // the CAN interface is still down, or that a later instance failed likewise.
+  return ` · ${o6.state === "stopped" ? "最近故障记录" : "故障"}：${side}${cause}`;
+}
+
+function vlaExecutionSummary(runtime) {
+  const state = runtime.execution_readiness;
+  if (!state) return "动作条件：当前接口未提供";
+  if (state.checked === false && state.ready == null) return "动作条件：服务启动未检查，执行时核验";
+  if (runtime.http?.policy_running === true) return "动作条件：任务执行中";
+  if (state.ready === true) return "动作条件：检查通过";
+  const labels = {SONIC_NOT_RUNNING_OR_AMBIGUOUS: "SONIC 未运行或实例未核清",
+    SONIC_STATE_UNAVAILABLE: "SONIC 状态不可用", DIRECT_O6_NOT_RUNNING: "O6 未运行",
+    O6_FEEDBACK_UNAVAILABLE: "O6 反馈不可用"};
+  const reasons = (state.blockers || []).slice(0, 3).map(x => labels[x] || String(x).slice(0, 100));
+  return `动作条件：${reasons.join("；") || "待核验"}`;
+}
+
+function vlaSummaryLines(item) {
+  const runtime = item.health?.runtime;
+  if (!runtime) return ["状态待核验"];
+  const describe = (part = {}) => {
+    if (part.state === "stopped") return "已停止";
+    if (part.state !== "running") return "未知";
+    return part.ready === true ? "正常" : part.ready === false ? "未就绪" : "运行中 · 待核验";
+  };
+  const http = runtime.http || {};
+  const camera = runtime.camera || {};
+  let frames = describe(camera);
+  if (camera.state !== "stopped" && Object.keys(camera.streams || {}).length) {
+    frames = camera.frames_verified ? "三路正常" :
+      [["ego_view", "头"], ["left_wrist", "左腕"], ["right_wrist", "右腕"]].map(([key, label]) => {
+        const ready = camera.streams[key]?.ready;
+        return `${label}${ready === true ? "正常" : ready === false ? "无新帧" : "未知"}`;
+      }).join(" · ");
+  }
+  return [
+    `接口：${http.draining ? "停止中" : describe(http)}${http.policy_running ? " · 任务执行中" : ""}`,
+    `相机：${frames}`,
+    `O6：${describe(runtime.o6)}${o6FaultSummary(runtime.o6)}`,
+    vlaModelSummary(runtime),
+    vlaExecutionSummary(runtime),
+  ];
 }
 
 // 9882 从不通变通时自动弹一次；浏览器拦弹窗就用卡片上的按钮。
@@ -177,6 +241,7 @@ function card(item) {
   el.dataset.review = String(item.review_ok);
   const entry = item.id === "deploy" || item.id === "feishu" || item.id === "voice";
   el.classList.toggle("entry-card", entry);
+  el.classList.toggle("robot-card", item.layer === "robot");
   el.onclick = () => selectService(item.id);
   const port = item.port ? `端口 ${item.port}` : item.id === "gateway" ? "独立管理接口" : "无本地端口";
   const line = healthLine(item);
@@ -186,11 +251,22 @@ function card(item) {
       <span class="badge ${escapeHtml(item.state)}">${escapeHtml(STATE_LABEL[item.state] || item.state)}</span>
     </div>
     <div class="meta">
+      ${item.id === "vla" ? `
+        <div class="vla-summary">${vlaSummaryLines(item).map((text) => `<div>${escapeHtml(text)}</div>`).join("")}</div>
+        <details class="vla-details">
+          <summary>详情</summary>
+          <div class="vla-components">
+            ${item.health?.url ? `<div>${escapeHtml(item.health.url)}</div>` : ""}
+            ${vlaComponentLines(item).map((text) => `<div>${escapeHtml(text)}</div>`).join("")}
+            ${line ? `<div>${escapeHtml(line)}</div>` : ""}
+          </div>
+        </details>
+      ` : `
       <div>${entry ? "任务入口 · 共用大脑" : escapeHtml(port)}</div>
       ${item.health && item.health.url ? `<div class="detail">${escapeHtml(item.health.url)}</div>` : ""}
       ${item.note ? `<div class="detail">${escapeHtml(item.note)}</div>` : ""}
       <div class="health">${escapeHtml(line)}</div>
-      ${item.id === "vla" ? `<div class="vla-components">${vlaComponentLines(item).map((text) => `<div>${escapeHtml(text)}</div>`).join("")}</div>` : ""}
+      `}
     </div>
   `;
   const actions = document.createElement("div");
@@ -335,7 +411,14 @@ function showLogPlaceholder() {
 function patchCard(el, item) {
   // State changes also change the entry toggle and remote review button.
   if (item.id === "vla" || el.dataset.state !== item.state || el.dataset.review !== String(item.review_ok)) {
-    el.replaceWith(card(item));
+    const scrollTop = el.querySelector(".meta")?.scrollTop || 0;
+    const expanded = el.querySelector(".vla-details")?.open || false;
+    const replacement = card(item);
+    el.replaceWith(replacement);
+    const disclosure = replacement.querySelector(".vla-details");
+    if (disclosure) disclosure.open = expanded;
+    const details = replacement.querySelector(".meta");
+    if (details) details.scrollTop = scrollTop;
     return;
   }
   el.classList.toggle("active", item.id === selected);
@@ -358,7 +441,7 @@ function render(full) {
   $("layer-hint").textContent = {
     brain: "点击上方卡片查看对应服务的运行日志。",
     environment: "选择 SIMPLE 仿真或真机，应用后到任务网页开始测试。",
-    robot: "VLA 启动统一管理相机、O6 与 HTTP；停止只关闭 HTTP，保留相机和 O6。导航与网关独立管理。",
+    robot: "VLA 启动准备相机、O6 和接口；已启用的开门模型也会提前准备。停止保留相机和 O6。导航与网关独立管理。",
   }[selectedLayer];
   document.querySelector(".workspace").classList.toggle("environment", environment);
   $("execution-settings").hidden = !environment;
@@ -446,9 +529,9 @@ async function act(item, action) {
       : item.id === "dream" && action === "stop"
         ? "已收到停止。正在关闭 NAV 工作流，保留网关和 NX SONIC …"
         : item.id === "vla" && action === "start"
-          ? "已收到启动。正在核验或准备相机、O6，并启动 VLA HTTP …"
+          ? "已收到启动。正在准备相机、O6 和接口，并等待已启用的开门模型就绪 …"
           : item.id === "vla" && action === "stop"
-            ? "已收到停止。正在确认 VLA HTTP 退出；相机和 O6 保留运行 …"
+            ? "已收到停止。正在确认 VLA 接口和已启用的模型服务退出；相机和 O6 保留运行 …"
             : `正在${{start: "启动", stop: "停止", restart: "重启"}[action] || action} ${item.name} …`;
   try {
     const response = await fetch(`/api/services/${item.id}/${action}`, { method: "POST" });

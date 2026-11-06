@@ -114,6 +114,58 @@ class VlaRuntimeStatusTests(unittest.TestCase):
         started = vla_remote.run('start', runner=self.action_runner(action_result()))
         self.assertTrue(started['status']['camera']['ready'])
 
+    def test_nonzero_receipt_displays_short_failure_and_keeps_full_log(self):
+        result=action_result('start',ok=False,confirmed=False)
+        result['message']='VLA service step failed: tmux'
+        result['status']['preparation_diagnostic']={'large_detail':'x'*20000}
+        raw='VLA_RUNTIME_RESULT '+json.dumps(result)+'\n'
+        runner=lambda *args:subprocess.CompletedProcess(args,1,raw,'no such session: =vla_cameras_g1\n')
+        with patch.object(vla_remote,'record') as log, self.assertRaises(RuntimeError) as caught:
+            vla_remote.run('start',runner=runner)
+        message=str(caught.exception)
+        self.assertIn('tmux',message);self.assertIn('no such session',message)
+        self.assertLess(len(message),450);self.assertNotIn('VLA_RUNTIME_RESULT',message)
+        self.assertNotIn('large_detail',message)
+        self.assertTrue(any('large_detail' in str(call) for call in log.call_args_list))
+
+    def test_timeout_summary_does_not_dump_command_or_partial_json(self):
+        failure=subprocess.TimeoutExpired(['ssh','x'*20000],600,output=b'VLA_RUNTIME_RESULT {"large":"partial"}')
+        def runner(*args):raise failure
+        with self.assertRaises(RuntimeError) as caught:vla_remote.run('start',runner=runner)
+        self.assertIn('结果尚未确认',str(caught.exception))
+        self.assertLess(len(str(caught.exception)),450)
+        self.assertNotIn('VLA_RUNTIME_RESULT',str(caught.exception))
+
+    def test_wrong_duplicate_or_success_receipts_cannot_override_nonzero_exit(self):
+        for receipt in (action_result('stop',ok=False,confirmed=False),action_result('start')):
+            receipt['message']='do-not-trust-this-receipt'
+            raw='VLA_RUNTIME_RESULT '+json.dumps(receipt)+'\n'
+            for output in (raw,raw+raw):
+                runner=lambda *args:subprocess.CompletedProcess(args,1,output,'')
+                with self.assertRaises(RuntimeError) as caught:vla_remote.run('start',runner=runner)
+                self.assertNotIn('do-not-trust-this-receipt',str(caught.exception))
+                self.assertIn('未完成',str(caught.exception))
+
+    def test_missing_sonic_is_action_diagnostic_not_service_start_gate(self):
+        value=status();value['execution_readiness']={'ready':False,'blockers':['SONIC_NOT_RUNNING_OR_AMBIGUOUS']}
+        with patch.object(vla_remote,'runtime_status',return_value=value):
+            self.assertEqual(vla_remote.health(by_id('vla'))['state'],'up')
+        receipt=action_result('start',status=value)
+        accepted=vla_remote._action_result('start','VLA_RUNTIME_RESULT '+json.dumps(receipt))
+        self.assertTrue(accepted['confirmed'])
+        self.assertFalse(accepted['status']['execution_readiness']['ready'])
+        value['execution_readiness']={'ready':True,'blockers':['SONIC_NOT_RUNNING_OR_AMBIGUOUS']}
+        with self.assertRaises(ValueError):vla_remote._validate_status(value)
+
+    def test_service_start_accepts_explicitly_unchecked_action_status(self):
+        value=status();value['execution_readiness']={'ready':None,'checked':False,'blockers':['NOT_CHECKED_BY_SERVICE_LIFECYCLE']}
+        accepted=vla_remote._action_result('start','VLA_RUNTIME_RESULT '+json.dumps(action_result('start',status=value)))
+        self.assertTrue(accepted['confirmed']);self.assertIsNone(accepted['status']['execution_readiness']['ready'])
+        with patch.object(vla_remote,'runtime_status',return_value=value):
+            self.assertEqual(vla_remote.health(by_id('vla'))['state'],'up')
+        value['execution_readiness']['ready']=True
+        with self.assertRaises(ValueError):vla_remote._validate_status(value)
+
     def test_action_lock_prevents_overlapping_stop_and_start(self):
         entered = threading.Event(); release = threading.Event()
         def run(argv, timeout, env):
@@ -145,7 +197,7 @@ class VlaRuntimeStatusTests(unittest.TestCase):
 class VlaPanelJavaScriptTests(unittest.TestCase):
     def browser(self, script):
         source = Path('src/ops/static/panel.js').read_text()
-        component = source[source.index('function vlaComponentLines'):source.index('// 9882')]
+        component = source[source.index('function vlaModelSummary'):source.index('// 9882')]
         action = source[source.index('async function act('):source.index('async function loadLogs(')]
         setup = r'''
 const assert=require('node:assert/strict');
@@ -161,6 +213,31 @@ async function fetch(){return response;}
         r = subprocess.run(['node', '-e', setup + component + action + '\n(async()=>{' + script +
                             '})().catch(e=>{console.error(e);process.exitCode=1;});'], capture_output=True, text=True, timeout=10)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_o6_fault_is_visible_but_history_does_not_override_current_ready(self):
+        self.browser('''
+const fault={schema:"fq/o6-feedback-fault/v1",code:"CAN_READ_FAILED",errno:100,side:"right"};
+const runtime={http:{state:"running",ready:true},camera:{state:"running"},o6:{state:"stopped",ready:false,last_feedback_fault:fault}};
+let lines=vlaSummaryLines({health:{runtime}});
+assert(lines.some(x=>x.includes("最近故障记录：右手CAN 接口断连")));
+runtime.o6={state:"running",ready:true,last_feedback_fault:fault};
+lines=vlaSummaryLines({health:{runtime}});
+assert(lines.some(x=>x==="O6：正常"));assert(!lines.some(x=>x.includes("CAN 接口断连")));
+runtime.o6={state:"running",ready:false,feedback_fault:fault};
+assert(vlaSummaryLines({health:{runtime}}).some(x=>x.includes("故障：右手CAN 接口断连")));
+runtime.o6={state:"stopped",ready:false,last_feedback_fault:{...fault,schema:"unknown"}};
+assert(!vlaSummaryLines({health:{runtime}}).some(x=>x.includes("CAN 接口断连")));
+''')
+
+    def test_execution_blocker_is_visible_separately_from_component_green(self):
+        self.browser('''
+const runtime={http:{state:"running",ready:true},camera:{state:"running",ready:true},o6:{state:"running",ready:true},execution_readiness:{ready:false,blockers:["SONIC_NOT_RUNNING_OR_AMBIGUOUS"]}};
+assert(vlaSummaryLines({health:{runtime}}).some(x=>x.includes("SONIC 未运行")));
+runtime.execution_readiness={ready:null,checked:false,blockers:["NOT_CHECKED_BY_SERVICE_LIFECYCLE"]};
+assert(vlaSummaryLines({health:{runtime}}).includes("动作条件：服务启动未检查，执行时核验"));
+runtime.execution_readiness={ready:true,blockers:[]};
+assert(vlaSummaryLines({health:{runtime}}).includes("动作条件：检查通过"));
+''')
 
     def test_no_false_completed_message_and_components_keep_unknown_scope(self):
         self.browser('''
@@ -206,11 +283,12 @@ assert(lines.some(s=>s.startsWith('右腕：无新鲜帧')&&s.includes('source_c
 const assert=require('node:assert/strict');
 let selected='vla';
 const STATE_LABEL={up:'通',unknown:'未知'}; const REMOTE_ACTION_LABEL={start:'启动',stop:'停止'};
-const escapeHtml=s=>String(s);const healthLine=()=>'';const vlaComponentLines=()=>[];
+const escapeHtml=s=>String(s);const healthLine=()=>'';const vlaComponentLines=()=>[];const vlaSummaryLines=()=>[];
 function selectService(){} function act(){}
 let replaced=null;
-function element(){return {dataset:{},children:[],classList:{toggle(){}},
+function element(){return {dataset:{},children:[],details:{scrollTop:0},classList:{toggle(){}},
  appendChild(v){this.children.push(v);},append(v){this.children.push(v);},
+ querySelector(s){return s==='.meta'?this.details:null;},
  querySelectorAll(){return this.children;}, replaceWith(v){replaced=v;}};}
 const document={createElement:element};
 function actionButton(label,fn){return {textContent:label,onclick:fn,disabled:false};}
@@ -231,3 +309,19 @@ assert(unknown.children[0].children.every(b=>b.disabled));
 '''
         r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=10)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+class VlaModelPreparationTests(unittest.TestCase):
+    def test_model_loading_is_partial_even_when_http_and_peripherals_are_ready(self):
+        value=status();value['preparation']=dict(schema='fq/vla-preparation/v1',enabled=True,
+            operations={'open_fridge':{'state':'loading','warm_ready':False}})
+        with patch.object(vla_remote,'runtime_status',return_value=value), patch('ops.services._record_probe'):
+            report=vla_remote.health(by_id('vla'))
+        self.assertEqual(report['state'],'partial');self.assertFalse(report['ok'])
+        self.assertFalse(vla_remote._model_ready(value))
+        value['preparation']['operations']['open_fridge'].update(state='ready',warm_ready=True)
+        self.assertTrue(vla_remote._model_ready(value))
+
+    def test_inconsistent_model_ready_report_rejected(self):
+        value=status();value['preparation']=dict(schema='fq/vla-preparation/v1',enabled=True,
+            operations={'open_fridge':{'state':'loading','warm_ready':True}})
+        with self.assertRaises(ValueError):vla_remote._validate_status(value)

@@ -89,6 +89,8 @@ class BrainApplication:
         service._launch = lambda rt: self._submit_runtime(self.owner, service._drive, rt)
         service.refresh_advice = lambda rt: self._submit_runtime(self.owner, service._advise, rt)
         service.reflection = self.learning.enqueue
+        self._door_observer = None
+        self._door_future = None
         self._next_vla_observation = 0.
         self.owner.on_idle = self._idle
         self.owner.on_wait_tick = self.diagnostic_runs.tick
@@ -146,10 +148,49 @@ class BrainApplication:
                     if runtime.state == 'recovery_required':
                         self.learning.enqueue(runtime.record)
                         self._schedule_advice(runtime)
+                self._observe_open_door(runtime)
         except Rejected:
             pass  # A concurrent control or changed task owns the next decision.
         finally:
             self._next_vla_observation = time.monotonic() + 1.
+
+    def _observe_open_door(self, runtime):
+        """Reuse the owner/I/O pool: one bounded observation, never a second task loop."""
+        context = runtime.door_observation_context()
+        if not context:
+            return
+        # An interrupted HTTP call may still finish off-thread; do not overlap it.
+        if self._door_future is not None and not self._door_future.done():
+            return
+        if self._door_observer is None:
+            from brain.adapters.door_verification import DoorObserver
+            self._door_observer = DoorObserver(self.config, runtime_dir(self.config))
+        camera = getattr(self._door_observer, 'camera', None)
+        if context.get('vla_url') and isinstance(getattr(getattr(camera, 'http', None), 'base_url', None), str):
+            if camera.http.base_url != context['vla_url'].rstrip('/'):
+                raise Rejected('视觉相机端点与原任务 VLA 不一致')
+        self._door_observer.options.update(context['options'])
+        self._door_future = self.io.submit(self._door_observer.sample, context)
+        try:
+            result = self.owner.wait(self._door_future,
+                timeout_sec=context['options']['vlm_timeout_sec'] + 2.)
+        except TimeoutError:
+            from brain.adapters.door_verification import SCHEMA
+            result = dict(schema=SCHEMA, status='unknown', reason='observation_deadline_exceeded',
+                          vlm_calls=min(1, context['remaining_vlm_calls']))
+        if result is None:
+            return
+        # Requery the original command after inference. Failure/stop wins over vision.
+        runtime.observe_waiting_vla()
+        from shared.service_credentials import service_token
+        token = (service_token(context['options']['verifier_token_env'])
+                 if context['options']['mode'] == 'auto' and result.get('status') == 'pass' else '')
+        try:
+            runtime.apply_door_observation(context, result,
+                                          authorization=('Bearer ' + token) if token else '')
+        finally:
+            if runtime.pending_vla_completion():
+                self.service._launch(runtime)
 
     def _advice_log(self, event, context, **details):
         from shared.brain_journal import emit as journal

@@ -1,5 +1,5 @@
 """Bounded workers and a single Runtime owner with cooperative I/O waits."""
-from concurrent.futures import Future
+from concurrent.futures import Future, TimeoutError
 from contextvars import copy_context
 import queue
 import threading
@@ -209,15 +209,22 @@ class RuntimeOwner:
                 'queued': self.work.qsize(), 'control_queued': self.control.qsize(),
                 'closing': self.stopping.is_set(), 'active': active}
 
-    def wait(self, future):
+    def wait(self, future, *, timeout_sec=None):
         if threading.current_thread() is not self.thread or self._control_depth:
-            return future.result()
+            try:
+                return future.result(timeout=timeout_sec)
+            except TimeoutError:
+                future.cancel()
+                raise
         generation = self._wait_generation
         started = time.monotonic()
         notice_at = started + WAIT_NOTICE_SEC
         diagnostic_tick_at = started
         diagnostic_error_reported = False
         while not future.done():
+            if timeout_sec is not None and time.monotonic() - started >= timeout_sec:
+                future.cancel()  # Running I/O may finish later; its caller must discard it.
+                raise TimeoutError('bounded cooperative observation timed out')
             try:
                 self._execute(self.control.get(timeout=.02), control=True)
             except queue.Empty:
