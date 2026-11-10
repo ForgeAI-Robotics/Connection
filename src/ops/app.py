@@ -28,6 +28,8 @@ def create_app(*, switch_pool=None):
     app.extensions["switch"] = switch_state
     import threading
     _SWITCH_GUARD = threading.Lock()
+    _SERVICE_GUARD = threading.Lock()
+    _SERVICE_LOCKS = {}
     _DIAGNOSTIC_GUARD = threading.BoundedSemaphore(2)
     _REPORT_GUARD = threading.BoundedSemaphore(2)
 
@@ -180,27 +182,35 @@ def create_app(*, switch_pool=None):
         allowed = {"start", "stop", "restart"} | set(service.remote_actions)
         if action not in allowed:
             return jsonify({"error": "不支持的操作"}), 400
-        from contextlib import nullcontext
-        from shared.execution_profile import admission
+        with _SERVICE_GUARD:
+            operation = _SERVICE_LOCKS.setdefault(service.id, threading.Lock())
+        if not operation.acquire(blocking=False):
+            return jsonify(ok=False, service_id=service.id,
+                           error='该服务的上一次操作还在进行，请稍候；其他服务可独立操作。'), 409
         try:
-            with nullcontext() if service.remote_control else admission(check_block=False):
-                result = None
-                if action == "start":
-                    result = _start(service)
-                elif action == "stop":
-                    result = _stop(service)
-                elif action == "restart":
-                    _stop(service)
-                    _start(service)
-                else:
-                    _remote_extra(service, action)
-        except Exception as exc:
-            return jsonify({"ok": False, "confirmed": False, "error": str(exc)}), 400
-        if service.remote_control == 'ssh_vla':
-            if not isinstance(result, dict) or result.get('confirmed') is not True or result.get('ok') is not True:
-                return jsonify(ok=False, confirmed=False, error='VLA 未返回确认的启停结果'), 502
-            return jsonify(ok=True, confirmed=True, message=result['message'], runtime=result['status'])
-        return jsonify({"ok": True, "service": _service_status(service)})
+            from contextlib import nullcontext
+            from shared.execution_profile import admission
+            try:
+                with nullcontext() if service.remote_control else admission(check_block=False):
+                    result = None
+                    if action == "start":
+                        result = _start(service)
+                    elif action == "stop":
+                        result = _stop(service)
+                    elif action == "restart":
+                        _stop(service)
+                        _start(service)
+                    else:
+                        _remote_extra(service, action)
+            except Exception as exc:
+                return jsonify({"ok": False, "confirmed": False, "error": str(exc)}), 400
+            if service.remote_control == 'ssh_vla':
+                if not isinstance(result, dict) or result.get('confirmed') is not True or result.get('ok') is not True:
+                    return jsonify(ok=False, confirmed=False, error='VLA 未返回确认的启停结果'), 502
+                return jsonify(ok=True, confirmed=True, message=result['message'], runtime=result['status'])
+            return jsonify({"ok": True, "service": _service_status(service)})
+        finally:
+            operation.release()
 
 
     from ops.validation import register

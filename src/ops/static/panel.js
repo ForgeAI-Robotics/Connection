@@ -7,6 +7,7 @@ const STATE_LABEL = {
   up: "通",
   down: "不通",
   partial: "部分就绪",
+  busy: "任务占用",
 };
 
 const REMOTE_ACTION_LABEL = {restart: "重启",
@@ -17,7 +18,7 @@ const REMOTE_ACTION_LABEL = {restart: "重启",
 
 let selectedLayer = "brain";
 let selected = "master";
-let busy = false;
+const serviceOperations = new Map();
 let snapshot = JSON.parse(document.getElementById("initial-services").textContent);
 let logToken = 0;
 let logAbort = null;
@@ -120,11 +121,20 @@ function healthLine(item) {
 
 function vlaModelSummary(runtime) {
   const prep = runtime.preparation;
-  if (!prep || prep.enabled !== true) return "开门模型：未启用提前准备";
+  if (!prep || prep.enabled !== true) return "开门准备：未启用提前准备";
   const model = prep.operations?.open_fridge || {};
+  if (prep.startup_state === "unavailable") return "开门准备：未取得准备状态";
+  if (model.warm_ready === true) return "开门准备：已就绪";
+  const camera = model.camera_validation;
+  if (model.state === "checking" && model.warmup_receipt && camera?.valid === false) {
+    const span = Number.isFinite(camera.observed_span_sec) ? camera.observed_span_sec.toFixed(1) : "?";
+    const window = Number.isFinite(camera.window_sec) ? camera.window_sec.toFixed(1) : "?";
+    const freshness = camera.fresh === false ? "，当前图像不新鲜" : "";
+    return `开门准备：模型已预热；相机连续检查未通过（${span}/${window} 秒${freshness}）`;
+  }
   const labels = {cold: "未准备", checking: "检查中", loading: "加载中", warming: "预热中",
-    ready: "已就绪", busy: "使用中", invalidated: "需重新准备", failed: "准备失败", stopping: "停止中"};
-  return `开门模型：${model.warm_ready === true ? "已就绪" : labels[model.state] || "未知"}`;
+    ready: "已就绪", busy: "当前任务使用中，不能接新动作", invalidated: "需重新准备", failed: "准备失败", stopping: "停止中"};
+  return `开门准备：${labels[model.state] || "未知"}${model.last_error ? " · " + model.last_error : ""}`;
 }
 
 function vlaComponentLines(item) {
@@ -219,7 +229,7 @@ function vlaSummaryLines(item) {
   const camera = runtime.camera || {};
   let frames = describe(camera);
   if (camera.state !== "stopped" && Object.keys(camera.streams || {}).length) {
-    frames = camera.frames_verified ? "三路正常" :
+    frames = camera.frames_verified ? "当前三路有新帧" :
       [["ego_view", "头"], ["left_wrist", "左腕"], ["right_wrist", "右腕"]].map(([key, label]) => {
         const ready = camera.streams[key]?.ready;
         return `${label}${ready === true ? "正常" : ready === false ? "无新帧" : "未知"}`;
@@ -246,11 +256,9 @@ function popReviewPage(robot) {
   reviewOpened = true;
   const opened = window.open(dream.review_url, "dream-review");
   if (!opened) {
-    const status = $("action-status");
-    status.hidden = false;
-    status.textContent =
-      `9882 审核页已就绪：${dream.review_url}\n` +
-      "浏览器拦住了自动弹窗，点卡片上的「打开 9882」。";
+    if (!serviceOperations.get(dream.id)?.pending) {
+      showServiceOperation(dream, `9882 审核页已就绪：${dream.review_url}\n浏览器拦住了自动弹窗，点卡片上的「打开 9882」。`);
+    }
   }
 }
 
@@ -260,6 +268,8 @@ function card(item) {
   el.dataset.id = item.id;
   el.dataset.state = item.state;
   el.dataset.review = String(item.review_ok);
+  const operation = serviceOperations.get(item.id);
+  el.dataset.operation = JSON.stringify(operation || null);
   const entry = item.id === "deploy" || item.id === "feishu" || item.id === "voice";
   el.classList.toggle("entry-card", entry);
   el.classList.toggle("robot-card", item.layer === "robot");
@@ -351,6 +361,18 @@ function card(item) {
     hasActions = true;
   }
   if (hasActions) el.appendChild(actions);
+  if (operation?.pending) {
+    actions.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  }
+  const notice = document.createElement("p");
+  notice.className = "service-operation-status";
+  notice.setAttribute("role", "status");
+  notice.setAttribute("aria-live", "polite");
+  notice.hidden = !operation?.text;
+  notice.textContent = operation?.text || "";
+  notice.classList.toggle("error", operation?.error === true);
+  el.appendChild(notice);
+
   if (["checking", "unknown"].includes(item.state)) {
     actions.querySelectorAll("button").forEach((button) => { button.disabled = true; });
   }
@@ -431,7 +453,8 @@ function showLogPlaceholder() {
 
 function patchCard(el, item) {
   // State changes also change the entry toggle and remote review button.
-  if (item.id === "vla" || el.dataset.state !== item.state || el.dataset.review !== String(item.review_ok)) {
+  if (item.id === "vla" || el.dataset.state !== item.state || el.dataset.review !== String(item.review_ok)
+      || el.dataset.operation !== JSON.stringify(serviceOperations.get(item.id) || null)) {
     const scrollTop = el.querySelector(".meta")?.scrollTop || 0;
     const expanded = el.querySelector(".vla-details")?.open || false;
     const replacement = card(item);
@@ -509,13 +532,15 @@ function stickToBottom(node) {
   return node.scrollHeight - node.scrollTop - node.clientHeight < 48;
 }
 
+function showServiceOperation(item, text, error = false, pending = false) {
+  serviceOperations.set(item.id, {text, error, pending});
+  const host = $("cards")?.querySelector?.(`[data-id="${item.id}"]`);
+  const latest = Object.values(snapshot).flat().find((row) => row.id === item.id) || item;
+  if (host) patchCard(host, latest);
+}
+
 async function act(item, action) {
-  const status = $("action-status");
-  if (busy) {
-    status.hidden = false;
-    status.textContent = "上一次服务操作还在进行，请稍候。";
-    return;
-  }
+  if (serviceOperations.get(item.id)?.pending) return;
   if (action === "restart" && item.confirm_restart) {
     const ok = window.confirm(
       "重启大脑会中断当前进程和正在处理的任务。确定继续？"
@@ -538,11 +563,8 @@ async function act(item, action) {
   if (extraConfirm) {
     if (!window.confirm(extraConfirm)) return;
   }
-  busy = true;
   if (selectedLayer !== "brain") selectService(item.id);
-  status.hidden = false;
-  status.classList.remove("error");
-  status.textContent =
+  const progress =
     item.id === "dream" && action === "start"
       ? "已收到启动。脚本会跑在导航机 tmux g1_panel_oneclick 里：preflight → READY → SONIC / DREAM / VLA HTTP。出现两次 Enter 提示后必须 10 分钟内按完，否则脚本会锁定导航退出。"
       : item.id === "dream" && action === "stand-enter"
@@ -554,22 +576,28 @@ async function act(item, action) {
           : item.id === "vla" && action === "stop"
             ? "已收到停止。正在确认 VLA 接口和已启用的模型服务退出；相机和 O6 保留运行 …"
             : `正在${{start: "启动", stop: "停止", restart: "重启"}[action] || action} ${item.name} …`;
+  showServiceOperation(item, progress, false, true);
+  let text = "", failed = false;
   try {
-    const response = await fetch(`/api/services/${item.id}/${action}`, { method: "POST" });
+    const timeout = item.remote_control || item.id === "vla" ? 620000 : 45000;
+    const response = await fetch(`/api/services/${item.id}/${action}`, {
+      method: "POST", signal: AbortSignal.timeout(timeout),
+    });
     const payload = await response.json();
     if (!response.ok || payload.ok === false || item.id === "vla" && payload.confirmed !== true) {
-      status.textContent = payload.error || "操作失败";
-      status.classList.add("error");
+      text = payload.error || "操作失败";
+      failed = true;
     } else if (item.id === "vla") {
-      status.textContent = payload.message || "启停结果已核验，请查看组件状态。";
+      text = payload.message || "启停结果已核验，请查看组件状态。";
     } else {
-      status.textContent = `${item.name}：${{start: "启动", stop: "停止", restart: "重启"}[action] || REMOTE_ACTION_LABEL[action] || action}操作已完成。`;
+      text = `${item.name}：${{start: "启动", stop: "停止", restart: "重启"}[action] || REMOTE_ACTION_LABEL[action] || action}操作已完成。`;
     }
   } catch (error) {
-    status.textContent = String(error);
-    status.classList.add("error");
+    const reason = ["AbortError", "TimeoutError"].includes(error?.name) ? "请求超时" : String(error);
+    text = `${reason}；操作结果未确认。请核对本卡片状态和日志；不会自动重发。`;
+    failed = true;
   } finally {
-    busy = false;
+    showServiceOperation(item, text, failed, false);
     refresh();
     loadLogs(true);
   }

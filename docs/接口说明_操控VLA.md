@@ -121,19 +121,46 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 
 **本机应用状态：**大脑、面板和 VLA HTTP 已按用户授权重载；VLA `preparation.enabled=true`、`visual_evidence.enabled=true`，Brain 新任务 `door_verification.enabled=true/mode=auto`。VLM 改为已授权的云端 `qwen3-vl-plus`（DashScope 国际站），本地 9B VLM 服务已停止。完成凭据通过私有 `_FILE` 引用，不复制进账本。旧任务不会追溯启用自动核验。当前相机/O6停止、SONIC未运行，故操作级 `warm_ready=false`，没有发布实机动作；这不是整体就绪或10秒验收。
 
-开门自动核验仅针对 `open_fridge`。大脑通过既有 RuntimeOwner 空闲调度与 I/O 池观察原执行命令，不新建任务循环；`grasp_cola` 的效果确认保持原流程。VLA 负责动作、相机和原命令收尾；Brain 负责产生外部视觉证据，最终仍由 Runtime／Verifier 核验终态、身份、时间、效果与停止事实。
+开门自动核验仅针对 `open_fridge`。大脑通过既有 RuntimeOwner 空闲调度与 I/O 池观察原执行命令，不新建任务循环；抓取自动核验按下节复用同一观察器和原finish流程。VLA负责动作、相机、双臂测量信号和原命令收尾；Brain产生外部视觉证据，Runtime／Verifier核验正式终态和持物事实。
 
-新任务绑定 `reception_real.door_verification` 设置；`enabled=false` 为默认，`mode=shadow` 只记录观察，`mode=auto` 才允许携带环境变量或对应 `_FILE` 私有文件指定的独立 verifier 凭据提交 finish。旧任务不因修改配置获得自动确认权。VLM 端点复用 `reception_real.verification.vlm`；不再额外调用 LLM 裁决，也不允许模型改命令或选择下一动作。公开模板仍默认关闭／shadow；本机已启用 auto，使用5秒单模型等待预算、220 tokens上限和最多20字中文解释，语义判据与6秒证据新鲜度未放宽。2026-11-06 改为头部短时序＋左右腕图首轮联合核验，提示版本为 `fq/brain-door-prompt/joint-v1`；原任务／finish合同不变。云端返回超过预算仍为 unknown，不因已部署就自动判成功。
+**2026-11-09 源码修订；15:50仅大脑已重载，VLA由用户另行启动，未进行真机动作验收。** 新任务绑定 `reception_real.door_verification` 与 `evidence_contract=fq/vla-open-fridge-head-arm-evidence/v2`。`enabled=false` 为公开默认，`shadow` 只记录观察，`auto` 经原 verifier 凭据提交 finish。VLM 端点复用 `reception_real.verification.vlm`。旧任务没有该合同快照时不按新规则自动完成，保留原人工确认／原始失败记录；服务更新不会重写历史任务。
 
-候选算法对三张不同的新鲜头图计算缩小灰度图差异，仅筛选稳定画面，不能据此判门开。VLM 观察有时间顺序的头图，必须明确支持门已打开到可取物程度、保持打开、双手离门；候选成立后先收齐三张头部时序和左右腕图，最新头图与双腕采集时间差最多1秒；五张图一次送入云端 VLM，每轮仅调用一次。任一腕图缺失、身份不符或不同步时保留 unknown，不降级为头图单独判定。模型仍返回 `needs_wrist=true` 或看不清时仅表示证据不足，本轮不追加图片或再次询问；可在原有调用／时间预算内等待新的观测窗口，或由人工处理。模型返回后重新获取头图和查询原执行命令，场景变化、执行失败、暂停／取消、命令／尝试／服务身份变化、结果过期均阻止提交。默认工程预算：头图窗口 1–4 秒，像素差 0.025，VLM 报告分数门槛 0.9，单模型请求 3 秒，单次图像／模型等待最多 `vlm_timeout_sec + 2`（默认 5 秒；本机5秒模型预算对应7秒总等待，不含原命令查询）、证据最多 6 秒，每命令最多 10 次模型调用、观察最多 120 秒。它们是可配置的保守初值，**不是已经校准的视觉准确率或延迟保证**；分数不等于统计正确率。多次不确定不宣布成功，不触发动作重试。
+当前自动核验由两项不同来源的事实组成：
 
-绑定取图沿用 `GET /v1/camera/frames/latest`，query 为 `camera`、原 `task_id`、原 `command_id`；支持 `ego_view/left_wrist/right_wrist`。绑定响应 schema 为 `fq/vla-camera-frame/v2`，含 `task_binding`、服务／相机接收器／机器人身份、`frame_receipt_id/binding_proof` 及原帧时间、SHA256、JPEG 字段。旧无绑定 ego 请求沿用 v1，仅作普通场景描述。Brain 校验新鲜度、图像完整性、原执行窗口和绑定；不将旧接口返回的普通图片升格为任务效果证据。对端未部署 v2 时自动观察失败关闭。
+| 完成条件 | 证据来源与判据 |
+| --- | --- |
+| 冰箱门打开到可以取内部可乐的程度 | 只向 VLM 发送一张当前任务绑定的头图；要求 `door_open=true/door_closed=false` 且报告分数≥0.9。删除连续画面保持打开、像素稳定筛选及双腕图要求，模型不判断手部接触 |
+| 双臂完成回位并保持 | VLA 原 HarnessWorker 在现有控制tick内复用迁入的 `_source_auto_return.ArmReturnGate` 与 `auto_return_config.json`。双臂先离开收尾姿态区域达到 departure 条件，再同时回到配置姿态容差内，实测关节速度≤0.35rad/s并持续0.8秒；配置使用双肩／肘共8个关节，不是任意姿态静止或手指保持即可通过 |
 
-原 `/finish` 路径保持不变，外部证据 source 为 `visual_verifier`，扩展 `visual_contract=fq/vla-open-fridge-visual-evidence/v1`，包含原任务／命令／执行 epoch／控制器／服务／机器人 `binding`、支持帧收据、`observation_window` 与 verifier 模型／提示／规则版本。`observed_at` 使用最后一张支持帧的源采集时间，不能用模型返回时间刷新旧证据。VLA 核验本服务发出的帧收据和窗口；Brain 把原 JPEG 与小报告保存到原 Runtime 数据根下 `door_evidence/`，账本仅关联引用与小结果。
+上述双臂条件沿迁移源语义作为交接代理信号，字段名为 `arms_returned`，不冒充几何接触检测。离开判据为任一选定关节偏离中心达到原departure_tolerance×1.5并保持0.3秒；反馈年龄上限0.5秒。初始就处于收尾姿态不触发；重复反馈不累计时间，未启用／暂停／封锁及缺失、非法、过期、倒序或断档反馈按原gate复位。完成事件一经触发，在本任务内按源端语义锁存，后续姿态／速度波动不额外清除，也不再要求先重新离开再回来；源gate复位后重新完成才产生新的event_id。2026-11-09从源服务器实读核对后已移除本机额外的逐帧姿态／速度复位，参数未改变；来源哈希与复验见[本轮对齐](多端联调_操控与抓取.md#vla-door-visual-handoff-20261109)。VLA只上报该信号，下一动作仍由Brain Runtime派发，不能复用源端直接切换抓取的动作调用。
 
-视觉通过只产生一个原命令 finish 意图。202、门已开图像、策略暂停都不直接放行抓取；必须等原命令收尾并核验成功，才按既有 SOP 下发独立 `grasp_cola`，由 VLA 选择其独立 checkpoint。finish 回包丢失只查询原命令，不重复 POST、不重新开门；人工确认和任务控制优先于迟到模型结果。
+绑定取图沿用 `GET /v1/camera/frames/latest?camera=ego_view&task_id=...&command_id=...`，图片schema仍为 `fq/vla-camera-frame/v2`。响应新增 `arm_return`：`fq/vla-arm-return/v1`、valid、event_id、return_dwell_s、配置SHA256及测量状态。valid表达原任务已完成回位判定且执行／反馈仍有效，不声明当前每一帧仍满足收尾姿态或手门几何关系。服务读取匹配原task/command/worker的状态，检查运行阶段和原反馈年龄；相机、任务、服务、控制器与执行epoch仍由 `task_binding`、`frame_receipt_id/binding_proof` 绑定。VLA在私有帧收据中同时冻结arm_return；Brain不能自行签发或把旧任务／旧事件改成当前通过。未具备有效回位信号时不调用VLM，记录 `waiting_for_measured_arm_return`，不追加腕图或产生动作。
 
-VLA 提前准备状态通过 `fq/vla-preparation/v1` 报告，单列开门模型 `state/warm_ready`，不把 HTTP 在线当模型已加载。纯计算准备不得创建动作发布端或接管机器人；任务仍执行最新观测、安全与交接检查。启用提前准备后，开门模型未就绪返回 `503 VLA_MODEL_NOT_WARM`，相机完整检查缓存失效返回 `VLA_CAMERA_CACHE_INVALID`，准备管理器停止中可返回 `VLA_PREPARATION_STOPPING`；只有明确包含 `action_started=false` 与 `action_state_uncertain=false` 的准入拒绝才可判定本命令未执行，不自动重发，不把一般 503 或超时当作未执行。开门模型已准备后的 10 秒有效动作目标需真机计时，不能用离线假时钟声称达标。准备功能开关、模型资源管理和 VLA 侧实施证据以操控仓库当前交付为准；源码已在上述新实例应用；运行依赖和现场效果仍须独立核验。
+原 `/finish` 路径不变，新证据 `source=visual_verifier`、`visual_contract=fq/vla-open-fridge-head-arm-evidence/v2`，包含单张头图收据、原执行binding、`door_open/door_closed`、`arms_returned=true`、原 `arm_return` 和verifier版本；不填写虚假的 `door_stable_open/hands_clear_of_door`。`observed_at` 和窗口起止均为支持头图的源采集时间。VLA核验图像收据及其冻结的回位证据，首次受理finish前再核对当前事件仍有效；受理后的内部暂停仍核验原观察，不因暂停清零代理而撤销原证据。执行／停止失败、取消和旧实例结果依然阻止推进。原v1外部／人工证据按历史合同保留兼容，新auto不再使用v1完成条件。
+
+VLM返回后只复核头图执行身份、源时间继续前进及VLA回位event仍有效，不进行像素相同或门连续稳定检查。默认预算仍为采样0.5秒、分数0.9、单模型3秒、总等待 `vlm_timeout_sec+2`、证据6秒、每命令10次模型调用及120秒观察；本机历史配置单模型5秒。旧 `stable_span_sec/max_pixel_delta` 快照字段被忽略并不再出现在公开模板。分数不是统计准确率，超时／不确定不宣布成功，也不触发动作重试。原JPEG与小结果仍保存于 `door_evidence/`；第二张头图只作身份／回位复查，不作为连续开门语义证明。
+
+视觉和双臂代理通过后只产生原命令finish意图。必须等VLA内部暂停／收尾、原命令正式成功并经Runtime Verifier通过，才按SOP下发独立 `grasp_cola`；收尾失败不抓取。丢失finish回包只查原命令，不重复POST。2026-11-05—06版本曾用三张头部时序＋双腕联合VLM核验、要求稳定打开与双手离门；该条件导致11-09现场开门后仍unknown，原图、错误与逐次结果保存在[本轮排障](多端联调_操控与抓取.md#vla-door-visual-handoff-20261109)。这段历史不作为新合同的生效规则。
+
+VLA 提前准备状态通过 `fq/vla-preparation/v1` 报告，单列开门模型 `state/warm_ready`，不把 HTTP 在线当模型已加载。纯计算准备不得创建动作发布端或接管机器人；任务仍执行最新观测、安全与交接检查。启用提前准备后，开门模型未就绪返回 `503 VLA_MODEL_NOT_WARM`；计算预热已完成但相机连续检查未通过时返回 `503 VLA_CAMERA_NOT_READY`；相机完整检查缓存失效返回 `VLA_CAMERA_CACHE_INVALID`，准备管理器停止中可返回 `VLA_PREPARATION_STOPPING`。只有原回包明确包含 `action_started=false` 与 `action_state_uncertain=false` 且身份／受理状态无矛盾，才可判定本命令未执行；大脑识别上述准备错误码，不自动重发，不把一般503或超时当作未执行。开门模型已准备后的10秒有效动作目标需真机计时，不能用离线假时钟声称达标。准备功能开关、模型资源管理和VLA侧实施证据以操控仓库当前交付为准；源码已在上述新实例应用；运行依赖和现场效果仍须独立核验。
+
+<a id="抓取可乐自动核验2026-11-09-源码待现场复验"></a>
+### 抓取可乐自动核验（2026-11-10 双腕均通过＋源端双臂回位）
+
+新任务复用 `reception_real.door_verification` 配置和原观察器／finish流程，绑定 `grasp_evidence_contract=fq/vla-grasp-cola-wrist-return-evidence/v2`。业务完成判据仅两项：
+
+1. 一次联合读取原抓取命令的左右腕图片，VLM分别返回 `left_grasped/right_grasped`；左图必须支持左手确实持有可乐，右图必须支持右手确实持有可乐，两个字段都严格为true才通过。一侧成功不能代表另一侧，任一侧未抓住、不可见、遮挡或未知都不通过；背景有罐、张手靠近和仅触碰不算抓持。object_grasped只在两侧都通过后作为合并结果写入，不用单个总布尔值覆盖左右结论。
+2. VLA抓取worker直接调用与开门相同的 `_source_auto_return.ArmReturnGate`，沿同一源配置判断先离开收尾姿态，再双臂同时回到指定中心／容差内并低速保持0.8秒。包含开门的离开累计和回位累计，不是任意当前位置静止；初始静止、伸手后悬停、仅一臂回位都不满足。原类与配置不修改、不复制算法条件；完成事件按源端锁存，暂停／保护和无效反馈仍按源gate复位，不能加入额外姿态波动reset。
+
+不新增退后距离、撤离区域、门状态或额外手指闭合阈值，亦不填 `clear_of_fridge=true`。步骤名仍描述VLA执行的“抓取可乐并后退撤离”；页面只显示该一个抓取步骤，内部VERIFYING_COLA_GRASP、原命令身份、正式收尾、持物登记及运送前当前持物核验保留。新的回位标准使用源配置的同一姿态中心，现场是否满足须由新一轮真实任务验证，不用任意停住替代回位。
+
+绑定相机仍为frame/v2，左右腕均携带 `arm_return=fq/vla-arm-return/v1`。两图必须属于同一task/command/epoch/controller及同一回位event，图像时序／同步／新鲜度、VLM分数与调用预算沿原框架。模型提示版本为 `fq/brain-grasp-prompt/both-wrists-return-v2`，结果schema为 `fq/brain-grasp-verification/v2`。支持证据合同为上述grasp v2，包含 `object_grasped/left_grasped/right_grasped/arms_returned=true`、请求物体holding、原arm_return、双腕收据和原采集时间；不使用arm_hold／arms_held来代替回位。VLA核验私有收据中冻结的回位信号，首次受理finish前复核当前原事件仍有效；受理后内部暂停继续核验原观察，不伪造暂停后的新观察。
+
+只对绑定新合同的新任务自动应用。11-09的 `fq/vla-grasp-cola-wrist-arm-evidence/v1` 使用单手总体持物和原位保持，属于旧规则；历史结果仍可查询和按原合同解释，不补成新v2成功，也不续用其自动观察。新Brain读取旧任务时不按新条件改写原账本，旧步骤展示的合并形式保留。旧外部／人工合同兼容保留，但新auto不发送旧v1完成证据；缺少新回位信号时失败关闭。
+
+通过后仍提交原命令一次finish，等待VLA暂停／收尾成功和持物登记，再由Runtime Verifier放行下一导航；收尾失败／取消／持物失效不得放行。此为既有执行安全与事务核验，不另增VLM业务判据。图片与小结果仍保存在同一 `door_evidence/`，状态仍记原attempt.grasp_observation；没有新增控制循环、任务账本或配置源。
+
+2026-11-10本轮只修源码并做离线验证，未重载服务、未改旧任务或发送动作；现场须加载两侧匹配代码并新建任务。11-09版暂停时连续性失败的原记录仍保留，本轮未调整该收尾保护。来源、失败与复验见[抓取误判排障](多端联调_操控与抓取.md#cola-false-finish-20261110)。
 
 ### 作业点与规划配置
 
@@ -153,7 +180,7 @@ VLA 提前准备状态通过 `fq/vla-preparation/v1` 报告，单列开门模型
 2026-10-29 当前 source_gate 对接 `20261029-direct-running-finish-v1`；大脑／网页已于 2026-10-29 按用户要求重载，并核对实际页面；本轮未操作 VLA，操控侧须加载匹配版本，不能将大脑应用当作 VLA 已应用。
 
 1. VLA running 后，大脑 waiting_human 只等待完成确认，不主动暂停模型。开门、抓取及模型后退继续由 VLA 执行。
-2. 网页在真实操控时提供“确认冰箱已打开且双手离门”“确认后退撤离完成且可乐仍在手”两个阶段按钮。先填写原 verifier 凭据，输入只留在当前页面，不进配置、账本或浏览器持久存储。用户必须看到所述事实后点击；抓取刚抓住而尚未撤离时不确认。
+2. 网页保留“确认冰箱已打开且双手离门”“确认后退撤离完成且可乐仍在手”两个阶段的人工确认按钮；新auto的开门和抓取均可按各自自动证据通过；未绑定新grasp合同或未启用auto时，抓取／撤离仍需现场人员看到所述事实后点击专用完成确认。抓取刚抓住而尚未撤离时不确认；大脑“暂停”或“跳过”不作为完成确认。正常网页的verifier凭据由服务端加载，当前页面无需填写；加载规则见[大脑完成确认](接口说明_大脑%20Brain.md#81-流程与请求身份)。
 3. 点击只调用 `POST /api/task_vla/finish`，body 为原 task_id、command_id、evidence 与 `auto_advance=true`；Authorization 原样按请求转发给 VLA。evidence 的 source=operator_observation、reference 为该点击唯一引用、observed_at 为实际点击时间，程序不改成暂停后的时间。该标志只用于大脑推进，不转给 VLA。
 4. VLA 受理 finish 后内部暂停并收尾。大脑保存第一次确认意图，只通过原 GET 轮询终态；202、completion.accepted／pausing／paused 都不当成成功。完成回执的 completion.evidence 须匹配原确认；VLA 自行失败、取消、重启 interrupted、超时、身份不符或证据不完整都不推进。
 5. 成功后仍经原 Verifier 核对效果、身份、时间及停止事实，再按原业务顺序推进。开门后自动提交抓取，保持 VLA 选通；抓取后另查当前持物，选通 NAV 后下发目标。无需额外点击“继续”。不新增后退命令，也不改 STOP 策略或 NAV Planner 恢复。
@@ -172,7 +199,7 @@ VLA 提前准备状态通过 `fq/vla-preparation/v1` 报告，单列开门模型
 | 开门 | `door_open=true`、`door_stable_open=true`、`hands_clear_of_door=true` |
 | 抓可乐 | `object_grasped=true`、`holding` 等于请求物体 ID、`clear_of_fridge=true` |
 
-终态还必须满足原任务／命令／operation／目标／物体身份、完成时间、`success=true`；旧后端另要求 `policy_stopped=true`、`navigation_port_ready=true`，direct-v1 则使用文首分别列明的策略／发布／身体／双手收尾字段；`effect_verified_by/evidence_level` 必须与原证据来源一致，`autonomous_effect_verification=false`。当前没有自动开门／抓稳的视觉判定接线，Planner 不能代写确认。
+终态还必须满足原任务／命令／operation／目标／物体身份、完成时间、`success=true`；旧后端另要求 `policy_stopped=true`、`navigation_port_ready=true`，direct-v1 则使用文首分别列明的策略／发布／身体／双手收尾字段；`effect_verified_by/evidence_level` 必须与原证据来源一致，`autonomous_effect_verification=false`。开门自动证据使用上节的新合同；新grasp合同按上节双腕视觉＋双臂保持自动完成，其余范围仍由现场人员确认，Planner不能代写持物证据。暂停取消后再跳过，不会建立holding或解锁运送；本轮实例与当前恢复边界见[抓取后跳过排障](多端联调_操控与抓取.md#cola-human-finish-skip-20261109)。
 
 新 `/pause` 只暂停策略推进，不是姿态冻结或急停。原大脑“暂停任务”仍走取消下游命令并核查停止；source_gate 下“取消任务”先结束大脑编排，再异步请求 VLA 取消并记录全关，回执不代表身体已停。重复暂停／finish、丢失回包或重启后，已记录的核验意图只查询原命令，不自动重发 POST；明确的参数／权限拒绝允许修正后再次人工提交。不同证据不能覆盖已记录的确认。
 
@@ -194,6 +221,22 @@ VLA 提前准备状态通过 `fq/vla-preparation/v1` 报告，单列开门模型
 大脑当前效果条件：抓取要求 `success=true`、`object_grasped=true`、`holding` 等于目标物体，物体存在证据不能显式为 false；放置要求 `success=true`、`object_grasped=false`、`released=true`、`holding=null`、`object_at_target=true`，目标到位证据不能显式为 false。两者均要求成功终态、有效身份和完成时间、`policy_stopped=true`、`navigation_port_ready=true`，并且证据等级不能是 `hand_state_only`。适配器接受这些字段不等于独立传感器验证了物理效果。
 
 普通交接无 `control_receipt` 时可依据原命令成功且已停、两侧无活动命令和通路就绪放行；返回凭证时仍核验其有效性。人工跳过跨越的交接例外、最终 `safe_idle` 以及任务状态字段统一见[大脑接口](接口说明_大脑%20Brain.md)。这些大脑规则不改变 VLA 本身的前置安全检查。
+
+## 服务启动与失联相机启动器恢复（2026-11-10）
+
+VLA的start沿原 `run_agent_vla_runtime.sh start → runtime_lifecycle.Lifecycle` 组织HTTP、相机和O6，不是业务任务启动。健康组件复用，明确缺失的组件调用原入口；必须在原任务／worker／输出归属核清且满足原启动确认后才允许修复依赖，活动或未知任务不动组件。最终仍需三路新帧、模型准备及O6全部核验，HTTP在线或创建进程不单独表示start成功。
+
+同名 `vla_cameras_<profile>` 存在但相机端口关闭时，启动器检查以下恢复依据：
+
+- 只有一个pane，owner标记属于当前profile；原启动命令是本工作区原07脚本，命令携带的NX主机／用户／端口、网络配置、ControlPath及三路相机序列号／启用状态与当前选择一致，不能只凭会话名认领。
+- 启动预算未满时，在剩余窗口内观察，不重复拉起；超过原30秒预算后，身份核验的NX必须连续两次明确无相机监听／无相机进程，之间间隔0.5秒。连接失败、进程存在、不可读或未知都不能按停止处理；若相机已出现，直接复用。
+- 回收前重新读取session/pane/原进程身份，必须与原快照一致；只对该不可变session_id发kill-session，不结束其它会话或远端USB进程。回收后核验原tmux会话与本机原shell／SSH子进程均已退出，再核对NX相机状态，才允许原07脚本创建一次新启动器。身份变化／退出未确认／远端状态不明均停止本轮恢复，不强制重复启动。
+
+旧日志保留，恢复依据与新启动日志引用通过原启动stdout／VLA monitor留存，不另建任务账本或后台重启循环。相机SSH新增ServerAliveInterval=5、ServerAliveCountMax=3，减少新连接在NX断电后长期悬挂；不追溯改变已经建立的旧SSH连接，选定ControlPath不变。本机G1默认独立连接，复用已有SSH master的场景仍受master自身设置影响。
+
+O6健康时不重复初始化，明确停止时沿原start-direct核对身份／CAN／标定和当前实测位置建立保持，运行中异常或未知不自动强杀。stop保持现有“停止HTTP”语义：先核对空闲和同实例drain，再关闭HTTP；相机和O6保留，不把它当整机停止／断电，不修改业务任务状态或旧停止证据。下一次start负责复用／补齐／恢复已核验的本模块依赖，不要求先反复停止HTTP，更不能靠删任务账本解除阻断。
+
+本轮修复仅写回原生命周期、原相机SSH脚本、测试和说明，未清理现场旧会话、未打开相机／初始化O6或重启服务。启动器CLI每次点击start都会新建进程读取本机代码，因此下一次显式点击即加载修复，无需为此重启大脑；真实恢复仍待现场复验。离线、所有权只读核对和已知失败见[启动器残留排障](多端联调_操控与抓取.md#vla-camera-stale-launcher-20261110)。
 
 ## 新办公室 GR00T 仿真实验（2026-10-10）
 

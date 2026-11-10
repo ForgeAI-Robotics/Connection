@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>FQPlanner 控制面板</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=23">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css') }}?v=24">
 </head>
 <body>
   <div class="app">
@@ -42,7 +42,6 @@
           <span id="layer-count"></span>
         </div>
         <p id="layer-hint" class="hint layer-hint"></p>
-        <p id="action-status" role="status" hidden></p>
         <section id="execution-settings" class="execution-settings" hidden>
           <div class="execution-toolbar">
             <span class="execution-label">环境</span>
@@ -107,7 +106,7 @@
     </div>
   </div>
   <script id="initial-services" type="application/json">{{ bootstrap|tojson }}</script>
-  <script src="{{ url_for('static', filename='panel.js') }}?v=27"></script>
+  <script src="{{ url_for('static', filename='panel.js') }}?v=28"></script>
   <script src="{{ url_for('static', filename='execution.js') }}?v=4"></script>
 </body>
 </html>

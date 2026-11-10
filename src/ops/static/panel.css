@@ -87,6 +87,7 @@ nav {
   background: #475569;
 }
 .dot.tmux, .dot.up { background: var(--ok); }
+.dot.busy { background: var(--accent); }
 .dot.unmanaged { background: var(--warn); }
 .dot.stopped, .dot.down { background: var(--bad); }
 .workspace {
@@ -144,6 +145,7 @@ nav {
 .name { font-weight: 700; font-size: 14px; }
 .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #0b1220; }
 .badge.tmux, .badge.up { color: var(--ok); }
+.badge.busy { color: var(--accent); }
 .badge.unmanaged { color: var(--warn); }
 .badge.partial, .dot.partial { color: var(--warn); }
 .dot.partial { background: var(--warn); }
@@ -296,7 +298,7 @@ button.disabled:hover {
 #exec-details { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; margin-bottom: 0; font-size: 12px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .environment .log-wrap { flex: 1 0 300px; }
-#action-status { flex: 0 0 auto; padding: 10px 12px; margin: 0 0 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; }
+.service-operation-status { flex: 0 0 auto; margin: 8px 0 0; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 10rem; overflow-y: auto; }
 .error { color: var(--bad); }
 @media (max-width: 760px) {
   header { padding: 10px 12px; }

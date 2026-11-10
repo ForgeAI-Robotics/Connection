@@ -39,7 +39,7 @@ def submission_refusal(status_code, payload, *, command_id, task_id):
                    and details.get('action_started') is False
                    and details.get('action_state_uncertain') is False)
     disabled = (status_code == 503 and error.get('code') in {'REAL_ACTIONS_DISABLED', 'VLA_EXECUTION_NOT_READY',
-                'VLA_MODEL_NOT_WARM', 'VLA_CAMERA_CACHE_INVALID', 'VLA_PREPARATION_STOPPING'}
+                'VLA_MODEL_NOT_WARM', 'VLA_CAMERA_NOT_READY', 'VLA_CAMERA_CACHE_INVALID', 'VLA_PREPARATION_STOPPING'}
                 and details.get('action_started') is False
                 and details.get('action_state_uncertain') is False
                 and payload.get('action_started') is not True

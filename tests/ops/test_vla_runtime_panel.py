@@ -215,12 +215,13 @@ class VlaPanelJavaScriptTests(unittest.TestCase):
     def browser(self, script):
         source = Path('src/ops/static/panel.js').read_text()
         component = source[source.index('function vlaModelSummary'):source.index('// 9882')]
-        action = source[source.index('async function act('):source.index('async function loadLogs(')]
+        action = source[source.index('function showServiceOperation('):source.index('async function loadLogs(')]
         setup = r'''
 const assert=require('node:assert/strict');
-const message={hidden:true,textContent:'',classList:{add(){},remove(){}}};
+const serviceOperations=new Map(), snapshot={};
+const message={get textContent(){return serviceOperations.get('vla')?.text || '';}};
 function $(id){return message;}
-let busy=false,selectedLayer='robot';
+let selectedLayer='robot';
 const REMOTE_ACTION_LABEL={};
 function selectService(){} function refresh(){} function loadLogs(){}
 const window={confirm(){return true;}};
@@ -230,6 +231,27 @@ async function fetch(){return response;}
         r = subprocess.run(['node', '-e', setup + component + action + '\n(async()=>{' + script +
                             '})().catch(e=>{console.error(e);process.exitCode=1;});'], capture_output=True, text=True, timeout=10)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_fresh_frames_do_not_hide_unfinished_continuous_preparation(self):
+        self.browser('''
+const model={state:"checking",warm_ready:false,warmup_receipt:{compute_instance_id:"compute"},
+ camera_validation:{valid:false,fresh:true,observed_span_sec:1.30855,window_sec:15}};
+const runtime={http:{state:"running",ready:true},o6:{state:"running",ready:true},
+ camera:{state:"running",frames_verified:true,streams:{ego_view:{ready:true},left_wrist:{ready:true},right_wrist:{ready:true}}},
+ preparation:{enabled:true,operations:{open_fridge:model}}};
+let lines=vlaSummaryLines({health:{runtime}});
+assert(lines.includes("相机：当前三路有新帧"));
+assert(lines.some(x=>x.includes("模型已预热；相机连续检查未通过（1.3/15.0 秒）")));
+assert.equal(model.warm_ready,false);
+model.camera_validation.fresh=false;
+assert(vlaModelSummary(runtime).includes("当前图像不新鲜"));
+model.state="failed";model.last_error="compute exited";
+assert(vlaModelSummary(runtime).includes("准备失败 · compute exited"));
+runtime.preparation.startup_state="unavailable";
+assert.equal(vlaModelSummary(runtime),"开门准备：未取得准备状态");
+delete runtime.preparation.startup_state;model.state="ready";model.warm_ready=true;
+assert.equal(vlaModelSummary(runtime),"开门准备：已就绪");
+''')
 
     def test_o6_fault_is_visible_but_history_does_not_override_current_ready(self):
         self.browser('''
@@ -314,12 +336,12 @@ assert(lines.some(s=>s.startsWith('右腕：无新鲜帧')&&s.includes('source_c
         patch_card = source[source.index('function patchCard('):source.index('function render(')]
         script = r'''
 const assert=require('node:assert/strict');
-let selected='vla';
+let selected='vla';const serviceOperations=new Map();
 const STATE_LABEL={up:'通',unknown:'未知'}; const REMOTE_ACTION_LABEL={start:'启动',stop:'停止'};
 const escapeHtml=s=>String(s);const healthLine=()=>'';const vlaComponentLines=()=>[];const vlaSummaryLines=()=>[];
 function selectService(){} function act(){}
 let replaced=null;
-function element(){return {dataset:{},children:[],details:{scrollTop:0},classList:{toggle(){}},
+function element(){return {dataset:{},children:[],details:{scrollTop:0},classList:{toggle(){}},setAttribute(){},
  appendChild(v){this.children.push(v);},append(v){this.children.push(v);},
  querySelector(s){return s==='.meta'?this.details:null;},
  querySelectorAll(){return this.children;}, replaceWith(v){replaced=v;}};}
@@ -339,11 +361,45 @@ assert.equal(replaced.children[0].children[1].title,'active task');
 item.state='unknown';
 const unknown=card(item);
 assert(unknown.children[0].children.every(b=>b.disabled));
+item.state='up';item.health.runtime.http={can_stop:true};
+serviceOperations.set('vla',{pending:true,text:'正在启动',error:false});
+const pending=card(item);
+assert(pending.children[0].children.every(b=>b.disabled));
+assert.equal(pending.children[1].textContent,'正在启动');
+serviceOperations.set('vla',{pending:false,text:'仅本卡片的错误',error:true});
+patchCard(pending,item);
+assert.equal(replaced.children[1].textContent,'仅本卡片的错误');
+assert.equal(replaced.children[0].children[0].disabled,false);
+serviceOperations.set('alpha',{pending:true,text:'正在重启',error:false});
+const other=card({id:'beta',name:'独立服务',state:'up',controllable:true});
+assert(other.children[0].children.every(b=>!b.disabled));
+assert(other.children[1].hidden);
+
 '''
         r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=10)
         self.assertEqual(r.returncode, 0, r.stderr)
 
 class VlaModelPreparationTests(unittest.TestCase):
+    def test_active_model_is_busy_and_component_fault_stays_visible(self):
+        value=status(can_stop=False)
+        value['http'].update(active_command_id='open-current',policy_running=True)
+        value['preparation']=dict(enabled=True,operations={'open_fridge':{'state':'busy','warm_ready':False}})
+        def report():
+            with patch.object(vla_remote,'runtime_status',return_value=value), patch('ops.services._record_probe'):
+                return vla_remote.health(by_id('vla'))
+        self.assertEqual(report()['state'],'busy')
+        self.assertTrue(report()['ok'])
+        self.assertFalse(vla_remote._model_ready(value))
+        value['preparation']['operations']['open_fridge']['state']='failed'
+        self.assertEqual(report()['state'],'partial')
+        value['preparation']['operations']['open_fridge']['state']='busy'
+        value['camera']['ready']=False
+        self.assertEqual(report()['state'],'partial')
+        self.assertIn('当前任务占用',report()['detail'])
+        value['camera']['ready']=True
+        value['http']['active_command_id']=None
+        self.assertEqual(report()['state'],'partial')
+
     def test_model_loading_is_partial_even_when_http_and_peripherals_are_ready(self):
         value=status();value['preparation']=dict(schema='fq/vla-preparation/v1',enabled=True,
             operations={'open_fridge':{'state':'loading','warm_ready':False}})

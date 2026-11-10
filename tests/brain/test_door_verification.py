@@ -18,8 +18,9 @@ from tests.brain.test_real_camera import picture
 
 
 def answer(**changes):
-    return dict(schema=SCHEMA, operation='open_fridge', door_open=True, door_stable_open=True,
-                hands_clear_of_door=True, door_closed=False, needs_wrist=False, confidence=.96, **changes)
+    result = dict(schema=SCHEMA, operation='open_fridge', door_open=True, door_closed=False, confidence=.96)
+    result.update(changes)
+    return result
 
 
 class Camera:
@@ -27,9 +28,10 @@ class Camera:
         self.count = 0
         self.head_count = 0
         self.instance = 'service-1'
-        self.after = datetime.now(timezone.utc) - timedelta(seconds=3)
+        self.after = datetime.now(timezone.utc) - timedelta(seconds=2)
         self.color = 120
         self.calls = []
+        self.arm = dict(schema='fq/vla-arm-return/v1', valid=True, event_id='event-1', return_dwell_s=.8)
 
     def latest(self, view='ego_view', *, task_id=None, command_id=None):
         self.count += 1
@@ -44,7 +46,7 @@ class Camera:
                     task_binding=dict(task_id=task_id, command_id=command_id, operation='open_fridge', execution_epoch='epoch',
                                       controller_instance_id='controller1', state_at_read='running',
                                       execution_ready_at=(self.after-timedelta(seconds=1)).isoformat()),
-                    sha256=hashlib.sha256(raw).hexdigest()), raw
+                    arm_return=deepcopy(self.arm), sha256=hashlib.sha256(raw).hexdigest()), raw
 
 
 class DoorObserverTests(unittest.TestCase):
@@ -66,90 +68,66 @@ class DoorObserverTests(unittest.TestCase):
         return self.observer.sample(self.context)
 
     def run_candidate(self):
-        self.assertIsNone(self.sample()); self.assertIsNone(self.sample()); return self.sample()
+        return self.sample()
 
-    def test_temporal_candidate_semantic_pass_and_saved_source_frames(self):
+    def test_single_head_with_measured_return_and_saved_receipts(self):
         result = self.run_candidate()
-        self.assertEqual(result['status'], 'pass'); self.assertEqual(self.model_calls, 1)
+        self.assertEqual(result['status'], 'pass', result)
+        self.assertEqual(self.model_views, [['ego_view']])
+        self.assertEqual(self.camera.calls, ['ego_view', 'ego_view'])
         proof = json.loads(Path(result['reference']).read_text())
-        self.assertEqual(proof['command_id'], 'c1'); self.assertEqual(len(proof['frames']), 6)
-        self.assertEqual(len(result['evidence']['frames']), 5)
-        self.assertEqual(self.model_views, [['ego_view']*3 + ['left_wrist','right_wrist']])
+        self.assertEqual(len(proof['frames']), 2)
+        self.assertEqual(len(result['evidence']['frames']), 1)
+        self.assertEqual(result['evidence']['arm_return'], self.camera.arm)
+        self.assertNotIn('hands_clear_of_door', result['evidence'])
+        self.assertNotIn('door_stable_open', result['evidence'])
         for frame in proof['frames']:
             raw=(Path(result['reference']).parent/frame['file']).read_bytes()
             self.assertEqual(hashlib.sha256(raw).hexdigest(), frame['sha256'])
-        self.assertEqual(result['evidence']['observed_at'], max((f['captured_at'] for f in proof['frames'][:5]), key=datetime.fromisoformat))
 
-    def test_still_closed_or_unseen_hand_never_passes(self):
-        for key,value in [('door_open',False),('hands_clear_of_door',None),('door_stable_open',False),('confidence',float('nan')),('door_closed',True),('confidence',True)]:
+    def test_head_semantics_do_not_require_stability_or_hand_fields(self):
+        self.assertTrue(semantic_pass(answer(), .9))
+        for key,value in [('door_open',False),('door_open',None),('confidence',float('nan')),('door_closed',True),('confidence',True)]:
             candidate=answer(); candidate[key]=value
             self.assertFalse(semantic_pass(candidate,.9))
-        bad=answer();bad['door_open']=False;self.answers=[bad]
-        self.assertEqual(self.run_candidate()['status'],'unknown')
 
-    def test_motion_does_not_trigger_model(self):
-        self.sample(); self.camera.color=180;self.sample();self.camera.color=50
-        self.assertIsNone(self.sample());self.assertEqual(self.model_calls,0)
+    def test_missing_false_or_wrong_arm_receipt_does_not_call_model(self):
+        for arm in (None, {}, dict(self.camera.arm, valid=False), dict(self.camera.arm, return_dwell_s=.1)):
+            with self.subTest(arm=arm):
+                self.observer.clear();self.camera.arm=arm
+                result=self.sample()
+                self.assertEqual(result['status'],'unknown');self.assertEqual(self.model_calls,0)
+                self.assertNotIn('evidence',result)
 
-    def test_changed_scene_after_model_rejects_pass(self):
+    def test_changed_pixels_do_not_reintroduce_stable_door_requirement(self):
         def changed():self.camera.color=240;return json.dumps(answer())
+        self.answers=[changed]
+        self.assertEqual(self.run_candidate()['status'],'pass')
+
+    def test_uncertain_door_does_not_finish_or_request_wrists(self):
+        self.answers=[answer(door_open=None)]
+        result=self.run_candidate()
+        self.assertEqual(result['status'],'unknown');self.assertEqual(self.model_calls,1)
+        self.assertNotIn('evidence',result)
+        self.assertEqual(set(self.camera.calls),{'ego_view'})
+
+    def test_arm_return_changed_during_model_invalidates_result(self):
+        def changed():self.camera.arm['event_id']='event-2';return json.dumps(answer())
         self.answers=[changed]
         self.assertEqual(self.run_candidate()['status'],'unknown')
 
-    def test_joint_unknown_never_triggers_second_model_request(self):
-        uncertain=answer();uncertain.update(needs_wrist=True,hands_clear_of_door=None)
-        self.answers=[uncertain,answer()]
-        result=self.run_candidate()
-        self.assertEqual(result['vlm_calls'],1)
-        self.assertEqual(self.model_calls,1);self.assertEqual(result['status'],'unknown')
-        self.assertNotIn('evidence',result)
-        self.assertEqual(len(self.answers),1)
-        self.assertIn('left_wrist',self.camera.calls);self.assertIn('right_wrist',self.camera.calls)
+    def test_camera_restart_or_task_change_during_model_invalidates_result(self):
+        def changed():self.camera.instance='new';return json.dumps(answer())
+        self.answers=[changed]
+        self.assertEqual(self.run_candidate()['status'],'unknown')
 
-    def test_wrist_acquisition_order_does_not_replace_latest_capture_time(self):
-        latest=self.camera.latest
-        def skew(view,**kwargs):
-            meta,raw=latest(view,**kwargs)
-            if view=='right_wrist':
-                meta['captured_at']=(datetime.fromisoformat(meta['captured_at'])-timedelta(seconds=.7)).isoformat()
-            return meta,raw
-        self.camera.latest=skew
-        result=self.run_candidate()
-        self.assertEqual(result['status'],'pass',result)
-        proof=result['evidence']
-        self.assertEqual(proof['observed_at'],max((f['captured_at'] for f in proof['frames']),key=datetime.fromisoformat))
-        self.assertEqual(proof['observation_window']['end'],proof['observed_at'])
+    def test_no_repeated_model_when_retry_interval_has_not_elapsed(self):
+        self.sample();self.assertIsNone(self.sample());self.assertEqual(self.model_calls,1)
 
-    def test_last_remaining_call_still_includes_both_wrists(self):
+    def test_last_remaining_call_needs_only_head(self):
         self.context['remaining_vlm_calls']=1
-        result=self.run_candidate()
-        self.assertEqual(result['status'],'pass');self.assertEqual(self.model_calls,1)
-        self.assertEqual(self.model_views,[['ego_view']*3+['left_wrist','right_wrist']])
-
-    def test_missing_or_wrong_identity_wrist_never_falls_back_to_head_only(self):
-        latest=self.camera.latest
-        for fault in ('missing','epoch'):
-            with self.subTest(fault=fault):
-                self.observer.clear()
-                def broken(view,**kwargs):
-                    if view=='right_wrist' and fault=='missing':raise TimeoutError('wrist unavailable')
-                    meta,raw=latest(view,**kwargs)
-                    if view=='right_wrist':meta['task_binding']['execution_epoch']='old'
-                    return meta,raw
-                self.camera.latest=broken
-                result=self.run_candidate()
-                self.assertEqual(result['status'],'unknown');self.assertEqual(result['vlm_calls'],0)
-                self.assertEqual(self.model_calls,0);self.assertNotIn('evidence',result)
-
-    def test_out_of_sync_joint_views_do_not_reach_model(self):
-        latest=self.camera.latest
-        def skew(view,**kwargs):
-            meta,raw=latest(view,**kwargs)
-            if view=='right_wrist':meta['captured_at']=(datetime.fromisoformat(meta['captured_at'])-timedelta(seconds=1.1)).isoformat()
-            return meta,raw
-        self.camera.latest=skew
-        result=self.run_candidate();self.assertEqual(result['status'],'unknown')
-        self.assertEqual(self.model_calls,0)
+        self.assertEqual(self.run_candidate()['status'],'pass')
+        self.assertEqual(self.model_views,[['ego_view']])
 
     def test_slow_model_unknown_and_budget_is_recorded(self):
         def slow():self.t+=4;return json.dumps(answer())
@@ -162,17 +140,12 @@ class DoorObserverTests(unittest.TestCase):
         result=self.run_candidate();self.assertEqual(result['status'],'unknown');self.assertEqual(result['reason'],'TimeoutError')
         self.assertEqual(result['vlm_calls'],1)
 
-    def test_new_command_resets_temporal_window(self):
-        self.sample();self.sample();self.context['command_id']='c2'
-        self.assertIsNone(self.sample());self.assertEqual(self.model_calls,0)
-
-    def test_control_revision_change_discards_pre_control_frames(self):
-        self.context['revision']=1;self.sample();self.sample();self.context['revision']=2
-        self.assertIsNone(self.sample());self.assertEqual(self.model_calls,0)
-
-    def test_camera_service_restart_resets_window(self):
-        self.sample();self.sample();self.camera.instance='service-2'
-        self.assertIsNone(self.sample());self.assertEqual(self.model_calls,0)
+    def test_wrong_task_frame_is_unknown(self):
+        latest=self.camera.latest
+        def wrong(*args,**kwargs):
+            meta,raw=latest(*args,**kwargs);meta['task_binding']['command_id']='old';return meta,raw
+        self.camera.latest=wrong
+        result=self.sample();self.assertEqual(result['status'],'unknown');self.assertEqual(self.model_calls,0)
 
 
 class BoundCameraTests(unittest.TestCase):
@@ -205,7 +178,8 @@ class RuntimeDoorTests(unittest.TestCase):
     def proposal(self, rt):
         context=rt.door_observation_context();self.assertIsNotNone(context)
         evidence=dict(source='visual_verifier',reference='/offline/evidence.json',observed_at=datetime.now(timezone.utc).isoformat(),
-                      door_open=True,door_closed=False,door_stable_open=True,hands_clear_of_door=True,
+                      door_open=True,door_closed=False,arms_returned=True,
+                      arm_return=dict(schema="fq/vla-arm-return/v1",valid=True,event_id="event-1",return_dwell_s=.8),
                       binding=dict(task_id=context['task_id'],command_id=context['command_id']),visual_contract=VISUAL_CONTRACT)
         return context,dict(schema=SCHEMA,status='pass',vlm_calls=1,evidence=evidence)
 
@@ -215,8 +189,54 @@ class RuntimeDoorTests(unittest.TestCase):
         self.assertEqual(len(self.vla.posts),1);self.assertTrue(rt.pending_vla_completion())
         svc._drive(rt)
         self.assertEqual([r['operation'] for r in self.vla.posts],['open_fridge','grasp_cola'])
-        self.assertIsNone(rt.door_observation_context());self.assertEqual(self.vla.finish_posts,1)
+        self.assertEqual(rt.door_observation_context()['operation'],'grasp_cola');self.assertEqual(self.vla.finish_posts,1)
         self.assertNotIn('Bearer test-only',str(rt.record))
+
+    def grasp_proposal(self, svc):
+        from brain.adapters.door_verification import GRASP_SCHEMA, GRASP_CONTRACT
+        rt=svc.runtime;context,result=self.proposal(rt)
+        rt.apply_door_observation(context,result,authorization='Bearer test-only');svc._drive(rt)
+        context=rt.door_observation_context()
+        self.assertEqual(context['operation'],'grasp_cola')
+        evidence=dict(source='visual_verifier',reference='/offline/cola.json',observed_at=datetime.now(timezone.utc).isoformat(),
+            object_grasped=True,left_grasped=True,right_grasped=True,holding='cola_can_1',arms_returned=True,
+            arm_return=dict(schema='fq/vla-arm-return/v1',valid=True,event_id='return-1',return_dwell_s=.8),
+            visual_contract=GRASP_CONTRACT,binding=dict(task_id=context['task_id'],command_id=context['command_id']))
+        return context,dict(schema=GRASP_SCHEMA,status='pass',vlm_calls=1,evidence=evidence)
+
+    def test_grasp_auto_finish_establishes_holding_and_dispatches_delivery(self):
+        svc=self.enabled();rt=svc.runtime;context,result=self.grasp_proposal(svc)
+        self.assertTrue(rt.apply_door_observation(context,result,authorization='Bearer test-only'))
+        self.assertEqual(len(self.nav.posts),1)  # terminal/holding checks still pending
+        svc._drive(rt)
+        self.assertEqual(rt.state,'succeeded',rt.public_status())
+        self.assertEqual(rt.record['holding'],'cola_can_1');self.assertEqual(len(self.nav.posts),5)
+        self.assertEqual(self.vla.finish_posts,2)
+        self.assertNotIn('clear_of_fridge',result['evidence'])
+        displayed=rt.public_status()['subtask_list']
+        self.assertEqual(len(displayed),10)
+        self.assertNotIn('VERIFYING_COLA_GRASP',[x['step_id'] for x in displayed])
+        self.assertEqual(rt.record['steps']['VERIFYING_COLA_GRASP']['status'],'done')
+
+    def test_grasp_cleanup_failure_does_not_dispatch_delivery(self):
+        svc=self.enabled();rt=svc.runtime;context,result=self.grasp_proposal(svc)
+        self.vla.completion_state='failed'
+        rt.apply_door_observation(context,result,authorization='Bearer test-only');svc._drive(rt)
+        self.assertEqual(rt.state,'recovery_required');self.assertEqual(len(self.nav.posts),1)
+        self.assertIsNone(rt.record['holding'])
+
+    def test_cancel_or_pause_discards_late_grasp_visual_result(self):
+        svc=self.enabled();rt=svc.runtime;context,result=self.grasp_proposal(svc)
+        rt.request_cancel()
+        self.assertFalse(rt.apply_door_observation(context,result,authorization='Bearer test-only'))
+        self.assertEqual(self.vla.finish_posts,1);self.assertEqual(len(self.nav.posts),1)
+
+    def test_old_task_without_grasp_policy_keeps_original_confirmation(self):
+        svc=self.enabled();rt=svc.runtime
+        rt.record['door_verification'].pop('grasp_evidence_contract');rt._save('legacy_grasp_policy')
+        context,result=self.proposal(rt)
+        rt.apply_door_observation(context,result,authorization='Bearer test-only');svc._drive(rt)
+        self.assertIsNone(rt.door_observation_context());self.assertEqual(len(rt.public_status()['subtask_list']),11)
 
     def test_human_confirmation_wins_over_inflight_visual_result(self):
         from tests.brain.test_native_vla import evidence
@@ -259,6 +279,13 @@ class RuntimeDoorTests(unittest.TestCase):
         rt=self.service().runtime
         self.config['reception_real']['door_verification']={'enabled':True,'mode':'auto'}
         self.assertIsNone(rt.door_observation_context())
+
+    def test_old_enabled_task_is_not_reinterpreted_as_head_arm_policy(self):
+        rt=self.enabled().runtime
+        rt.record['door_verification'].pop('evidence_contract')
+        rt._save('legacy_policy')
+        self.assertIsNone(rt.door_observation_context())
+        self.assertEqual(self.vla.finish_posts,0)
 
     def test_unknown_counts_budget_across_runtime_reload(self):
         svc=self.enabled();rt=svc.runtime
@@ -358,7 +385,7 @@ class DoorCooperativeDeadlineTests(unittest.TestCase):
 class PreparedAdmissionTests(unittest.TestCase):
     def test_warm_refusal_requires_explicit_no_action_and_no_uncertainty(self):
         from contracts.submission import submission_refusal
-        for code in ('VLA_MODEL_NOT_WARM','VLA_CAMERA_CACHE_INVALID','VLA_PREPARATION_STOPPING'):
+        for code in ('VLA_MODEL_NOT_WARM','VLA_CAMERA_NOT_READY','VLA_CAMERA_CACHE_INVALID','VLA_PREPARATION_STOPPING'):
             raw=dict(success=False,error=dict(code=code,message='not ready',
                      details=dict(action_started=False,action_state_uncertain=False)))
             self.assertIsNotNone(submission_refusal(503,raw,command_id='c',task_id='t'))

@@ -41,11 +41,35 @@ def validate_evidence(operation, object_id, evidence, ready_at):
     if not valid:
         raise ValueError('证据时间须带时区，且处于本次执行／暂停确认的有效观察窗口内')
     if operation == 'open_fridge':
-        valid = (all(evidence.get(k) is True for k in ('door_open', 'door_stable_open', 'hands_clear_of_door'))
-                 and evidence.get('door_closed') is not True)
+        if evidence.get('visual_contract') == 'fq/vla-open-fridge-head-arm-evidence/v2':
+            arm = evidence.get('arm_return') or {}
+            valid = (evidence.get('source') == 'visual_verifier' and evidence.get('door_open') is True
+                     and evidence.get('door_closed') is False and evidence.get('arms_returned') is True
+                     and isinstance(arm, dict) and arm.get('schema') == 'fq/vla-arm-return/v1'
+                     and arm.get('valid') is True and isinstance(arm.get('event_id'), str)
+                     and bool(arm['event_id']) and arm.get('return_dwell_s') == .8)
+        else:  # Historical/manual completion evidence retains its original meaning.
+            valid = (all(evidence.get(k) is True for k in ('door_open', 'door_stable_open', 'hands_clear_of_door'))
+                     and evidence.get('door_closed') is not True)
     elif operation == 'grasp_cola':
-        valid = (evidence.get('object_grasped') is True and evidence.get('holding') == object_id
-                 and evidence.get('clear_of_fridge') is True)
+        if evidence.get('visual_contract') == 'fq/vla-grasp-cola-wrist-return-evidence/v2':
+            arm=evidence.get('arm_return') or {}
+            valid=(evidence.get('source') == 'visual_verifier' and evidence.get('object_grasped') is True
+                   and evidence.get('left_grasped') is True and evidence.get('right_grasped') is True
+                   and evidence.get('holding') == object_id and evidence.get('arms_returned') is True
+                   and isinstance(arm,dict) and arm.get('schema') == 'fq/vla-arm-return/v1'
+                   and arm.get('valid') is True and isinstance(arm.get('event_id'),str)
+                   and bool(arm['event_id']) and arm.get('return_dwell_s') == .8)
+        elif evidence.get('visual_contract') == 'fq/vla-grasp-cola-wrist-arm-evidence/v1':
+            arm = evidence.get('arm_hold') or {}
+            valid = (evidence.get('source') == 'visual_verifier' and evidence.get('object_grasped') is True
+                     and evidence.get('holding') == object_id and evidence.get('arms_held') is True
+                     and isinstance(arm,dict) and arm.get('schema') == 'fq/vla-arm-hold/v1'
+                     and arm.get('valid') is True and isinstance(arm.get('event_id'),str)
+                     and bool(arm['event_id']) and arm.get('hold_dwell_s') == .8)
+        else:
+            valid = (evidence.get('object_grasped') is True and evidence.get('holding') == object_id
+                     and evidence.get('clear_of_fridge') is True)
     else:
         valid = False
     if not valid:

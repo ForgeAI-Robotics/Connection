@@ -290,12 +290,21 @@ def health(service):
     elif http['state'] == 'stopped':
         state, detail = 'stopped', 'HTTP 已停止；相机与 O6 分别显示实际状态'
     else:
-        ready = all(value[name].get('ready') is True for name in ('http', 'camera', 'o6')) and _model_ready(value)
+        components_ready = all(value[name].get('ready') is True for name in ('http', 'camera', 'o6'))
+        ready = components_ready and _model_ready(value)
         state, detail = ('up', 'VLA 接口、相机与 O6 检查通过') if ready else ('partial', 'HTTP 运行中，组件尚未全部就绪')
         if (value.get('preparation') or {}).get('enabled') is True:
             detail = 'VLA 开门模型及组件已就绪' if ready else 'HTTP 运行中，开门模型或组件尚未就绪'
-    _record_probe(service.id, detail, ok=state == 'up', signature=(state, detail))
-    return {'ok': state == 'up', 'state': state, 'detail': detail,
+        active = isinstance(http.get('active_command_id'), str) and bool(http['active_command_id'])
+        prep = value.get('preparation') or {}
+        model = (prep.get('operations') or {}).get('open_fridge') or {}
+        occupied = active and (model.get('state') == 'busy' if prep.get('enabled') is True
+                               else http.get('policy_running') is True)
+        if occupied:
+            state, detail = (('busy', '当前任务占用 VLA；不能接收新动作') if components_ready
+                             else ('partial', '当前任务占用 VLA，且组件检查未全部通过'))
+    _record_probe(service.id, detail, ok=state in {'up', 'busy'}, signature=(state, detail))
+    return {'ok': state in {'up', 'busy'}, 'state': state, 'detail': detail,
             'url': settings()['http_base'], 'runtime': value}
 
 

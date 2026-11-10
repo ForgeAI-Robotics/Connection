@@ -63,7 +63,7 @@ class VlaCameraClient:
                 raise ValueError('头部图片合同不匹配')
             binding = frame.get('task_binding') or {}
             if command_id and (not isinstance(binding, dict) or binding.get('task_id') != task_id
-                               or binding.get('command_id') != command_id or binding.get('operation') != 'open_fridge'
+                               or binding.get('command_id') != command_id or binding.get('operation') not in {'open_fridge','grasp_cola'}
                                or not all(isinstance(frame.get(k), str) and frame[k] for k in
                                           ('service_instance_id', 'camera_receiver_instance_id', 'robot_serial',
                                            'frame_receipt_id', 'binding_proof'))
@@ -98,7 +98,7 @@ class VlaCameraClient:
             raise HttpContractError('VLA 头部图片无效：' + str(exc)) from None
         metadata = {k: frame[k] for k in ('schema', 'camera_key', 'frame_id', 'captured_at',
                     'received_at', 'age_ms', 'received_age_ms', 'width', 'height', 'content_type', 'sha256')}
-        metadata.update({k: frame[k] for k in ('task_binding', 'service_instance_id', 'robot_serial', 'camera_receiver_instance_id', 'frame_receipt_id', 'binding_proof') if k in frame})
+        metadata.update({k: frame[k] for k in ('task_binding', 'service_instance_id', 'robot_serial', 'camera_receiver_instance_id', 'frame_receipt_id', 'binding_proof', 'arm_return', 'arm_hold') if k in frame})
         return metadata, raw
 
 

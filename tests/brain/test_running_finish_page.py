@@ -47,6 +47,21 @@ const handler = fs.readFileSync(0, 'utf8');
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertNotIn('id="vla-verifier"', page)
 
+    def test_auto_grasp_renders_one_step_without_manual_completion_button(self):
+        from tests.brain.test_advice_presentation import AdvicePresentationTests
+        AdvicePresentationTests().run_browser("""
+const vlaFinishIntents=new Map();
+data.state='waiting_human';data.blocked_reason='vla_effect_confirmation';data.failure_detail=null;
+data.vla_confirmation={command_id:'grasp-1',operation:'grasp_cola',execution_mode:'direct',state:'running',auto_verification:true};
+data.subtask_list=[{step_id:'VLA_GRASP_COLA',subtask:'抓取可乐并后退撤离',display_name:'抓取可乐并后退撤离',status:'pending'}];
+data.total=1;data.phase='VLA_GRASP_COLA';
+renderTaskProgress(data);
+const html=nodes['task-progress'].innerHTML;
+assert(html.includes('自动核验中'));assert(html.includes('自动核验左右手均持有可乐和双臂回位保持'));
+assert(!html.includes('确认后退撤离完成且可乐仍在手'));
+assert(!html.includes('onclick=\"confirmVlaCompletion()\"'));
+""")
+
     def test_normal_effect_wait_is_not_rendered_as_recovery_advice(self):
         page = Path('src/entries/web/templates/index.html').read_text()
         handler = page[page.index('        function awaitingVlaEffect'):page.index('        function renderRecoveryAdvice')]

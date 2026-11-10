@@ -126,10 +126,15 @@ def status_from_record(record) -> dict:
             from brain.recovery import can_revise
             advice['applicable'] = advice['applicable'] and can_revise(record)
     tasks = []
+    auto_options = (record or {}).get('door_verification') or {}
+    auto_grasp = (auto_options.get('enabled') is True and auto_options.get('grasp_evidence_contract') in {'fq/vla-grasp-cola-wrist-arm-evidence/v1','fq/vla-grasp-cola-wrist-return-evidence/v2'})
     failure_history = []
     retry_count = 0
     manual_retry_count = 0
     for order, spec in enumerate((record or {}).get("phase_specs") or [], 1):
+        if (auto_grasp and spec.get('kind') == 'verify' and order > 1
+                and record['phase_specs'][order-2].get('kind') == 'grasp_cola'):
+            continue
         bucket = (record or {}).get("steps", {}).get(spec["step_id"]) or {}
         attempts = bucket.get("attempts") or []
         submitted = [a for a in attempts if a.get("submitted")]
@@ -167,7 +172,7 @@ def status_from_record(record) -> dict:
         simulated = simulated or ((record or {}).get('execution_backend') == 'reception_sim_navigation_real'
                                    and spec.get('kind') == 'navigate')
         done = verdict == "PASS" or marker in {"done", "skipped", "manual_skipped"}
-        tasks.append({"order": order, "robot_name": spec.get("robot_name") or "FQrobot",
+        tasks.append({"order": len(tasks)+1, "robot_name": spec.get("robot_name") or "FQrobot",
                       "display_name": spec.get('display_name') or '',
                       "subtask": spec.get("key") or spec["step_id"], "done": done,
                       "step_id": spec["step_id"], "skipped": manual_skip, "simulated": simulated,
@@ -275,6 +280,9 @@ def status_from_record(record) -> dict:
         "advice_confirmations": deepcopy((record or {}).get("advice_confirmations", [])),
         "handoff_observation": deepcopy((record or {}).get("handoff_observation")),
         "vla_confirmation": dict(deepcopy((record or {}).get('vla_confirmation') or {}),
+                                 auto_verification=auto_grasp and auto_options.get('grasp_evidence_contract') == 'fq/vla-grasp-cola-wrist-return-evidence/v2'
+                                     and auto_options.get('mode') == 'auto'
+                                     and ((record or {}).get('vla_confirmation') or {}).get('operation') == 'grasp_cola',
                                  finish_intent=deepcopy((latest.get('effect_controls') or {}).get('finish')),
                                  finish_rejection=next((deepcopy(r) for r in reversed(latest.get('effect_rejections') or [])
                                                         if r.get('action') == 'finish'), None))
@@ -1080,10 +1088,14 @@ class TaskRuntime:
             self._reload_locked()
             options = self.record.get('door_verification') or {}
             step = self._current_step()
+            grasp = step is not None and step.kind == 'grasp_cola'
             confirmation = self.record.get('vla_confirmation') or {}
-            if (options.get('enabled') is not True or self.state != 'waiting_human'
+            if (options.get('enabled') is not True
+                    or (options.get('grasp_evidence_contract') != 'fq/vla-grasp-cola-wrist-return-evidence/v2' if grasp
+                        else options.get('evidence_contract') != 'fq/vla-open-fridge-head-arm-evidence/v2')
+                    or self.state != 'waiting_human'
                     or self.record.get('execution_backend') not in {'reception_real', 'reception_sim_navigation_real', 'body_real'}
-                    or not step or step.kind != 'open_fridge'
+                    or not step or step.kind not in {'open_fridge','grasp_cola'}
                     or self.record.get('control_request') or self.record.get('dispatch_closed')
                     or confirmation.get('state') != 'running' or confirmation.get('observation_error')
                     or not confirmation.get('execution_ready_at')):
@@ -1093,7 +1105,7 @@ class TaskRuntime:
                     or confirmation.get('command_id') != attempt['command_id']
                     or (attempt.get('effect_controls') or {}).get('finish')):
                 return None
-            previous = attempt.get('door_observation') or {}
+            previous = attempt.get('grasp_observation' if grasp else 'door_observation') or {}
             calls = int(previous.get('total_vlm_calls', 0))
             from brain.adapters.vla_camera import timestamp
             age = (datetime.now().astimezone() - timestamp(confirmation['execution_ready_at'])).total_seconds()
@@ -1103,11 +1115,11 @@ class TaskRuntime:
                         attempt_id=attempt['attempt_id'], revision=self.record['revision'],
                         vla_url=(self.record.get('execution_target') or {}).get('vla'),
                         execution_ready_at=confirmation['execution_ready_at'], options=deepcopy(options),
-                        remaining_vlm_calls=options['max_vlm_calls'] - calls)
+                        remaining_vlm_calls=options['max_vlm_calls'] - calls, operation=step.kind, object_id=step.object_id)
 
     def apply_door_observation(self, context, result, *, authorization=''):
         """Record evidence on the original attempt, then use the existing finish intent."""
-        from brain.adapters.door_verification import SCHEMA, VISUAL_CONTRACT
+        from brain.adapters.door_verification import SCHEMA, VISUAL_CONTRACT, GRASP_SCHEMA, GRASP_CONTRACT
         from brain.adapters.vla_camera import timestamp
         from contracts.vla import validate_evidence
         with self._exclusive():
@@ -1115,27 +1127,29 @@ class TaskRuntime:
             current = self.door_observation_context()
             if not current or current != context:
                 return False
-            if not isinstance(result, dict) or result.get('schema') != SCHEMA:
-                raise Rejected('开门视觉核验结果合同不符')
+            grasp = context.get('operation') == 'grasp_cola'
+            if not isinstance(result, dict) or result.get('schema') != (GRASP_SCHEMA if grasp else SCHEMA):
+                raise Rejected('操控视觉核验结果合同不符')
             step = self._current_step()
             attempt = self._latest(step.step_id)
-            previous = attempt.get('door_observation') or {}
+            field = 'grasp_observation' if grasp else 'door_observation'
+            previous = attempt.get(field) or {}
             observation = deepcopy(result)
             calls = result.get('vlm_calls', 0)
             if type(calls) is not int or not 0 <= calls <= min(1, context['remaining_vlm_calls']):
                 raise Rejected('视觉核验调用预算无效')
             observation['total_vlm_calls'] = int(previous.get('total_vlm_calls', 0)) + calls
-            attempt['door_observation'] = observation
-            self.record['vla_confirmation']['door_observation'] = deepcopy(observation)
-            self._save('door_visual_observed')
+            attempt[field] = observation
+            self.record['vla_confirmation'][field] = deepcopy(observation)
+            self._save('grasp_visual_observed' if grasp else 'door_visual_observed')
             revision = self.record['revision']
             evidence = result.get('evidence') or {}
             if result.get('status') != 'pass' or context['options']['mode'] != 'auto':
                 return False
             if (evidence.get('source') != 'visual_verifier' or (evidence.get('binding') or {}).get('task_id') != context['task_id']
-                    or (evidence.get('binding') or {}).get('command_id') != context['command_id'] or evidence.get('visual_contract') != VISUAL_CONTRACT):
-                raise Rejected('视觉证据不属于原开门命令')
-            validate_evidence('open_fridge', attempt['request']['body']['object_id'], evidence, context['execution_ready_at'])
+                    or (evidence.get('binding') or {}).get('command_id') != context['command_id'] or evidence.get('visual_contract') != (GRASP_CONTRACT if grasp else VISUAL_CONTRACT)):
+                raise Rejected('视觉证据不属于原操控命令')
+            validate_evidence(step.kind, attempt['request']['body']['object_id'], evidence, context['execution_ready_at'])
             age = (datetime.now().astimezone() - timestamp(evidence['observed_at'])).total_seconds()
             if not 0 <= age <= context['options']['max_evidence_age_sec']:
                 return False

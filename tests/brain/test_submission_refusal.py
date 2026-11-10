@@ -28,6 +28,24 @@ def adapter(error):
 
 
 class SubmissionRefusalTests(unittest.TestCase):
+    def test_camera_admission_unknown_reconciles_without_query_or_replay(self):
+        raw = {'success': False, 'error': {'code': 'VLA_CAMERA_NOT_READY',
+               'details': {'action_started': False, 'action_state_uncertain': False}}}
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.legacy(root, payload=raw,
+                error='HTTP 503 http://vla:8091/v1/vla/tasks: camera not ready')
+            old = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]['progress'])
+            self.assertTrue(runtime.reconcile_submission_rejection())
+            self.assertFalse(runtime.reconcile_submission_rejection())
+            attempt = runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]
+            self.assertEqual(attempt['original_unknown_progress'], old)
+            self.assertEqual(attempt['outcome'], 'rejected')
+            self.assertFalse(runtime.record['command_unknown'])
+            runtime.drive()
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            port.dream.command.assert_not_called()
+            port.dream.cancel.assert_not_called()
+
     def test_vla_503_repair_preserves_original_and_waits_for_human_retry(self):
         raw = {'success': False, 'error': {'code': 'VLA_EXECUTION_NOT_READY',
                'details': {'action_started': False, 'action_state_uncertain': False}}}

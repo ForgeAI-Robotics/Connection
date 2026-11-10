@@ -528,7 +528,7 @@
                 statusLabel = '已暂停';
                 statusCls = 'status-run';
             } else if (data.state === 'waiting_human') {
-                statusLabel = awaitingVlaEffect(data) ? '等待现场确认完成' : '等待人工';
+                statusLabel = data.vla_confirmation?.auto_verification ? '自动核验中' : awaitingVlaEffect(data) ? '等待现场确认完成' : '等待人工';
                 statusCls = 'status-run';
             } else if (data.state === 'cancelling') {
                 statusLabel = '取消中，停止尚未核清';
@@ -596,16 +596,22 @@
                     vlaFinishIntents.delete(key);
                 const submitted = !!vla.finish_intent || vla.finish_requested || vlaFinishIntents.has(key);
                 const open = vla.operation === 'open_fridge';
+                const autoGrasp = !open && vla.auto_verification === true;
                 const text = open ? '确认冰箱已打开且双手离门' : '确认后退撤离完成且可乐仍在手';
                 const canConfirm = taskStatusKnown && !taskControlPending && !vla.observation_error && data.state === 'waiting_human'
                     && !submitted && ['running', 'waiting_result_confirmation'].includes(vla.state);
                 const message = data.state === 'recovery_required' ? '操控结果需要处理，请查看原始原因；不会自动进入下一步。'
                     : vla.observation_error ? '操控状态暂未核清，正在查询原命令：' + vla.observation_error
                     : submitted ? '完成确认已记录，正在查询 VLA 收尾；成功后自动进入下一步。'
+                    : autoGrasp ? '正在自动核验左右手均持有可乐和双臂回位保持；通过后自动进入导航。'
                     : open ? '请观察门已打开且稳定、双手离门后确认。'
                     : '请等待抓取、收手、后退全部完成，确认已退出冰箱接触区且可乐仍在手。';
+                const graspObservation = autoGrasp && vla.grasp_observation;
+                const graspNote = graspObservation && (graspObservation.answer?.reason
+                    || (graspObservation.reason === 'waiting_for_measured_arm_return' ? '等待双臂先离开、再回位并低速保持 0.8 秒' : ''));
                 html += '<div class="task-command-feedback">' + taskText(message)
-                    + '<button type="button" onclick="confirmVlaCompletion()" ' + (canConfirm ? '' : 'disabled') + '>' + text + '</button>'
+                    + (graspNote ? '<br>最近核验：' + taskText(graspNote) : '')
+                    + (autoGrasp ? '' : '<button type="button" onclick="confirmVlaCompletion()" ' + (canConfirm ? '' : 'disabled') + '>' + text + '</button>')
                     + '<button type="button" onclick="vlaEffectControl(\'query\')">查询操控原命令</button>'
                     + '<details><summary>单独操作</summary><button type="button" onclick="vlaEffectControl(\'pause\')">暂停策略</button></details></div>';
             } else if (vla && !data.pause_requested) {
@@ -626,7 +632,8 @@
                     unknown:'执行结果待确认，不会自动补发', rejected:'指令被拒绝，未开始执行',
                     succeeded:'已核验成功', failed:'执行失败', cancelled:'命令已取消', terminal:'已收到终态，等待核验'};
                 const commandText = awaitingVlaEffect(data)
-                    ? (vla.state === 'running' ? '操控策略运行中，等待现场确认完成' : '策略已暂停，等待现场确认完成')
+                    ? (vla.auto_verification ? '操控策略运行中，等待自动持物核验'
+                        : vla.state === 'running' ? '操控策略运行中，等待现场确认完成' : '策略已暂停，等待现场确认完成')
                     : stages[command.stage] || '等待核对';
                 html += '<div style="font-size:12px;overflow-wrap:anywhere">' + taskText(commandText)
                     + ' · ' + taskText(command.command_id) + '</div>';
