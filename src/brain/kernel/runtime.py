@@ -166,6 +166,9 @@ def status_from_record(record) -> dict:
         evidence = (latest.get("progress") or {}).get("evidence") or {}
         marker = bucket.get("status")
         manual_skip = marker == "manual_skipped"
+        conditions_assumed = manual_skip and any(item.get('step_id') == spec['step_id']
+            and item.get('task_id') == record.get('task_id') and item.get('command_id') == latest.get('command_id')
+            and item.get('conditions_satisfied') is True for item in record.get('manual_skips') or [])
         simulated = ((record or {}).get("execution_backend") in {"reception_real_sim_manipulation",
                                                                 "reception_ros_sim_manipulation"}
                      and spec.get("kind") in {"pick", "place", "open_fridge", "grasp_cola", "verify"})
@@ -177,7 +180,8 @@ def status_from_record(record) -> dict:
                       "subtask": spec.get("key") or spec["step_id"], "done": done,
                       "step_id": spec["step_id"], "skipped": manual_skip, "simulated": simulated,
                       "status": "skipped" if manual_skip else "success" if done else "failure" if verdict == "FAIL" else "unknown" if verdict == "UNKNOWN" else "pending",
-                      "result": "人工跳过；未确认该步骤完成" if manual_skip else evidence.get("text") or evidence.get("detail") or latest.get("outcome") or "",
+                      "conditions_assumed": conditions_assumed,
+                      "result": ("人工跳过；按条件满足继续" if conditions_assumed else "人工跳过；未确认该步骤完成") if manual_skip else evidence.get("text") or evidence.get("detail") or latest.get("outcome") or "",
                       "reported_success": evidence.get("reported_success"),
                       "evidence_level": evidence.get("reported_evidence_level") or evidence.get("grade"),
                       "effect_verified": not manual_skip and (verdict == "PASS" or (spec.get("kind") == "verify"
@@ -744,7 +748,7 @@ class TaskRuntime:
             # Never let a preceding (possibly simulated) step describe this command.
             self.record['pending_progress'] = None
 
-    def request_pause(self, *, stop_acknowledged: bool | None = None, expected_step_id=None):
+    def request_pause(self, *, stop_acknowledged: bool | None = None, expected_step_id=None, wait_for_stop=False):
         with self._exclusive():
             self._reload_locked()
             if expected_step_id and (self._current_step() is None or self._current_step().step_id != expected_step_id):
@@ -780,6 +784,11 @@ class TaskRuntime:
                 observed = self.port.query(command_id, contract.request)
                 if not isinstance(observed, dict):
                     observed = {'error': '暂停查询回执无效'}
+                if wait_for_stop and step.kind in NATIVE_OPERATIONS and not observed.get('terminal'):
+                    wait = getattr(self.port, 'wait_completion', None)
+                    if callable(wait):
+                        request = dict(contract.request, deadline_sec=min(30., float(contract.deadline_sec)))
+                        observed = wait(command_id, request)  # Original command GETs only; no cancel/finish replay.
             except Exception as exc:
                 observed = {'error': str(exc)}
         with self._exclusive():
@@ -1105,17 +1114,11 @@ class TaskRuntime:
                     or confirmation.get('command_id') != attempt['command_id']
                     or (attempt.get('effect_controls') or {}).get('finish')):
                 return None
-            previous = attempt.get('grasp_observation' if grasp else 'door_observation') or {}
-            calls = int(previous.get('total_vlm_calls', 0))
-            from brain.adapters.vla_camera import timestamp
-            age = (datetime.now().astimezone() - timestamp(confirmation['execution_ready_at'])).total_seconds()
-            if calls >= options['max_vlm_calls'] or not 0 <= age <= options['max_observation_sec']:
-                return None
             return dict(task_id=self.record['task_id'], command_id=attempt['command_id'],
                         attempt_id=attempt['attempt_id'], revision=self.record['revision'],
                         vla_url=(self.record.get('execution_target') or {}).get('vla'),
                         execution_ready_at=confirmation['execution_ready_at'], options=deepcopy(options),
-                        remaining_vlm_calls=options['max_vlm_calls'] - calls, operation=step.kind, object_id=step.object_id)
+                        operation=step.kind, object_id=step.object_id)
 
     def apply_door_observation(self, context, result, *, authorization=''):
         """Record evidence on the original attempt, then use the existing finish intent."""
@@ -1136,7 +1139,7 @@ class TaskRuntime:
             previous = attempt.get(field) or {}
             observation = deepcopy(result)
             calls = result.get('vlm_calls', 0)
-            if type(calls) is not int or not 0 <= calls <= min(1, context['remaining_vlm_calls']):
+            if type(calls) is not int or not 0 <= calls <= 1:
                 raise Rejected('视觉核验调用预算无效')
             observation['total_vlm_calls'] = int(previous.get('total_vlm_calls', 0)) + calls
             attempt[field] = observation
@@ -1362,13 +1365,26 @@ class TaskRuntime:
             raise Rejected('无法查询原动作停止和执行结果，未重新下发') from exc
         if not isinstance(result, dict):
             raise Rejected('原动作回执无效，未重新下发')
+        retry_boundary = None
+        check_retry = getattr(self.port, 'retry_ready', None)
+        if (step and step.kind in NATIVE_OPERATIONS and callable(check_retry)
+                and result.get('terminal') in {'failed', 'cancelled'}):
+            try:
+                retry_boundary = check_retry(command_id, request, result)
+            except Exception as exc:
+                raise Rejected('无法核对当前策略发布通路，未重新下发') from exc
+            if not isinstance(retry_boundary, dict) or retry_boundary.get('confirmed') is not True:
+                reason = retry_boundary.get('reason') if isinstance(retry_boundary, dict) else 'invalid_response'
+                raise Rejected('当前策略发布通路尚未核清，未重新下发：' + str(reason))
         with self._exclusive():
             self._reload_locked()
-            if (self.record['revision'] != snapshot['revision'] or self.state != snapshot['state']
+            if (self.record.get('task_id') != snapshot['task_id']
+                    or self.record['revision'] != snapshot['revision'] or self.state != snapshot['state']
                     or self.record.get('open_command_id') != command_id):
                 raise Rejected('任务状态已变化，未重新下发，请刷新后重试')
             if (result.get('command_id') != command_id or result.get('timed_out')
-                    or result.get('stopped') is not True or result.get('resources_released') is not True):
+                    or (retry_boundary is None and (result.get('stopped') is not True
+                                                   or result.get('resources_released') is not True))):
                 raise Rejected('原动作停止或资源释放尚未确认，未重新下发')
             evidence = result.get('evidence') or {}
             if evidence.get('identity_ok') is False or evidence.get('time_ok') is False:
@@ -1377,11 +1393,15 @@ class TaskRuntime:
             if terminal not in {'succeeded', 'failed', 'cancelled'} and result.get('started') is not False:
                 raise Rejected('原动作效果仍不明确，未重新下发')
             progress = self._progress_from_query(step, command_id, result)
-            progress.evidence = dict(progress.evidence or {}, resources_released=True)
+            if retry_boundary is None:
+                progress.evidence = dict(progress.evidence or {}, resources_released=True)
+            else:
+                progress.evidence = dict(progress.evidence or {}, resources_released=result.get('resources_released'))
+                self._latest(step.step_id)['retry_boundary_observation'] = deepcopy(retry_boundary)
             if isinstance(result.get('raw'), dict):
                 progress.evidence['downstream'] = deepcopy(result['raw'])
             self._stamp_attempt(step, progress, finished=bool(terminal))
-            self.record.update(command_unknown=False, stopped_confirmed=True, resources_cleared=True,
+            self.record.update(command_unknown=False, stopped_confirmed=result.get('stopped') is True, resources_cleared=True,
                                dispatch_closed=False, control_request='', requery_hold=False,
                                blocked_reason='', breakpoint_phase='')
             if terminal == 'succeeded':
@@ -1403,21 +1423,29 @@ class TaskRuntime:
                     'previous_command_id': command_id, 'command_id': new_command_id}
 
     def skip_current(self, *, step_id):
-        """Explicit human disposition; never synthesize effects or success receipts."""
+        """Assume this step's conditions by human disposition, preserving real receipts."""
         with self._exclusive():
             self._reload_locked()
             status = status_from_record(self.record)
             if not status['can_skip'] or not step_id or status['skip_step_id'] != step_id:
                 raise Rejected("当前步骤已变化或不可跳过，请刷新后重试")
-            needs_pause = self.state in {"running", "verifying"}
+            task_id = self.record['task_id']
+            next_step = self._next_body(self._current_step())
+            body_only_skip = (getattr(self.port, 'supports_body_only_manual_skip', False) is True
+                              and self._current_step().kind in NATIVE_OPERATIONS
+                              and next_step is not None and next_step.kind == 'navigate')
+            needs_pause = (self.state in {"running", "verifying"}
+                           or (self.state == 'waiting_human' and self._current_step().kind in NATIVE_OPERATIONS))
         if needs_pause:
-            self.request_pause(expected_step_id=step_id)
-            if self.state != 'paused':
+            self.request_pause(expected_step_id=step_id, wait_for_stop=True)
+            if self.state != 'paused' and not (body_only_skip and self.state == 'recovery_required'
+                                               and self.record.get('control_request') == 'pause'):
                 raise Rejected("流程已暂停，但当前动作停止未确认，尚未下发下一步")
         with self._exclusive():
             self._reload_locked()
             status = status_from_record(self.record)
-            if not status['can_skip'] or not step_id or status['skip_step_id'] != step_id:
+            if (self.record['task_id'] != task_id or not status['can_skip']
+                    or not step_id or status['skip_step_id'] != step_id):
                 raise Rejected("当前失败步骤已变化或不可跳过，请刷新后重试")
             step = self._current_step()
             revision = self.record['revision']
@@ -1445,13 +1473,21 @@ class TaskRuntime:
             request = self._request_of(command_id) if command_id else None
             if not command_id and not self.record.get('resources_cleared'):
                 raise Rejected("动作资源尚未核清，不能跳过")
+        body_handoff = None
         # Query only. A timeout/failed command may still own the action port.
         if command_id and viewed is None:
             try:
                 viewed = self.port.query(command_id, request)
             except Exception as exc:
                 raise Rejected("无法确认原动作已停止，不能跳过") from exc
-            if (not isinstance(viewed, dict) or viewed.get('command_id') != command_id
+            if body_only_skip and request.get('skill') in NATIVE_OPERATIONS:
+                body_handoff = self.port.handoff_with_context(dict(task_id=task_id,
+                    step_id=next_step.step_id, kind='to_nav', source_command_id=command_id,
+                    source_request=request, manual_skips=[step_id]))
+                if not isinstance(body_handoff, dict) or body_handoff.get('confirmed') is not True:
+                    reason = (body_handoff or {}).get('reason') if isinstance(body_handoff, dict) else 'invalid_response'
+                    raise Rejected('身体发布通路尚未核清，不能切换导航：' + str(reason))
+            elif (not isinstance(viewed, dict) or viewed.get('command_id') != command_id
                     or viewed.get('stopped') is not True or viewed.get('resources_released') is not True
                     or not (viewed.get('terminal') in {'succeeded', 'failed', 'cancelled'}
                             or viewed.get('started') is False)):
@@ -1461,14 +1497,22 @@ class TaskRuntime:
             raise Rejected('原动作已报告完成，请点击继续核验，无需跳过')
         with self._exclusive():
             self._reload_locked()
-            if self.record['revision'] != revision or self.state != original_state:
+            if (self.record.get('task_id') != task_id or self.record['revision'] != revision
+                    or self.state != original_state):
                 raise Rejected("任务状态已变化，未跳过任何步骤，请刷新后重试")
-            skipped = {'step_id': step_id, 'command_id': skipped_command_id,
+            effects = {**self.policy.effects(step, final=False), **self.policy.effects(step, final=True)}
+            if step.required_holding:
+                effects.setdefault('holding', step.required_holding)
+            skipped = {'task_id': self.record['task_id'], 'step_id': step_id, 'command_id': skipped_command_id,
                        'stop_command_id': command_id,
                        'reason': self.record.get('blocked_reason'),
                        'source': 'human_control', 'at': datetime.now().astimezone().isoformat(),
+                       'conditions_satisfied': True, 'assumed_effects': effects,
                        'stop_observation': deepcopy(viewed)}
+            if body_handoff is not None:
+                skipped['body_handoff_observation'] = deepcopy(body_handoff)
             self.record.setdefault('manual_skips', []).append(skipped)
+            self.record.update(effects)  # Human assumption only; do not create verifier PASS/belief evidence.
             self._mark(step, 'manual_skipped')
             verify_id = self._verify_id(step)
             if verify_id:
@@ -1707,8 +1751,8 @@ class TaskRuntime:
             context = {"task_id": snapshot["task_id"], "step_id": step_id, "kind": kind,
                        "source_command_id": command_id,
                        "source_request": self._request_of(command_id) if command_id else None}
-            # The operator's skip already confirmed that step's command stopped and
-            # released its resources. A handoff across it is filled in, not re-asked.
+            # The skip checked resources for its target action. Authoritative adapters
+            # recheck the current boundary; others reuse that disposition.
             skipped = {item.get("step_id") for item in snapshot.get("manual_skips") or []}
             bridged = [step.step_id for step in self.phases[source_index:boundary] if step.step_id in skipped]
             context['manual_skips'] = bridged
@@ -1980,7 +2024,30 @@ class TaskRuntime:
     def _envelope(self, step, command_id: str) -> dict:
         # After a skipped leg the operator has moved the robot. The proof still names the
         # real DREAM command; VLA checks it against DREAM before taking the action port.
-        return self.policy.request(step, self.record["task_id"], command_id, self._last_command)
+        request = self.policy.request(step, self.record["task_id"], command_id, self._last_command)
+        if step.required_holding:
+            for previous in reversed(self.phases[:self._index(step.step_id)]):
+                assumed = self._manual_conditions(previous)
+                effects = {**self.policy.effects(previous, final=False), **self.policy.effects(previous, final=True)}
+                if assumed:
+                    effects.update(assumed.get('assumed_effects') or {})
+                if 'holding' not in effects:
+                    continue
+                if assumed and assumed.get('assumed_effects', {}).get('holding') == step.required_holding:
+                    request['operator_assumption'] = dict(source='human_skip', task_id=self.record['task_id'],
+                        step_id=previous.step_id, command_id=assumed.get('command_id'),
+                        holding=step.required_holding, at=assumed['at'])
+                break  # The latest holding effect or human assumption wins.
+        return request
+
+    def _manual_conditions(self, step):
+        bucket = self.record.get('steps', {}).get(step.step_id) or {}
+        if bucket.get('status') != 'manual_skipped':
+            return None
+        command_id = (self._latest(step.step_id) or {}).get('command_id')
+        return next((item for item in reversed(self.record.get('manual_skips') or [])
+                     if item.get('task_id') == self.record['task_id'] and item.get('step_id') == step.step_id
+                     and item.get('command_id') == command_id and item.get('conditions_satisfied') is True), None)
 
     def _contract(self, step, attempt_id: str, command_id: str, request: dict) -> SkillContract:
         return SkillContract(
@@ -2011,12 +2078,13 @@ class TaskRuntime:
         if self.record.get("dispatch_closed"):
             raise Rejected("新派发已关闭")
         if step.required_holding and self.record.get('holding') != step.required_holding:
-            raise Rejected('后续运送需要已核验的持物记录；人工跳过抓取不能代替')
+            raise Rejected('后续运送需要已核验或本任务人工确认的持物记录')
         if step.kind == 'grasp_cola' and not any(
                 previous.kind == 'open_fridge' and previous.target_area == step.target_area
-                and (self._latest(previous.step_id) or {}).get('verdict') == 'PASS'
+                and ((self._latest(previous.step_id) or {}).get('verdict') == 'PASS'
+                     or self._manual_conditions(previous))
                 for previous in self.phases[:self._index(step.step_id)]):
-            raise Rejected('抓可乐必须有本任务同一目标的开门通过证据；人工跳过不能代替')
+            raise Rejected('抓可乐必须有本任务同一目标的开门通过证据或人工确认')
         physical = self.policy.physical(step.kind)
         attempt = self._latest(step.step_id)
         if attempt is None or attempt.get("submitted"):

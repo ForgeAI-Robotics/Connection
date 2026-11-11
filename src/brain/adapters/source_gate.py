@@ -5,7 +5,7 @@ from brain.adapters.http_client import HttpClient, HttpContractError
 from brain.adapters.execution import BodyAdapter, interpret_observation, _unconfirmed
 from contracts.body_control import ControlError
 from contracts.submission import submission_refusal, refusal_observation
-from contracts.vla import NATIVE_OPERATIONS, validate_evidence
+from contracts.vla import NATIVE_OPERATIONS, validate_evidence, manual_holding_assumed, visual_arm_grasp
 
 VERSION = 'g1/source-gate/v1'
 
@@ -106,6 +106,7 @@ class SourceGateNavigationAdapter(BodyAdapter):
 class SourceGateBodyAdapter(SourceGateNavigationAdapter):
     """Direct NAV/VLA business I/O; executor readiness stays with each executor."""
     requires_authoritative_handoff = True
+    supports_body_only_manual_skip = True
 
     def __init__(self, dream, vla, authority):
         super().__init__(dream, authority)
@@ -199,6 +200,12 @@ class SourceGateBodyAdapter(SourceGateNavigationAdapter):
         if not command or not request:
             return answer
         source = self.query(command, request)
+        if (context.get('manual_skips') and context['kind'] == 'to_nav'
+                and request.get('skill') in NATIVE_OPERATIONS):
+            # Manual disposition replaces the business/hand outcome. Navigation
+            # needs the current body publishing path, not an old O6 exit receipt.
+            return self._current_body_path(dict(answer, source=source),
+                                           reason='manual_skip_current_body_path_clear')
         reason = self._source_handoff_blocker(source)
         if context.get('manual_skips') and reason in {'source_failed', 'source_cancelled'}:
             reason = None
@@ -207,10 +214,47 @@ class SourceGateBodyAdapter(SourceGateNavigationAdapter):
         # Source selection happens once in the next command's dispatch path.
         return answer
 
+    def retry_ready(self, command_id, request, original):
+        """Retry lifecycle boundary only; VLA owns current O6/model/camera admission."""
+        answer = dict(available=True, confirmed=False, kind='retry_vla', source=original)
+        if (request.get('skill') not in NATIVE_OPERATIONS or original.get('command_id') != command_id
+                or original.get('terminal') not in {'failed', 'cancelled'} or original.get('timed_out')):
+            return dict(answer, reason='source_not_retryable')
+        return self._current_body_path(answer, reason='vla_retry_current_body_path_clear')
+
+    def _current_body_path(self, answer, *, reason):
+        answer['scope'] = 'current_body_publishing_path'
+        source = answer['source']
+        evidence = source.get('evidence') or {}
+        if evidence.get('identity_ok') is not True or evidence.get('time_ok') is not True:
+            return dict(answer, reason='source_receipt_invalid')
+        if source.get('terminal') not in {'succeeded', 'failed', 'cancelled'}:
+            return dict(answer, reason='source_command_not_terminal')
+        try:
+            current = self.vla.control_status()
+        except HttpContractError as exc:
+            return dict(answer, reason='current_body_status_unavailable', error=str(exc))
+        if not isinstance(current, dict):
+            return dict(answer, reason='current_body_status_invalid')
+        answer['current_body_status'] = {k: current.get(k) for k in (
+            'execution_mode', 'service_instance_id', 'status_generated_at',
+            'active_command_id', 'policy_running', 'action_port_released')}
+        instance = current.get('service_instance_id')
+        if current.get('execution_mode') != 'direct' or not isinstance(instance, str) or not instance.strip():
+            return dict(answer, reason='current_body_status_invalid')
+        if 'active_command_id' not in current or current['active_command_id'] not in (None, ''):
+            return dict(answer, reason='current_vla_command_active')
+        if current.get('policy_running') is not False:
+            return dict(answer, reason='current_vla_publisher_not_stopped')
+        if current.get('action_port_released') is not True:
+            return dict(answer, reason='current_body_port_unreleased')
+        return dict(answer, confirmed=True, reason=reason)
+
     def _current_holding(self, request):
-        # This is a business result (object still held), not O6 readiness or
-        # a body-mode/permission check. Never turn old grasp success into a
-        # current holding claim, and never renew evidence from the brain.
+        if manual_holding_assumed(request):
+            return  # Explicit human skip satisfies business holding; handoff/selection remain separate.
+        # Consume the verified task effect for the current wrist/arm contract.
+        # Legacy contracts below retain their current signed O6 holding check.
         task_id, obj = request['body']['task_id'], request['required_holding']
         rows = self.authority._read()['commands'].values()
         grasp = next((r['request'] for r in reversed(list(rows))
@@ -220,6 +264,11 @@ class SourceGateBodyAdapter(SourceGateNavigationAdapter):
         original = self.query(grasp['body']['command_id'], grasp)
         if self._source_handoff_blocker(original) is not None:
             raise ControlError('HOLDING_UNCONFIRMED', '原抓取效果或停止结果未确认')
+        result = (original.get('raw') or {}).get('result') or {}
+        if visual_arm_grasp(result.get('evidence')):
+            if (original.get('evidence') or {}).get('supports') is not True or result.get('holding') != obj:
+                raise ControlError('HOLDING_UNCONFIRMED', '本任务双腕／双臂抓取效果尚未核验')
+            return  # Verified task effect; no additional signed O6 holding gate before NAV.
         status = self.vla.control_status()
         proof = status.get('holding_evidence') or {}
         if (status.get('execution_mode') != 'direct' or status.get('current_holding') != obj

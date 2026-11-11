@@ -248,9 +248,26 @@ assert(vlaModelSummary(runtime).includes("当前图像不新鲜"));
 model.state="failed";model.last_error="compute exited";
 assert(vlaModelSummary(runtime).includes("准备失败 · compute exited"));
 runtime.preparation.startup_state="unavailable";
-assert.equal(vlaModelSummary(runtime),"开门准备：未取得准备状态");
+assert.equal(vlaModelSummary(runtime),"开冰箱模型：未取得准备状态");
 delete runtime.preparation.startup_state;model.state="ready";model.warm_ready=true;
-assert.equal(vlaModelSummary(runtime),"开门准备：已就绪");
+assert.equal(vlaModelSummary(runtime),"开冰箱模型：已就绪");
+''')
+
+    def test_two_models_have_independent_summary_and_detail_lines(self):
+        self.browser('''
+const runtime={http:{state:"running",ready:true},camera:{state:"running"},o6:{state:"running",ready:true},
+ preparation:{enabled:true,operations:{open_fridge:{state:"ready",warm_ready:true},grasp_cola:{state:"warming",warm_ready:false}}}};
+const item={health:{runtime}};
+for (const lines of [vlaSummaryLines(item),vlaComponentLines(item)]) {
+ assert(lines.includes("开冰箱模型：已就绪"));assert(lines.includes("抓可乐模型：预热中"));
+}
+runtime.preparation.operations.grasp_cola={state:"failed",warm_ready:false,last_error:"cola compute exited"};
+assert(vlaSummaryLines(item).includes("抓可乐模型：准备失败 · cola compute exited"));
+assert(vlaSummaryLines(item).includes("开冰箱模型：已就绪"));
+delete runtime.preparation.operations.grasp_cola;
+assert(vlaSummaryLines(item).includes("抓可乐模型：未取得准备状态"));
+runtime.preparation.enabled=false;
+for(const op of ["open_fridge","grasp_cola"])assert(vlaModelSummary(runtime,op).includes("未启用提前准备"));
 ''')
 
     def test_o6_fault_is_visible_but_history_does_not_override_current_ready(self):
@@ -352,6 +369,8 @@ function actionButton(label,fn){return {textContent:label,onclick:fn,disabled:fa
 const item={id:'vla',name:'VLA 服务',state:'up',remote_actions:['start','stop'],
  health:{runtime:{http:{can_stop:true}}}};
 const first=card(item);
+assert(first.innerHTML.includes("完整就绪"));
+assert(!card({...item,state:"partial"}).innerHTML.includes("完整就绪"));
 assert.equal(first.children[0].children[1].disabled,false);
 item.health.runtime.http={can_stop:false,reason:'active task'};
 patchCard(first,item);
@@ -380,6 +399,51 @@ assert(other.children[1].hidden);
         self.assertEqual(r.returncode, 0, r.stderr)
 
 class VlaModelPreparationTests(unittest.TestCase):
+    def test_both_models_are_required_for_full_ready(self):
+        value=status()
+        with patch.object(vla_remote,'runtime_status',return_value=value), patch('ops.services._record_probe'):
+            self.assertEqual(vla_remote.health(by_id('vla'))['state'],'up')
+            for operation in ('open_fridge','grasp_cola'):
+                for state in ('cold','checking','loading','warming','busy','invalidated','failed','stopping'):
+                    with self.subTest(operation=operation,state=state):
+                        value['preparation']['operations'][operation].update(state=state,warm_ready=False)
+                        report=vla_remote.health(by_id('vla'))
+                        self.assertEqual(report['state'],'partial');self.assertFalse(report['ok'])
+                value['preparation']['operations'][operation].update(state='ready',warm_ready=True)
+            value['camera']['ready']=False
+            self.assertEqual(vla_remote.health(by_id('vla'))['state'],'partial')
+
+    def test_missing_or_disabled_model_information_is_not_complete_ready(self):
+        for operation in ('open_fridge','grasp_cola'):
+            value=status();del value['preparation']['operations'][operation]
+            value['preparation']['required_operations']=['open_fridge']
+            self.assertIs(vla_remote._validate_status(value),value)
+            self.assertFalse(vla_remote._model_ready(value))
+        value=status();value['preparation']['enabled']=False
+        self.assertFalse(vla_remote._model_ready(value))
+        del value['preparation'];self.assertFalse(vla_remote._model_ready(value))
+
+    def test_start_confirmation_requires_both_models_but_stop_does_not(self):
+        result=action_result('start')
+        result['status']['preparation']['operations']['grasp_cola'].update(state='loading',warm_ready=False)
+        with self.assertRaises(RuntimeError):vla_remote._action_result('start',vla_remote.RESULT_PREFIX+json.dumps(result))
+        result=action_result('stop')
+        result['status']['preparation']['operations']['grasp_cola'].update(state='cold',warm_ready=False)
+        self.assertTrue(vla_remote._action_result('stop',vla_remote.RESULT_PREFIX+json.dumps(result))['confirmed'])
+
+    def test_active_cola_model_is_busy_without_reporting_full_ready(self):
+        value=status(can_stop=False);value['http'].update(active_command_id='grasp-current',policy_running=True)
+        value['preparation']['operations']['grasp_cola'].update(state='busy',warm_ready=False)
+        with patch.object(vla_remote,'runtime_status',return_value=value), patch('ops.services._record_probe'):
+            report=vla_remote.health(by_id('vla'))
+        self.assertEqual(report['state'],'busy');self.assertFalse(vla_remote._model_ready(value))
+        self.assertIn('当前任务占用',report['detail'])
+
+    def test_invalid_cola_model_ready_report_is_rejected(self):
+        for row in (None,{},dict(state='warming',warm_ready=True),dict(state='ready',warm_ready=1)):
+            value=status();value['preparation']['operations']['grasp_cola']=row
+            with self.subTest(row=row),self.assertRaises(ValueError):vla_remote._validate_status(value)
+
     def test_active_model_is_busy_and_component_fault_stays_visible(self):
         value=status(can_stop=False)
         value['http'].update(active_command_id='open-current',policy_running=True)
@@ -408,6 +472,8 @@ class VlaModelPreparationTests(unittest.TestCase):
         self.assertEqual(report['state'],'partial');self.assertFalse(report['ok'])
         self.assertFalse(vla_remote._model_ready(value))
         value['preparation']['operations']['open_fridge'].update(state='ready',warm_ready=True)
+        self.assertFalse(vla_remote._model_ready(value))
+        value['preparation']['operations']['grasp_cola']={'state':'ready','warm_ready':True}
         self.assertTrue(vla_remote._model_ready(value))
 
     def test_inconsistent_model_ready_report_rejected(self):

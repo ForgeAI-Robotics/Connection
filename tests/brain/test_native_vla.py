@@ -282,13 +282,15 @@ class NativeRuntimeTests(unittest.TestCase):
         self.assertEqual(self.runtime.state, 'recovery_required')
         self.assertEqual(self.vla.cancels, [command])
 
-    def test_skip_does_not_fabricate_door_open_precondition(self):
+    def test_skip_accepts_door_condition_without_fabricating_pass(self):
         self.runtime.request_pause()
         self.runtime.skip_current(step_id='VLA_OPEN_FRIDGE')
         self.runtime.drive()
-        self.assertEqual(len(self.vla.posts), 1)
-        self.assertEqual(self.runtime.state, 'recovery_required')
-        self.assertIn('开门通过证据', self.runtime.record['blocked_reason'])
+        self.assertEqual(len(self.vla.posts), 2)
+        self.assertEqual(self.runtime.state, 'waiting_human')
+        skipped=self.runtime.record['steps']['VLA_OPEN_FRIDGE']
+        self.assertEqual(skipped['status'], 'manual_skipped')
+        self.assertNotEqual(skipped['attempts'][-1].get('verdict'), 'PASS')
 
     def test_wrong_target_and_observation_after_completion_are_not_accepted(self):
         self.finish()

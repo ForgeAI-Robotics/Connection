@@ -177,7 +177,7 @@ class BrainApplication:
         except TimeoutError:
             from brain.adapters.door_verification import SCHEMA, GRASP_SCHEMA
             result = dict(schema=GRASP_SCHEMA if context.get('operation') == 'grasp_cola' else SCHEMA, status='unknown', reason='observation_deadline_exceeded',
-                          vlm_calls=min(1, context['remaining_vlm_calls']))
+                          vlm_calls=1)
         if result is None:
             return
         # Requery the original command after inference. Failure/stop wins over vision.

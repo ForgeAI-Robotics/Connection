@@ -407,14 +407,15 @@
                     if (!current.can_skip || !skipStep || current.skip_step_id !== skipStep) {
                         throw new Error('当前步骤已变化或不可跳过，请刷新后重试');
                     }
-                    if (!window.confirm(`跳过 ${taskPhase(skipStep)} 并进入下一步？该步骤不会记为成功；下一步仍需满足真实接口的前置条件。`)) return;
+                    if ((current.control_command_id || '') !== continueCommand) throw new Error('当前命令已变化，请刷新后重试');
+                    if (!window.confirm(`跳过 ${taskPhase(skipStep)}：按当前条件已满足继续下一步？该步骤保留人工跳过记录。`)) return;
                 }
                 result.textContent = '正在发送控制请求...';
                 taskFeedbackTaskId = current.task_id;
                 pendingTaskControl = {task_id: current.task_id, command_id: continueCommand, action};
                 const data = await taskJSON('/api/task_' + action, {
                     method: 'POST', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({task_id: current.task_id, ...(action === 'skip' ? {step_id: skipStep} : {}),
+                    body: JSON.stringify({task_id: current.task_id, ...(action === 'skip' ? {step_id: skipStep, expected_command_id: continueCommand} : {}),
                         ...(action === 'continue' ? {step_id: continueStep || '', expected_command_id: continueCommand} : {})})
                 });
                 if (data.accepted === false) {
@@ -528,7 +529,7 @@
                 statusLabel = '已暂停';
                 statusCls = 'status-run';
             } else if (data.state === 'waiting_human') {
-                statusLabel = data.vla_confirmation?.auto_verification ? '自动核验中' : awaitingVlaEffect(data) ? '等待现场确认完成' : '等待人工';
+                statusLabel = data.vla_confirmation?.auto_verification ? '自动核验中' : '等待人工';
                 statusCls = 'status-run';
             } else if (data.state === 'cancelling') {
                 statusLabel = '取消中，停止尚未核清';
@@ -572,69 +573,12 @@
             html += `<div style="font-size:12px;color:#94a3b8;overflow-wrap:anywhere">
                 任务 ID：${taskText(data.task_id)} · 任务环境：${taskText((TASK_LABELS.backends || {})[data.execution_backend] || data.execution_backend || '尚未选择')}</div>`;
 
-            const vla = data.vla_confirmation;
-            const holdingStatus = data.failure_detail?.downstream?.error?.details?.holding_status
-                || data.handoff_observation?.idle_evidence?.vla;
-            const holdingProof = holdingStatus?.holding_evidence || vla?.holding_evidence;
-            if (holdingProof) {
-                const directHolding = data.control_recovery?.mode === 'source_gate' && !holdingProof.schema;
-                const expired = !directHolding && (!Number.isFinite(Date.parse(holdingProof.valid_until))
-                    || Date.parse(holdingProof.valid_until) <= Date.now());
-                html += '<div class="task-command-feedback">持物证据（最近核查快照）：'
-                    + taskText(holdingStatus ? (holdingStatus.current_holding || '未知') : (holdingProof.holding || '未知'))
-                    + '<br>观察时间：' + taskText(holdingProof.observed_at || '未提供')
-                    + (directHolding ? ' · 有效性由 VLA 按当前保持情况报告' : ' · 有效至：' + taskText(holdingProof.valid_until || '未提供'))
-                    + '<br>' + taskText(holdingProof.invalid_reason || (expired ? '证据已到期，须真实重新确认'
-                        : holdingProof.valid === true ? '每段运送前重新核查当前证明，不自动续期' : '证明无效，等待核清'))
-                    + '</div>';
-            }
-            if (vla && vla.execution_mode === 'direct' && !data.pause_requested
-                && !['succeeded', 'failed', 'cancelled'].includes(vla.state)) {
-                const key = data.task_id + ':' + vla.command_id;
-                const pending = vlaFinishIntents.get(key);
-                if (!vla.finish_intent && pending && vla.finish_rejection?.evidence?.reference === pending.evidence.reference)
-                    vlaFinishIntents.delete(key);
-                const submitted = !!vla.finish_intent || vla.finish_requested || vlaFinishIntents.has(key);
-                const open = vla.operation === 'open_fridge';
-                const autoGrasp = !open && vla.auto_verification === true;
-                const text = open ? '确认冰箱已打开且双手离门' : '确认后退撤离完成且可乐仍在手';
-                const canConfirm = taskStatusKnown && !taskControlPending && !vla.observation_error && data.state === 'waiting_human'
-                    && !submitted && ['running', 'waiting_result_confirmation'].includes(vla.state);
-                const message = data.state === 'recovery_required' ? '操控结果需要处理，请查看原始原因；不会自动进入下一步。'
-                    : vla.observation_error ? '操控状态暂未核清，正在查询原命令：' + vla.observation_error
-                    : submitted ? '完成确认已记录，正在查询 VLA 收尾；成功后自动进入下一步。'
-                    : autoGrasp ? '正在自动核验左右手均持有可乐和双臂回位保持；通过后自动进入导航。'
-                    : open ? '请观察门已打开且稳定、双手离门后确认。'
-                    : '请等待抓取、收手、后退全部完成，确认已退出冰箱接触区且可乐仍在手。';
-                const graspObservation = autoGrasp && vla.grasp_observation;
-                const graspNote = graspObservation && (graspObservation.answer?.reason
-                    || (graspObservation.reason === 'waiting_for_measured_arm_return' ? '等待双臂先离开、再回位并低速保持 0.8 秒' : ''));
-                html += '<div class="task-command-feedback">' + taskText(message)
-                    + (graspNote ? '<br>最近核验：' + taskText(graspNote) : '')
-                    + (autoGrasp ? '' : '<button type="button" onclick="confirmVlaCompletion()" ' + (canConfirm ? '' : 'disabled') + '>' + text + '</button>')
-                    + '<button type="button" onclick="vlaEffectControl(\'query\')">查询操控原命令</button>'
-                    + '<details><summary>单独操作</summary><button type="button" onclick="vlaEffectControl(\'pause\')">暂停策略</button></details></div>';
-            } else if (vla && !data.pause_requested) {
-                const labels = {running:'策略运行中，请在现场确认适当时机后请求暂停',
-                    waiting_result_confirmation:'策略已暂停，等待授权核验方提交暂停后的效果证据',
-                    stopping_policy:'效果已提交，正在确认策略停止', restoring_navigation:'正在归还导航通路',
-                    succeeded:'VLA 已返回成功；点击继续，由大脑核验原结果',
-                    failed:'VLA 已返回失败，请核清现场', cancelled:'VLA 命令已取消，请核清现场'};
-                html += '<div class="task-command-feedback">' + taskText(labels[vla.state] || '等待核对 VLA 原命令')
-                    + '<br>策略暂停不是姿态冻结或急停。效果证据由现场人员或视觉核验模块提供。'
-                    + (vla.state === 'running' && !vla.pause_requested
-                        ? '<button type="button" onclick="vlaEffectControl(\'pause\')">暂停策略以核验</button>' : '')
-                    + '<button type="button" onclick="vlaEffectControl(\'query\')">查询操控原命令</button></div>';
-            }
             const command = data.current_command;
             if (command?.command_id) {
                 const stages = {prepared:'新命令已准备，尚未下发', submitted:'下发已登记，等待执行回执',
                     unknown:'执行结果待确认，不会自动补发', rejected:'指令被拒绝，未开始执行',
                     succeeded:'已核验成功', failed:'执行失败', cancelled:'命令已取消', terminal:'已收到终态，等待核验'};
-                const commandText = awaitingVlaEffect(data)
-                    ? (vla.auto_verification ? '操控策略运行中，等待自动持物核验'
-                        : vla.state === 'running' ? '操控策略运行中，等待现场确认完成' : '策略已暂停，等待现场确认完成')
-                    : stages[command.stage] || '等待核对';
+                const commandText = stages[command.stage] || '等待核对';
                 html += '<div style="font-size:12px;overflow-wrap:anywhere">' + taskText(commandText)
                     + ' · ' + taskText(command.command_id) + '</div>';
             }
@@ -663,7 +607,7 @@
                     ? ' <span style="font-size:10px;color:#fbbf24;border:1px solid #fbbf24;border-radius:4px;padding:1px 5px">↻ 失败重插</span>'
                     : '';
                 const blockedTag = blocked
-                    ? ' <span style="font-size:10px;color:#fbbf24;border:1px solid #475569;border-radius:4px;padding:1px 5px">' + (skipped ? '人工跳过，未确认成功' : '未执行') + '</span>'
+                    ? ' <span style="font-size:10px;color:#fbbf24;border:1px solid #475569;border-radius:4px;padding:1px 5px">' + (skipped ? (t.conditions_assumed ? '人工跳过，按条件满足继续' : '人工跳过，未确认成功') : '未执行') + '</span>'
                     : '';
                 let checkStyle = 'border-color:#475569;';
                 let checkIcon = '';

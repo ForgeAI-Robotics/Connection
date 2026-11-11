@@ -119,22 +119,24 @@ function healthLine(item) {
   return [health.detail, latency].filter(Boolean).join(" · ");
 }
 
-function vlaModelSummary(runtime) {
+function vlaModelSummary(runtime, operation = "open_fridge") {
+  const prefix = operation === "grasp_cola" ? "抓可乐模型" : "开冰箱模型";
   const prep = runtime.preparation;
-  if (!prep || prep.enabled !== true) return "开门准备：未启用提前准备";
-  const model = prep.operations?.open_fridge || {};
-  if (prep.startup_state === "unavailable") return "开门准备：未取得准备状态";
-  if (model.warm_ready === true) return "开门准备：已就绪";
+  if (!prep || prep.startup_state === "unavailable") return `${prefix}：未取得准备状态`;
+  if (prep.enabled !== true) return `${prefix}：未启用提前准备`;
+  const model = prep.operations?.[operation];
+  if (!model) return `${prefix}：未取得准备状态`;
+  if (model.warm_ready === true && model.state === "ready") return `${prefix}：已就绪`;
   const camera = model.camera_validation;
   if (model.state === "checking" && model.warmup_receipt && camera?.valid === false) {
     const span = Number.isFinite(camera.observed_span_sec) ? camera.observed_span_sec.toFixed(1) : "?";
     const window = Number.isFinite(camera.window_sec) ? camera.window_sec.toFixed(1) : "?";
     const freshness = camera.fresh === false ? "，当前图像不新鲜" : "";
-    return `开门准备：模型已预热；相机连续检查未通过（${span}/${window} 秒${freshness}）`;
+    return `${prefix}：模型已预热；相机连续检查未通过（${span}/${window} 秒${freshness}）`;
   }
   const labels = {cold: "未准备", checking: "检查中", loading: "加载中", warming: "预热中",
     ready: "已就绪", busy: "当前任务使用中，不能接新动作", invalidated: "需重新准备", failed: "准备失败", stopping: "停止中"};
-  return `开门准备：${labels[model.state] || "未知"}${model.last_error ? " · " + model.last_error : ""}`;
+  return `${prefix}：${labels[model.state] || "未知"}${model.last_error ? " · " + model.last_error : ""}`;
 }
 
 function vlaComponentLines(item) {
@@ -167,6 +169,7 @@ function vlaComponentLines(item) {
   const recoveryLine = o6RecoverySummary(o6);
   if (recoveryLine) lines.push(recoveryLine);
   lines.push(vlaModelSummary(runtime));
+  lines.push(vlaModelSummary(runtime, "grasp_cola"));
   lines.push(vlaExecutionSummary(runtime));
   lines.push(`停止 HTTP：${http.can_stop === true ? "可请求（执行时再次核验）" : "当前不可停止"}${http.reason ? " · " + http.reason : ""}`);
   if (runtime.observed_at) lines.push(`状态检查时间：${runtime.observed_at}`);
@@ -241,6 +244,7 @@ function vlaSummaryLines(item) {
     `O6：${describe(runtime.o6)}${o6FaultSummary(runtime.o6)}`,
     ...(o6RecoverySummary(runtime.o6) ? [o6RecoverySummary(runtime.o6)] : []),
     vlaModelSummary(runtime),
+    vlaModelSummary(runtime, "grasp_cola"),
     vlaExecutionSummary(runtime),
   ];
 }
@@ -279,7 +283,7 @@ function card(item) {
   el.innerHTML = `
     <div class="card-top">
       <span class="name">${escapeHtml(item.name)}</span>
-      <span class="badge ${escapeHtml(item.state)}">${escapeHtml(STATE_LABEL[item.state] || item.state)}</span>
+      <span class="badge ${escapeHtml(item.state)}">${escapeHtml(item.id === "vla" && item.state === "up" ? "完整就绪" : STATE_LABEL[item.state] || item.state)}</span>
     </div>
     <div class="meta">
       ${item.id === "vla" ? `

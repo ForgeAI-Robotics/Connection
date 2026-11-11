@@ -30,7 +30,7 @@ Runtime 是任务状态唯一权威；Planner 只给计划，Runner 不改业务
 | `GET /api/sops` | 返回已登记业务包的 SOP 标识、版本、范围和明确触发词（`packages`），以及只能由明确触发词选中的 SOP 变体（`variants`，如仅导航接待）；不是候选经验文件 |
 | `POST /api/task_pause`、`task_continue`、`task_cancel` | 暂停、继续与取消；联合控制模式取消后独立核清原控制退出，见第 1.2 节 |
 | `POST /api/task_vla/pause`、`query`、`finish` | 操作当前新 VLA 原命令；必须绑定 `task_id/command_id`，finish 另需真实证据与核验凭据；查询不推进流程，见[操控接口](接口说明_操控VLA.md#暂停效果确认与大脑继续) |
-| `POST /api/task_skip` | 必填 `task_id`、`step_id`；跳过当前未完成动作，执行中先请求停止，核对停止与资源后推进；保留人工跳过记录，不伪造成功 |
+| `POST /api/task_skip` | 必填 `task_id`、`step_id`，可传 `expected_command_id`；人工认可当前条件已满足，核对下一步所需资源后推进（操控转导航只核对当前身体发布通路）；保留人工跳过及条件假设，不伪造自动成功 |
 | `POST /api/task_preflight` | 对明确真机接待只读核对 NAV 接口与点位声明；不检查 VLA 内部条件或批准运动，见第 8.1 节 |
 | `GET /health`、`/api/execution_profile` | 进程工作器状态与已应用配置版本 |
 | `GET /api/task_diagnostics` | 必须指定原 task_id；默认仅读诊断缓存，refresh=1 仅调度网关 GET；返回小摘要／证据索引，不下载 bag，不改变任务或启动录制 |
@@ -404,8 +404,8 @@ Runtime 在保存建议、确认及应用时检查；当前方案引用的证据
 | 接口 | 大脑行为 | 下游调用与完成条件 |
 | --- | --- | --- |
 | `POST /api/task_pause` | 关闭后续派发，保留当前任务和步骤 | 有在途命令时调用该执行端的命令取消接口，再查询停止；未确认时进入 `recovery_required`，`pause_requested=true`，不假装远端已停 |
-| `POST /api/task_continue` | 继续当前环节，不重开整轮任务 | 未下发时重查条件；原命令已成功时核验；确认未完成、停止和资源释放后才准备新尝试。详见第 9.1 节 |
-| `POST /api/task_skip` | 人工放弃当前未完成动作，推进下一动作 | 执行中先请求停止；原命令停止、资源和身份核对通过后才推进。保留失败与跳过记录，不生成虚假成功 |
+| `POST /api/task_continue` | 继续当前环节，不重开整轮任务 | 未下发时重查条件；原命令已成功时核验；确认原命令终态及相应发布资源后才准备新尝试；direct VLA重试不以旧O6退出／保持为前置，见第9.1节 |
+| `POST /api/task_skip` | 按人工认可当前条件已满足，推进下一动作 | 原命令仍执行时先请求停止并查询；按下一动作范围核对资源，操控转导航不要求O6退出／保持成功；保存本任务人工条件／持物假设，走原身体切源与下一步，不补造自动成功 |
 | `POST /api/task_cancel` | 废弃本轮大脑任务，关闭后续派发并结束本地等待 | `completed`／`scope=task_only` 只确认本地取消。source_gate 下异步请求原 NAV／VLA cancel 并记录网关 none；unified 下按原许可协议撤权、退出；`control_recovery` 单独报告收尾，不以 cancelled 冒充停止 |
 | `POST /api/task_control_recovery` | 人工重查／收尾原控制，不重新发布任务 | 提交当前 task_id 与原控制身份 expected_lease_id；source_gate 两者均填原取消任务 ID，unified 使用原 lease_id；仅取消／暂停／待恢复或终态可用，源或任务变化拒绝。返回 202 后通过状态查看，不自动继续任务 |
 
@@ -415,7 +415,7 @@ Runtime 在保存建议、确认及应用时检查；当前方案引用的证据
 
 `paused` 下也允许既有 `query_original` 查询原命令、补齐旧版暂停记录的证据和状态；任务保持暂停、派发保持关闭，普通状态轮询不自动查询或修账。该修复已随 2026-10-29 16:48 大脑重载加载，具体暂停故障的真机复验仍待补；现场问题与复验见[暂停回执一致性](多端联调_大脑任务与恢复.md#pause-receipt-consistency)。
 
-新动作的 `vla_confirmation` 包含 `command_id`、`operation`、VLA `state`、`pause_requested`、`verification_ready_at`、`finish_requested`，用于网页区分仍在执行、已暂停待核验、正在停止／归还、已到终态。它是 Runtime 保存的下游观察，不是另一套任务状态。请求受理、效果证据提交与大脑任务通过分别展示；新增 execution_mode、object_id、execution_ready_at、completion、finish_intent／finish_rejection 供确认按钮显示，凭据不返回。普通状态轮询不主动查询或重发动作；已记录 auto_advance 的确认由后台工作器查询并经 Runtime 核验推进。
+新动作的 `vla_confirmation` 包含 `command_id`、`operation`、VLA `state`、`pause_requested`、`verification_ready_at`、`finish_requested`，用于网页区分仍在执行、已暂停待核验、正在停止／归还、已到终态。它是 Runtime 保存的下游观察，不是另一套任务状态。请求受理、效果证据提交与大脑任务通过分别展示；新增 execution_mode、object_id、execution_ready_at、completion、finish_intent／finish_rejection 供API查询和自动核验使用，凭据不返回；网页已移除VLA专属提示／持物快照／策略暂停／查询／完成确认区，统一显示原步骤进度与失败卡片。普通状态轮询不主动查询或重发动作；已记录 auto_advance 的确认由后台工作器查询并经 Runtime 核验推进。
 
 `vla_confirmation` 仅在任务未终结、`open_command_id` 非空且与该观察的 `command_id` 一致时返回；没有 VLA 观察、导航受理前拒绝后已无在途命令或旧观察与当前命令不符时返回 null，不显示操控确认／查询区。2026-11-02 修复了两个缺失命令 ID 相等而误生成空确认对象的问题；本机大脑已重载并确认该导航拒绝返回 null，验证见[准入拒绝与展示核查](多端联调_大脑任务与恢复.md#stop-refusal-and-handoff-reasons)。
 
@@ -484,7 +484,7 @@ POST /api/task_cancel
 | `failure_history` | 按尝试保留失败步骤、命令、错误码、原文与中文说明；不是逐行异常日志总数 |
 | `attempt_summary` | `failure_count`、`retry_count`、`manual_retry_count`；查询原命令不算新尝试 |
 | `manual_skips`、`flow_finished` | 人工跳过及流程是否因含跳过而结束；含人工跳过不记为全部成功 |
-| `subtask_list` | 每步的成功、失败、未知、跳过及证据；`done` 可能包含跳过，不能只据此统计成功 |
+| `subtask_list` | 每步的成功、失败、未知、跳过及证据，conditions_assumed区分本轮按人工条件满足继续；`done` 可能包含跳过，不能只据此统计成功 |
 | `completed`、`total` | 进度节点计数，包含准备／核验节点；不等于实际动作数。成功数量需排除跳过 |
 | `all_done` | 仅任务 `succeeded` 为 true；不表示历史上从未失败 |
 | `task_cancellation` | 本地取消范围、时间、原命令和当时远端已知状态；不新增物理停止事实 |
@@ -658,7 +658,7 @@ source_gate 模式三个按钮均已适配。左上“导航真机＋操控真�
 → 中转点 1 → 中转点 2 → 横移到中转点 3 → 1 号桌 → 结束（仍持有可乐）
 ```
 
-首点直接引用 `points.table2`，保持 `target_id=table_2` 及现有真机坐标。开门与抓取引用同一个原 NAV command_id，开门与抓取之间没有第二次导航；抓取核验后保留中转点 1、2、3 和 1 号桌的原路线。不执行关门和放置。direct-v1 不向 VLA 发送旧导航证明；VLA 自行核查当前作业条件。原导航业务关联保留在 Runtime，不伪造到位或自动重走；旧后端的证明回查规则按对应合同处理。开门 PASS 才能抓取，人工跳过不能代替。运送步骤要求 Runtime 已核验持物，source_gate 派发前检查 VLA 当前持物证据，执行端当前故障通过原接口报告；跳过抓取不能解锁运送。到达 1 号桌后仍检查导航结果、停止和持物记录，成功不代表已放到桌面。持物记录保留为 `cola_can_1`。旧 v1 三动作任务保留原快照，不自动增加导航段。
+首点直接引用 `points.table2`，保持 `target_id=table_2` 及现有真机坐标。开门与抓取引用同一个原 NAV command_id，开门与抓取之间没有第二次导航；抓取核验后保留中转点 1、2、3 和 1 号桌的原路线。不执行关门和放置。direct-v1 不向 VLA 发送旧导航证明；VLA 自行核查当前作业条件。原导航业务关联保留在 Runtime，不伪造到位或自动重走；旧后端的证明回查规则按对应合同处理。自动流程要求开门PASS和已核验抓取效果；当前双腕／双臂v2凭原成功核验与已释放发布通路进入NAV，不再以O6 signed holding作第三条件，旧合同仍按原持物证明核对；人工跳过则按第8.3节以本任务条件假设放行开门／持物业务前置，不要求另有VLM或VLA持物成功记录，执行端当前故障仍通过原接口报告。到达 1 号桌后仍检查导航结果、停止和持物记录，成功不代表已放到桌面。持物记录保留为 `cola_can_1`。旧 v1 三动作任务保留原快照，不自动增加导航段。
 
 新任务将 `workflow_variant=real`、独立 SOP 身份及包含真机分支的完整定义绑定进 `selection`。真机环境的目录／模型选择按此范围判断；要求额外关门或放到桌面的接待不能截断为取物／运送成功。VLA 两个动作必须明确可用，旧能力接口缺失不能将本分支回退成 pick/place。当前真机分支不依赖通用任务的 `native_vla` 额外点位配置。
 
@@ -733,6 +733,15 @@ direct-v1 开门／抓可乐的效果、原命令身份与独立收尾字段见[
 
 **当前 source_gate：** 按原业务流程核验来源命令的身份、效果与收尾；下一条真实任务派发时确认对应接收源，只有 applied 且当前来源匹配才提交。连续 VLA 动作不切回 NAV。大脑不重复检查模型、相机、身体模式或 O6，执行端自行判断能否执行；选源不等于模式恢复。人工跳过保留失败和跳过事实，不补造原成功，direct-v1 不发送旧导航凭证。
 
+**2026-11-10人工跳过条件：** “跳过继续”表示操作者认可当前步骤条件已满足。Runtime将 `task_id/step_id/command_id`、人工来源、时间、原停止观察和 `conditions_satisfied=true/assumed_effects` 写入既有manual_skips；步骤仍为manual_skipped，原失败、核验UNKNOWN及控制回包不改成PASS。跳过开门可进入抓取；跳过抓取按人工认可已持物更新任务投影，后续原路线导航消费该假设，不因缺少自动持物记录再阻塞。任务含人工跳过时流程结束仍标记flow_finished、非全部自动成功。
+
+持物假设只从当前任务最新的相关抓取／放置或持物导航步骤、同一次跳过及原命令派生；Runtime沿既有请求附带内部operator_assumption，适配器只替代业务持物检查，不把它发送到NAV/VLA业务body、签成O6证明或另建状态账本。后续实际抓放或新的人工条件确认会取代旧假设，旧任务缺少新标记的历史跳过不追溯升级。自动流程继续核验真实持物；没有人工跳过不能绕过核验。
+
+人工跳过按下一动作所需范围核对资源。当前source_gate中，操控转导航只要求原任务／命令回包身份与终态匹配，以及VLA当前direct状态中的service_instance_id有效、active_command_id为空、policy_running=false、action_port_released=true；不再要求旧O6的hands_stopped／hold_verified／output_fenced或持物证明，也不要求恢复前的身体／O6实例与当前相同。原失败回包不改写，当前身体观察另存manual_skips[].body_handoff_observation，scope=current_body_publishing_path；不会把身体通路可用称为旧O6已确认停止。进入导航前沿原handoff再次读当前通路，派发仍由原source_gate确认navigation已applied后提交原NAV业务body。
+
+原策略仍执行时先请求原cancel；异步收尾复用原查询客户端最多等待30秒，不重放cancel／finish。若策略或其它VLA命令仍活动、身体发布端口未释放或当前状态不可查，才按身体通路原因拒绝；O6历史故障／实例更换不作为手动转导航门槛。其它跳过和自动完成路径仍按各自原资源范围核验，真实VLA动作的O6准入不变。网页请求绑定expected_command_id，旧步骤或命令变化拒绝，取消／换任务优先于迟到观察及派发。
+
+
 **以下为旧 BodyAdapter／协议模拟的交接规则，source_gate 不使用这套通路凭证：** 普通交接先核对来源命令身份、时间、成功终态、停止及资源释放，再读取导航 `/v1/status` 与操控 `/v1/vla/control/status`。要求两侧无活动命令、操控策略未运行、导航通路已归还。
 
 交接受阻的原因分别记录：回执身份或时间不合格为 `source_receipt_invalid`，停止未确认为
@@ -760,7 +769,7 @@ direct-v1 开门／抓可乐的效果、原命令身份与独立收尾字段见[
 
 ### 当前持物检查与重新确认
 
-当前 source_gate 在真实运送前消费 VLA 的当前业务 holding_evidence，核验有效性、物体和原抓取身份；不签发、续期旧 O6 授权。字段见[direct-v1](接口说明_操控VLA.md#direct-v1直连操控与接收源选择)。以下有期限证明与重新确认说明保留 2026-10-26 联合模式范围，不给 direct-v1 另加租约期限。
+当前source_gate的双腕／双臂抓取v2在真实运送前消费本任务已核验的原抓取结果及发布释放，不再要求O6 holding_evidence；其它旧合同仍核对其当前持物证明，不签发或续期旧O6授权。字段见[direct-v1](接口说明_操控VLA.md#direct-v1直连操控与接收源选择)。以下有期限证明与重新确认说明保留 2026-10-26 联合模式范围，不给 direct-v1 另加租约期限。
 
 2026-10-26：联合控制模式已接入操控当前持物证明。运送前读取 `current_holding` 和 `holding_evidence`，校验原抓取任务／命令／已退出授权及当前 O6／控制器身份、目标和反馈连续性；不把 VLA 业务库存 `holding` 或旧成功任务当作当前有效持物证明。具体字段和跨端边界统一见[共同接口](多端联调_大脑任务与恢复.md#relay-history-当前持物证明)。
 
@@ -792,16 +801,24 @@ direct-v1 开门／抓可乐的效果、原命令身份与独立收尾字段见[
 | 任务身份 | 沿用原 `task_id`，附着账本记录的业务包、执行后端和目标地址；不重新发布一整单 |
 | `recovery_required` | 有在途原命令时先查询；已识别的提交拒绝可准备新尝试；未下发且交接失败时重查交接。结果未知时不重发 |
 | `paused` / `waiting_human` | 按各自状态继续，重新经过相应条件检查；继续不等于已取得身体动作许可 |
-| 新尝试 | 人工继续核对旧尝试停止、资源释放和明确未完成后才创建；自动恢复预算仍为 0，只读重查不增加 `-r{n}` 计数 |
+| 新尝试 | 人工继续确认旧命令明确未完成及对应发布资源后创建；direct VLA按下述当前身体发布通路核对，不要求旧O6完整退出；自动恢复预算仍为0，查询不增加-r计数 |
 | 取消与新任务 | 本地任务先结束；source_gate 异步记录原执行端 cancel 与全关，历史未知不永久阻断新建，旧收尾不得关闭新任务；unified 按其原控制记录处理。取消回执本身不等于远端已停 |
 
 当前不承诺下游跨重启一定保留历史命令。继续原任务时，原命令不可查仍保持 `recovery_required`；用户另行取消任务不依赖该查询。控制交接与效果证据见第 8 节，不能套用旧规划中的“取消必须确认下游停止”规则。
+
+**当前双腕／双臂抓取完成到NAV：** direct抓取v2以原已认证的左右腕VLM与ArmReturnGate证据作为物体效果，VLA正式终态另确认policy_stopped／publisher_stopped／action_port_released。Brain在原Verifier和SourceGateBodyAdapter中按该范围核验并消费原任务已验证抓取结果，不再要求VLA返回或续签O6 holding_evidence。手部／身体收尾的原始null／false保留，不能把该范围的发布释放称为O6持续持物。暂停／取消、失败及未释放发布资源不放行；旧人工／旧合同行为保留。对应实测故障与修复见[完成暂停与持物登记](多端联调_操控与抓取.md#cola-pause-continuity-20261110)。
+
+**2026-11-10 direct VLA重试边界：** 当前source_gate对open_fridge／grasp_cola的失败／取消重试，不再要求旧完整stop_facts为true，即不以旧hands_stopped／hold_verified以及合成的stopped／resources_released阻止新命令。大脑只确认原task／command身份、时间和failed／cancelled终态，以及当前direct服务身份有效、active_command_id为空、policy_running=false、action_port_released=true；不读取service_ready、O6恢复结果、holding、native_execution_readiness或模型／相机状态作为重试准入。新请求仍由VLA按当前O6／模型／相机和作业状态接受或拒绝，Brain原样记录执行端结果。
+
+检查复用既有SourceGateBodyAdapter的当前身体发布通路观察，结果写入原attempt.retry_boundary_observation；原失败progress、退出null／false及原始回包不改成释放或成功。每次人工认可只创建一个新attempt／command_id，并沿原派发记录与切源执行；重复旧页面请求、网络不确定、原命令不可查／身份不符／结果非终态、当前策略仍发布／端口未知或取消期间迟到观察均不补发。原命令报告成功则仍走Verifier，不能用此分支重复抓取；自动成功收尾的O6要求不变。NAV和旧unified继续保留各自原停止规则。只读原命令与新尝试身份分别记录，不更改SOP顺序。来源、现场故障与回归见[继续重试与O6边界](多端联调_大脑任务与恢复.md#vla-continue-boundary-20261110)。
 
 人工“继续”核查原命令结果、停止和资源释放；新导航是否满足当前定位、安全门及 Token 条件，由导航端
 在提交时裁决，大脑按准入回包记录接受、拒绝或未知，不另行裁决导航恢复许可。
 这与第 1.1.3 节受限恢复方案的确认约束是不同入口。
 
 ## 9.2 提交拒绝与不确定事务
+
+VLA 在创建命令前返回的 HTTP 409／HOLDING_STATE_CONFLICT 归为明确未受理；含已执行、状态不确定或身份矛盾的回包不套用此分类。已保存的同类旧提交回包可沿原 Runtime 对账入口重新分类，保留 original_unknown_progress；不查不到就推断未执行，不自动重发。用户继续时才按原规则创建新尝试。此分类修复需要重载大脑，VLA 的持物登记会话重置则需要重启 VLA HTTP。
 
 导航提交前先持久化原 `command_id`，不因异常自动换号重发：
 

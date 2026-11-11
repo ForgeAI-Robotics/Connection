@@ -28,6 +28,40 @@ def adapter(error):
 
 
 class SubmissionRefusalTests(unittest.TestCase):
+    def test_holding_admission_refusal_requires_409_without_execution_or_foreign_identity(self):
+        from contracts.submission import submission_refusal
+        raw = {'success': False, 'error': {'code': 'HOLDING_STATE_CONFLICT',
+               'message': 'pick requires holding=null', 'details': {}}}
+        self.assertIsNotNone(submission_refusal(409, raw, command_id='cmd', task_id='task'))
+        cases = [(status, raw) for status in (200, 400, 404, 422, 500, 503, None)]
+        for field, value in (('accepted', True), ('started', True), ('state', 'running'),
+                             ('action_started', True), ('action_state_uncertain', True),
+                             ('command_id', 'foreign'), ('task_id', 'foreign')):
+            cases.append((409, dict(raw, **{field: value})))
+            nested = deepcopy(raw); nested['error']['details'][field] = value
+            cases.append((409, nested))
+        for status, payload in cases:
+            with self.subTest(status=status, payload=payload):
+                self.assertIsNone(submission_refusal(status, payload, command_id='cmd', task_id='task'))
+
+    def test_saved_holding_refusal_keeps_original_evidence_and_waits_for_manual_continue(self):
+        raw = {'success': False, 'error': {'code': 'HOLDING_STATE_CONFLICT', 'details': {}}}
+        with tempfile.TemporaryDirectory() as root:
+            runtime, port = self.legacy(root, payload=raw,
+                error='HTTP 409 http://vla:8091/v1/vla/tasks: pick requires holding=null')
+            old = deepcopy(runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]['progress'])
+            self.assertTrue(runtime.reconcile_submission_rejection())
+            self.assertFalse(runtime.record['command_unknown'])
+            attempt = runtime.record['steps']['NAVIGATING_TO_TABLE2']['attempts'][0]
+            self.assertEqual(attempt['original_unknown_progress'], old)
+            self.assertEqual(attempt['outcome'], 'rejected')
+            runtime.drive()
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            self.assertTrue(runtime.continue_current()['retry_prepared'])
+            self.assertEqual(port.dream.submit_navigation.call_count, 1)
+            port.dream.command.assert_not_called()
+            port.dream.cancel.assert_not_called()
+
     def test_camera_admission_unknown_reconciles_without_query_or_replay(self):
         raw = {'success': False, 'error': {'code': 'VLA_CAMERA_NOT_READY',
                'details': {'action_started': False, 'action_state_uncertain': False}}}

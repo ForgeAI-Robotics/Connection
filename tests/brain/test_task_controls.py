@@ -470,7 +470,8 @@ class SkipControlTests(unittest.TestCase):
         for t in status['subtask_list'][-2:]:
             self.assertEqual(t['status'], 'skipped')
             self.assertFalse(t['effect_verified'])
-        self.assertEqual(runtime.record['holding'], 'cola_can_1')
+        self.assertIsNone(runtime.record['holding'])  # The operator assumes the skipped placement condition.
+        self.assertIsNone(runtime.record['manual_skips'][-1]['assumed_effects']['holding'])
 
     def test_skip_rejects_terminal_and_passed_step(self):
         from contracts.tasks import Rejected

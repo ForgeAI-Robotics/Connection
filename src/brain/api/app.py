@@ -103,7 +103,7 @@ def create_app(application, *, facade=None):
             if not target or not isinstance(step_id, str) or not step_id or len(step_id) > 160:
                 return jsonify({'accepted': False, 'error': '跳过必须指定 task_id 和 step_id'}), 400
             options['step_id'] = step_id
-        if action == 'continue':
+        if action in {'continue', 'skip'}:
             for key in ('step_id', 'expected_command_id'):
                 if key in data:
                     value = data[key]

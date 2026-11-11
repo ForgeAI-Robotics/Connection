@@ -5,6 +5,24 @@ import re
 NATIVE_OPERATIONS = frozenset({'open_fridge', 'grasp_cola'})
 MANIPULATION_OPERATIONS = NATIVE_OPERATIONS | {'pick', 'place'}
 HOLDING_SCHEMA = 'g1/o6-holding-evidence/v1'
+VISUAL_ARM_GRASP_CONTRACT = 'fq/vla-grasp-cola-wrist-return-evidence/v2'
+
+
+def visual_arm_grasp(evidence):
+    """Identify the wrist/arm contract; validate_evidence verifies its conditions."""
+    return (isinstance(evidence, dict) and evidence.get('source') == 'visual_verifier'
+            and evidence.get('visual_contract') == VISUAL_ARM_GRASP_CONTRACT)
+
+
+def manual_holding_assumed(request):
+    """Runtime's task-bound human disposition, never a VLA/sensor receipt."""
+    assumption = request.get('operator_assumption')
+    return (isinstance(assumption, dict) and assumption.get('source') == 'human_skip'
+            and bool(assumption.get('task_id'))
+            and assumption.get('task_id') == request.get('body', {}).get('task_id')
+            and bool(assumption.get('step_id')) and bool(assumption.get('at'))
+            and bool(request.get('required_holding'))
+            and assumption.get('holding') == request['required_holding'])
 
 
 def machine_id(value):
@@ -52,7 +70,7 @@ def validate_evidence(operation, object_id, evidence, ready_at):
             valid = (all(evidence.get(k) is True for k in ('door_open', 'door_stable_open', 'hands_clear_of_door'))
                      and evidence.get('door_closed') is not True)
     elif operation == 'grasp_cola':
-        if evidence.get('visual_contract') == 'fq/vla-grasp-cola-wrist-return-evidence/v2':
+        if evidence.get('visual_contract') == VISUAL_ARM_GRASP_CONTRACT:
             arm=evidence.get('arm_return') or {}
             valid=(evidence.get('source') == 'visual_verifier' and evidence.get('object_grasped') is True
                    and evidence.get('left_grasped') is True and evidence.get('right_grasped') is True

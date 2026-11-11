@@ -61,7 +61,7 @@ class DoorObserverTests(unittest.TestCase):
             if callable(result): return result()
             return json.dumps(result)
         self.observer = DoorObserver(config, self.tmp.name, camera=self.camera, chat=chat, clock=lambda:self.t)
-        self.context = dict(task_id='t1', command_id='c1', attempt_id='a1', execution_ready_at=(self.camera.after-timedelta(seconds=1)).isoformat(), remaining_vlm_calls=10)
+        self.context = dict(task_id='t1', command_id='c1', attempt_id='a1', execution_ready_at=(self.camera.after-timedelta(seconds=1)).isoformat())
 
     def sample(self):
         self.t += .6
@@ -124,10 +124,17 @@ class DoorObserverTests(unittest.TestCase):
     def test_no_repeated_model_when_retry_interval_has_not_elapsed(self):
         self.sample();self.assertIsNone(self.sample());self.assertEqual(self.model_calls,1)
 
-    def test_last_remaining_call_needs_only_head(self):
-        self.context['remaining_vlm_calls']=1
+    def test_legacy_exhausted_call_cap_does_not_stop_observation(self):
+        self.context['remaining_vlm_calls']=0
         self.assertEqual(self.run_candidate()['status'],'pass')
         self.assertEqual(self.model_views,[['ego_view']])
+
+    def test_legacy_lifetime_limits_are_ignored_by_settings(self):
+        from brain.adapters.door_verification import settings
+        options=settings({'reception_real':{'door_verification':{
+            'max_observation_sec':120,'max_vlm_calls':10}}})
+        self.assertNotIn('max_observation_sec',options)
+        self.assertNotIn('max_vlm_calls',options)
 
     def test_slow_model_unknown_and_budget_is_recorded(self):
         def slow():self.t+=4;return json.dumps(answer())
@@ -225,6 +232,39 @@ class RuntimeDoorTests(unittest.TestCase):
         self.assertEqual(rt.state,'recovery_required');self.assertEqual(len(self.nav.posts),1)
         self.assertIsNone(rt.record['holding'])
 
+    def test_grasp_o6_exit_unknown_does_not_add_a_third_success_condition(self):
+        svc=self.enabled();rt=svc.runtime;context,result=self.grasp_proposal(svc)
+        original_wait=self.vla.wait_task
+        def released(command_id, **options):
+            row=original_wait(command_id,**options)
+            if row.get('operation')=='grasp_cola' and row.get('state')=='succeeded':
+                current=self.vla.commands[command_id]
+                current['result'].update(hands_stopped=None,hold_verified=None)
+                current['result'].pop('holding_evidence',None)
+                current['exit_state'].update(hands_stopped=None,hold_verified=None,output_fenced=None)
+                return self.vla.task(command_id)
+            return row
+        self.vla.wait_task=released
+        rt.apply_door_observation(context,result,authorization='Bearer test-only');svc._drive(rt)
+        self.assertEqual(rt.state,'succeeded',rt.public_status())
+        self.assertEqual(len(self.nav.posts),5)
+        self.assertEqual(rt.record['holding'],'cola_can_1')
+        self.assertEqual(self.vla.current_queries,0)  # No per-leg O6 signed holding gate.
+        self.assertEqual([p['source'] for p in self.gate.puts],['vla','navigation'])
+
+    def test_grasp_body_port_unreleased_still_prevents_navigation(self):
+        svc=self.enabled();rt=svc.runtime;context,result=self.grasp_proposal(svc)
+        original_wait=self.vla.wait_task
+        def unreleased(command_id, **options):
+            row=original_wait(command_id,**options)
+            if row.get('operation')=='grasp_cola' and row.get('state')=='succeeded':
+                self.vla.commands[command_id]['exit_state']['action_port_released']=False
+                return self.vla.task(command_id)
+            return row
+        self.vla.wait_task=unreleased
+        rt.apply_door_observation(context,result,authorization='Bearer test-only');svc._drive(rt)
+        self.assertEqual(rt.state,'recovery_required');self.assertEqual(len(self.nav.posts),1)
+
     def test_cancel_or_pause_discards_late_grasp_visual_result(self):
         svc=self.enabled();rt=svc.runtime;context,result=self.grasp_proposal(svc)
         rt.request_cancel()
@@ -287,13 +327,34 @@ class RuntimeDoorTests(unittest.TestCase):
         self.assertIsNone(rt.door_observation_context())
         self.assertEqual(self.vla.finish_posts,0)
 
-    def test_unknown_counts_budget_across_runtime_reload(self):
+    def test_unknown_counts_continue_across_runtime_reload_without_lifetime_cap(self):
         svc=self.enabled();rt=svc.runtime
-        for i in range(10):
+        rt.record['door_verification'].update(max_observation_sec=120,max_vlm_calls=10)
+        rt.record['vla_confirmation']['execution_ready_at']=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()
+        rt._save('legacy_limits_old_execution')
+        for i in range(32):
             context=rt.door_observation_context();self.assertIsNotNone(context)
             rt.apply_door_observation(context,dict(schema=SCHEMA,status='unknown',vlm_calls=1))
             rt=svc.attach()
-        self.assertIsNone(rt.door_observation_context());self.assertEqual(self.vla.finish_posts,0)
+        self.assertIsNotNone(rt.door_observation_context());self.assertEqual(self.vla.finish_posts,0)
+        self.assertEqual(rt.record['vla_confirmation']['door_observation']['total_vlm_calls'],32)
+
+    def test_grasp_observation_continues_after_old_time_and_call_caps_then_advances(self):
+        from brain.adapters.door_verification import GRASP_SCHEMA
+        svc=self.enabled();rt=svc.runtime;_,result=self.grasp_proposal(svc)
+        rt.record['door_verification'].update(max_observation_sec=120,max_vlm_calls=10)
+        rt.record['vla_confirmation']['execution_ready_at']=(datetime.now(timezone.utc)-timedelta(hours=1)).isoformat()
+        rt._save('legacy_grasp_limits_old_execution')
+        for i in range(32):
+            context=rt.door_observation_context();self.assertIsNotNone(context)
+            rt.apply_door_observation(context,dict(schema=GRASP_SCHEMA,status='unknown',vlm_calls=1))
+            rt=svc.attach()
+        self.assertEqual(rt.record['vla_confirmation']['grasp_observation']['total_vlm_calls'],32)
+        self.assertEqual(len(self.nav.posts),1)
+        context=rt.door_observation_context()
+        self.assertTrue(rt.apply_door_observation(context,result,authorization='Bearer test-only'))
+        svc._drive(rt)
+        self.assertEqual(rt.state,'succeeded');self.assertEqual(len(self.nav.posts),5)
 
     def test_duplicate_result_does_not_resubmit_finish(self):
         rt=self.enabled().runtime;context,result=self.proposal(rt)

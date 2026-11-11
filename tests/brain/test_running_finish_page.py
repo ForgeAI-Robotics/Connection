@@ -57,7 +57,8 @@ data.subtask_list=[{step_id:'VLA_GRASP_COLA',subtask:'抓取可乐并后退撤�
 data.total=1;data.phase='VLA_GRASP_COLA';
 renderTaskProgress(data);
 const html=nodes['task-progress'].innerHTML;
-assert(html.includes('自动核验中'));assert(html.includes('自动核验左右手均持有可乐和双臂回位保持'));
+assert(html.includes('自动核验中'));
+for (const text of ['确认冰箱已打开且双手离门','查询操控原命令','暂停策略','策略暂停不是姿态冻结','最近核验：']) assert(!html.includes(text),text);
 assert(!html.includes('确认后退撤离完成且可乐仍在手'));
 assert(!html.includes('onclick=\"confirmVlaCompletion()\"'));
 """)
@@ -80,3 +81,20 @@ assert.equal(ctx.awaitingVlaEffect({...data,vla_confirmation:{...data.vla_confir
         result=subprocess.run(['node','-e',code],input=handler,text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn("if (awaitingVlaEffect(data)) return '';",page)
+
+    def test_vla_errors_use_normal_failure_card_without_dedicated_confirmation_area(self):
+        from tests.brain.test_advice_presentation import AdvicePresentationTests
+        AdvicePresentationTests().run_browser("""
+for (const operation of ['open_fridge','grasp_cola']) {
+ data.vla_confirmation={command_id:'vla-1',operation,execution_mode:'direct',state:'failed'};
+ data.failure_detail={kind:'execution_failed',message:'source or receiver exit evidence incomplete',code:'EXECUTION_STOP_UNCONFIRMED'};
+ data.phase='VLA_GRASP_COLA';
+ renderTaskProgress(data);
+ const html=nodes['task-progress'].innerHTML;
+ assert(html.includes('失败环节'));assert(html.includes('source or receiver exit evidence incomplete'));
+ for (const text of ['VLA 已返回失败','策略暂停不是姿态冻结','查询操控原命令','确认冰箱已打开且双手离门','确认后退撤离完成且可乐仍在手','onclick="confirmVlaCompletion()"'])
+  assert(!html.includes(text),text);
+}
+data.subtask_list=[{step_id:'VLA_GRASP_COLA',display_name:'抓取可乐并后退撤离',done:true,status:'skipped',skipped:true,conditions_assumed:true}];
+renderTaskProgress(data);assert(nodes['task-progress'].innerHTML.includes('人工跳过，按条件满足继续'));
+""")

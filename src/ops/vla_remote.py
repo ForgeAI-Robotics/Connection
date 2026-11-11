@@ -25,6 +25,7 @@ _HISTORY: deque[str] = deque(maxlen=120)
 STATUS_SCHEMA = 'fq/vla-runtime-status/v1'
 ACTION_SCHEMA = 'fq/vla-runtime-action/v1'
 RESULT_PREFIX = 'VLA_RUNTIME_RESULT '
+MODEL_OPERATIONS = ('open_fridge', 'grasp_cola')
 _STATUS_LOCK = threading.Lock()
 _ACTION_LOCK = threading.Lock()
 _STATUS_CACHE = None
@@ -65,14 +66,33 @@ def record(line: str) -> None:
         return
 
 
+# Opt-in monitoring capture prepared on the VLA host. Preflight + source must
+# happen in the same shell as the original bridge start so BRAIN_VLA_PYTHON is
+# inherited; already-running processes are not hot-updated.
+TRAINING_CAPTURE_ENABLE_REL = (
+    "g1_recovery_memory/training_capture_runs_20261111/launcher/enable.env"
+)
+TRAINING_CAPTURE_PYTHON_REL = "g1_groot_n17_inference/.venv/bin/python"
+
+
 def _remote_script(action: str) -> tuple[str, float]:
     cfg = settings()
     remote_dir = shlex.quote(cfg["remote_dir"])
     runtime = "./run_agent_vla_runtime.sh"
     if action == "start":
-        # The official launcher owns checks/dependencies, including managed O6.
+        # Official launcher still owns camera/O6/HTTP. Capture only sets env for
+        # the new process; it does not grant real-action authorization.
+        # preflight must run with sonic_wbc as cwd so g1_recovery_memory imports.
+        # Keep the bridge directory for the original start after source.
         remote = (
             f"cd {remote_dir} && "
+            f'workspace="$(cd .. && pwd)" && '
+            f'capture_python="$workspace/{TRAINING_CAPTURE_PYTHON_REL}" && '
+            f'enable_env="$workspace/{TRAINING_CAPTURE_ENABLE_REL}" && '
+            f'test -x "$capture_python" && test -r "$enable_env" && '
+            f'(cd "$workspace" && "$capture_python" -m g1_recovery_memory.training_capture_v1 '
+            f'preflight --project "$workspace") && '
+            f'source "$enable_env" && '
             f"BRAIN_VLA_REAL_ACTION_ACK={shlex.quote(cfg['ack'])} {runtime} start"
         )
         # Includes peripheral startup plus the preparation manager's separate
@@ -231,11 +251,17 @@ def _validate_status(value):
                 or type(preparation.get('enabled')) is not bool):
             raise ValueError('VLA 模型准备状态合同无效')
         if preparation['enabled']:
-            model = (preparation.get('operations') or {}).get('open_fridge') or {}
-            if (type(model.get('warm_ready')) is not bool
-                    or model.get('state') not in {'cold', 'checking', 'loading', 'warming', 'ready', 'busy', 'invalidated', 'failed', 'stopping'}
-                    or model['warm_ready'] is True and model['state'] != 'ready'):
-                raise ValueError('VLA 开门模型准备状态不一致')
+            models = preparation.get('operations')
+            if not isinstance(models, dict):
+                raise ValueError('VLA 模型准备状态合同无效')
+            for operation in MODEL_OPERATIONS:
+                if operation not in models:
+                    continue  # Missing model is unknown, never complete readiness.
+                model = models[operation]
+                if (not isinstance(model, dict) or type(model.get('warm_ready')) is not bool
+                        or model.get('state') not in {'cold', 'checking', 'loading', 'warming', 'ready', 'busy', 'invalidated', 'failed', 'stopping'}
+                        or model['warm_ready'] is True and model['state'] != 'ready'):
+                    raise ValueError('VLA 模型准备状态不一致：' + operation)
     return value
 
 
@@ -277,8 +303,10 @@ def runtime_status(*, runner=None, force=False):
 
 def _model_ready(status):
     preparation = status.get('preparation') or {}
-    return (preparation.get('enabled') is not True
-            or ((preparation.get('operations') or {}).get('open_fridge') or {}).get('warm_ready') is True)
+    models = preparation.get('operations') or {}
+    return (preparation.get('enabled') is True
+            and all((models.get(op) or {}).get('warm_ready') is True
+                    and (models.get(op) or {}).get('state') == 'ready' for op in MODEL_OPERATIONS))
 
 
 def health(service):
@@ -292,13 +320,12 @@ def health(service):
     else:
         components_ready = all(value[name].get('ready') is True for name in ('http', 'camera', 'o6'))
         ready = components_ready and _model_ready(value)
-        state, detail = ('up', 'VLA 接口、相机与 O6 检查通过') if ready else ('partial', 'HTTP 运行中，组件尚未全部就绪')
-        if (value.get('preparation') or {}).get('enabled') is True:
-            detail = 'VLA 开门模型及组件已就绪' if ready else 'HTTP 运行中，开门模型或组件尚未就绪'
+        state, detail = (('up', 'VLA 开冰箱、抓可乐模型及组件已就绪') if ready
+                         else ('partial', 'HTTP 运行中，开冰箱／抓可乐模型或组件尚未全部就绪'))
         active = isinstance(http.get('active_command_id'), str) and bool(http['active_command_id'])
         prep = value.get('preparation') or {}
-        model = (prep.get('operations') or {}).get('open_fridge') or {}
-        occupied = active and (model.get('state') == 'busy' if prep.get('enabled') is True
+        models = prep.get('operations') or {}
+        occupied = active and (any((models.get(op) or {}).get('state') == 'busy' for op in MODEL_OPERATIONS) if prep.get('enabled') is True
                                else http.get('policy_running') is True)
         if occupied:
             state, detail = (('busy', '当前任务占用 VLA；不能接收新动作') if components_ready
@@ -377,7 +404,7 @@ def _action_failure_message(action, completed):
 def _run_action(action: str, *, runner: Optional[Runner] = None):
     argv, timeout, env = ssh_argv(action)
     if action == "start":
-        record("调用 VLA 官方启动器，核验或启动相机与 O6 后启动 HTTP；NX 网关独立管理")
+        record("先做训练采集 preflight／source，再调用 VLA 官方启动器；核验或启动相机与 O6 后启动 HTTP；NX 网关独立管理；仅新进程继承采集配置")
     else:
         record(f"远程执行 VLA {action}")
     record(_sanitize_argv(argv))

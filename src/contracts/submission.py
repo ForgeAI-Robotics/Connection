@@ -18,6 +18,10 @@ NATIVE_ADMISSION_REFUSALS = frozenset({
     "NATIVE_SAFETY_LATCHED", "NATIVE_SAFETY_STATE_UNAVAILABLE",
 })
 
+# VLA checks holding before creating the TaskRecord (including older peers
+# whose response has no explicit action_started fields).
+VLA_ADMISSION_REFUSALS = frozenset({"HOLDING_STATE_CONFLICT"})
+
 
 def submission_refusal(status_code, payload, *, command_id, task_id):
     # Admission checks reject before creation. A same-ID conflict, a bare 404
@@ -29,9 +33,10 @@ def submission_refusal(status_code, payload, *, command_id, task_id):
         return None
     details = error.get("details")
     details = details if isinstance(details, dict) else {}
-    native_refusal = error.get('code') in NATIVE_ADMISSION_REFUSALS and status_code == 409
-    if error.get('code') in NATIVE_ADMISSION_REFUSALS:
-        if not native_refusal or any(
+    admission_refusal = (error.get('code') in NATIVE_ADMISSION_REFUSALS | VLA_ADMISSION_REFUSALS
+                         and status_code == 409)
+    if error.get('code') in NATIVE_ADMISSION_REFUSALS | VLA_ADMISSION_REFUSALS:
+        if not admission_refusal or any(
                 item.get('action_started') is True or item.get('action_state_uncertain') is True
                 for item in (payload, details)):
             return None
@@ -52,7 +57,7 @@ def submission_refusal(status_code, payload, *, command_id, task_id):
                           and isinstance(details.get("active_command_id"), str)
                           and bool(details["active_command_id"])
                           and details["active_command_id"] != command_id)
-    if error.get("code") not in VALIDATION_REFUSALS and not native_refusal and not busy_other_command and not unavailable and not disabled:
+    if error.get("code") not in VALIDATION_REFUSALS and not admission_refusal and not busy_other_command and not unavailable and not disabled:
         return None
     for item in (payload, details):
         if any(item.get(key) not in (None, "", value)

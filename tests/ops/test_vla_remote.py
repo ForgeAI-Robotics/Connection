@@ -26,7 +26,12 @@ class VlaRemoteTests(unittest.TestCase):
         remote = argv[-1]
         self.assertNotIn("run_phase_aware_action_stack.sh", remote)
         self.assertNotIn("navigation relay", remote)
+        self.assertIn("g1_recovery_memory.training_capture_v1 preflight", remote)
+        self.assertIn('(cd "$workspace" && "$capture_python" -m g1_recovery_memory.training_capture_v1', remote)
+        self.assertIn("training_capture_runs_20261111/launcher/enable.env", remote)
+        self.assertIn("source \"$enable_env\"", remote)
         self.assertIn("./run_agent_vla_runtime.sh start", remote)
+        self.assertLess(remote.index("preflight"), remote.index("./run_agent_vla_runtime.sh start"))
         self.assertNotIn("./run_agent_vla_runtime.sh status", remote)
         self.assertIn("BRAIN_VLA_REAL_ACTION_ACK=PHYSICAL_ESTOP_READY", remote)
         self.assertNotIn("run_real_inference_stack.sh", remote)

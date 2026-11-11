@@ -11,7 +11,7 @@ from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 
 from contracts.tasks import CONTRACT_VERSION
-from contracts.vla import NATIVE_OPERATIONS, MANIPULATION_OPERATIONS, validate_evidence
+from contracts.vla import NATIVE_OPERATIONS, MANIPULATION_OPERATIONS, validate_evidence, manual_holding_assumed
 from contracts.submission import submission_refusal
 from brain.kernel.memory import DEFAULT_EVENT_TTL_SEC
 from brain.skills.catalog import by_id
@@ -146,7 +146,8 @@ class BodyAdapter:
             vla_idle = (vla_idle and vla.get('recovery_required') is False
                         and vla.get('policy_state_uncertain') is False
                         and vla.get('navigation_handoff_ready') is True
-                        and (not request.get('required_holding') or vla.get('holding') == request['required_holding']))
+                        and (not request.get('required_holding') or manual_holding_assumed(request)
+                             or vla.get('holding') == request['required_holding']))
         answer["transport_ready"] = nav_idle and vla_idle
         answer["reason"] = "transport_not_ready"
         if answer["transport_ready"]:
@@ -183,7 +184,8 @@ class BodyAdapter:
                             or status.get('policy_running') is not False
                             or 'active_command_id' not in status or status['active_command_id'] not in ('', None)
                             or status.get('navigation_handoff_ready') is not True
-                            or (request.get('required_holding') and status.get('holding') != request['required_holding'])
+                            or (request.get('required_holding') and not manual_holding_assumed(request)
+                                and status.get('holding') != request['required_holding'])
                             or (status.get('action_port') or {}).get('navigation_port_ready') is not True):
                         raise refuse('VLA 原动作或现场尚未核清，不能继续导航')
                 raw = self.dream.submit_navigation(body)

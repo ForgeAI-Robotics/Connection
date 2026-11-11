@@ -41,8 +41,10 @@ class DoorVlaPeerTests(unittest.TestCase):
   self.exercise(verify_grasp=True,grasp_stop_failure=True)
  def test_one_sided_grasp_does_not_finish(self):
   self.exercise(verify_grasp=True,grasp_one_side=True)
+ def test_verified_grasp_finishes_without_o6_holding_registration(self):
+  self.exercise(verify_grasp=True,grasp_missing_o6=True)
  def exercise(self, *, uncertain=False, stop_confirmed=True, prepared_refusal=False, revoke_arm=False, forge_arm=False,
-              verify_grasp=False,grasp_unknown=False,grasp_stop_failure=False,grasp_one_side=False):
+              verify_grasp=False,grasp_unknown=False,grasp_stop_failure=False,grasp_one_side=False,grasp_missing_o6=False):
   with tempfile.TemporaryDirectory() as tmp, patch.dict('os.environ', {'BRAIN_CONTROL_TOKEN':'b'*40,'BRAIN_CONTROL_TOKEN_FILE':'','EXPECTED_NX_SERIAL':'offline-robot'}):
    config=json.loads((ROOT/'g1_brain_vla_bridge/config.json').read_text())
    config.update(execution_mode='direct',runtime_dir=tmp,visual_evidence={'enabled':True},preparation={'enabled':False})
@@ -91,7 +93,7 @@ class DoorVlaPeerTests(unittest.TestCase):
       return json.dumps(dict(schema=SCHEMA,operation='open_fridge',door_open=None,door_closed=None,confidence=.3))
      return json.dumps(dict(schema=SCHEMA,operation='open_fridge',door_open=True,door_closed=False,confidence=.99))
     observer=DoorObserver(brain_config,tmp,camera=camera,chat=model)
-    context=dict(task_id=row.task_id,command_id=row.command_id,attempt_id='offline-attempt',execution_ready_at=row.execution_ready_at,remaining_vlm_calls=10)
+    context=dict(task_id=row.task_id,command_id=row.command_id,attempt_id='offline-attempt',execution_ready_at=row.execution_ready_at)
     result=None
     time.sleep(.02);result=observer.sample(context)
     self.assertEqual(model_calls,[1]);self.assertEqual(result['vlm_calls'],1)
@@ -135,7 +137,7 @@ class DoorVlaPeerTests(unittest.TestCase):
       return json.dumps(dict(schema=GRASP_SCHEMA,operation='grasp_cola',left_grasped=True,right_grasped=None if grasp_unknown else False if grasp_one_side else True,confidence=.99))
      observer.chat=cola_model
      context=dict(task_id=row.task_id,command_id=row.command_id,attempt_id='cola-attempt',operation='grasp_cola',
-                  object_id='cola_can_1',execution_ready_at=row.execution_ready_at,remaining_vlm_calls=10)
+                  object_id='cola_can_1',execution_ready_at=row.execution_ready_at)
      time.sleep(.02);result=observer.sample(context)
      if grasp_unknown or grasp_one_side:
       self.assertEqual(result['status'],'unknown');self.assertFalse(runtime.task(row.command_id).finish_requested);return
@@ -143,10 +145,19 @@ class DoorVlaPeerTests(unittest.TestCase):
      evidence=result['evidence'];self.assertEqual(len(evidence['frames']),2)
      self.assertNotIn('clear_of_fridge',evidence);self.assertNotIn('door_open',evidence)
      driver.stop_confirmed=not grasp_stop_failure
+     if grasp_missing_o6:
+      stop=driver.stop
+      driver.stop=lambda kind:dict(stop(kind),hands_stopped=None,hold_verified=None,output_fenced=None,
+                                    holding_registered=False,holding_evidence=None)
      client.finish(row.task_id,row.command_id,evidence,'Bearer '+runtime._completion_token)
      terminal=client.wait_task(row.command_id,timeout_sec=3,poll_interval_sec=.02)
      self.assertEqual(terminal['state'],'failed' if grasp_stop_failure else 'succeeded',terminal)
      if not grasp_stop_failure:self.assertEqual(terminal['result']['evidence'],evidence)
+     if grasp_missing_o6:
+      from contracts.vla_direct import stop_facts
+      self.assertEqual(stop_facts(terminal),(True,True))
+      self.assertIsNone(terminal['result']['hands_stopped'])
+      self.assertNotIn('holding_evidence',terminal['result'])
    finally:
     for event in runtime._cancel.values():event.set()
     deadline=time.monotonic()+3

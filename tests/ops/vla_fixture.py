@@ -12,7 +12,11 @@ def status(*, running=True, managed=True, can_stop=True, ready=True):
                        'frames_verified': running,
                        'streams': {key: {'ready': ready, 'fps': 29.9, 'age_ms': 20}
                                    for key in ['ego_view', 'left_wrist', 'right_wrist']} if running else {}},
-            'o6': {'state': 'running', 'ready': True, 'reason': ''}}
+            'o6': {'state': 'running', 'ready': True, 'reason': ''},
+            'preparation': {'schema': 'fq/vla-preparation/v1', 'enabled': True,
+                            'required_operations': ['open_fridge', 'grasp_cola'],
+                            'operations': {op: {'state': 'ready', 'warm_ready': True}
+                                           for op in ('open_fridge', 'grasp_cola')}}}
 
 
 def action_result(action='start', **changes):

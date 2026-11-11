@@ -124,16 +124,18 @@ class FridgeReceptionTests(unittest.TestCase):
         self.assertEqual([r['leg_index'] for r in self.nav.commands.values()], [1,2,3,4,5])
         self.assertEqual(len(self.vla.posts), 2)
 
-    def test_skipped_grasp_cannot_start_delivery(self):
+    def test_skipped_grasp_assumes_holding_and_starts_delivery(self):
         self.publish(); self.finish_current()
         self.service.control('continue', task_id='fridge-reception')
         runtime = self.service.runtime
         runtime.request_pause()
         runtime.skip_current(step_id='VLA_GRASP_COLA')
         runtime.drive()
-        self.assertEqual(runtime.state, 'recovery_required')
-        self.assertEqual(len(self.nav.commands), 1)
-        self.assertIn('持物', runtime.record['blocked_reason'])
+        self.assertEqual(runtime.state, 'failed')  # Flow finished with a human skip.
+        self.assertEqual(len(self.nav.commands), 5)
+        self.assertEqual(runtime.record['holding'], 'cola_can_1')
+        self.assertTrue(runtime.record['manual_skips'][-1]['conditions_satisfied'])
+        self.assertNotEqual(runtime.record['steps']['VLA_GRASP_COLA']['attempts'][-1].get('verdict'), 'PASS')
 
     def test_vla_lost_holding_blocks_delivery(self):
         self.publish(); self.finish_current()
@@ -189,14 +191,14 @@ class FridgeReceptionTests(unittest.TestCase):
         self.assertEqual(self.nav.commands, {})
         self.assertEqual(self.vla.posts, [])
 
-    def test_cancel_and_skipped_open_do_not_start_grasp(self):
+    def test_skipped_open_starts_grasp_and_cancel_still_ends_task(self):
         self.publish()
         runtime = self.service.runtime
         runtime.request_pause()
         runtime.skip_current(step_id='VLA_OPEN_FRIDGE')
         runtime.drive()
-        self.assertEqual(runtime.state, 'recovery_required')
-        self.assertEqual([p['operation'] for p in self.vla.posts], ['open_fridge'])
+        self.assertEqual(runtime.state, 'waiting_human')
+        self.assertEqual([p['operation'] for p in self.vla.posts], ['open_fridge','grasp_cola'])
         self.service.control('cancel', task_id='fridge-reception')
         self.assertEqual(self.service.status()['state'], 'cancelled')
 

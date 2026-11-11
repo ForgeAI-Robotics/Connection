@@ -1,7 +1,7 @@
 """Business-only direct-v1 requests and executor-reported stop facts."""
 from copy import deepcopy
 from contracts.tasks import CONTRACT_VERSION
-from contracts.vla import NATIVE_OPERATIONS, machine_id
+from contracts.vla import NATIVE_OPERATIONS, machine_id, visual_arm_grasp
 
 REVISION = '20261028-direct-v1'
 FINISH_REVISION = '20261029-direct-running-finish-v1'
@@ -73,6 +73,11 @@ def stop_facts(raw):
     def confirmed(field):
         values = [value[field] for value in levels if field in value]
         return bool(values) and all(value is True for value in values)
+    if raw.get('operation') == 'grasp_cola' and visual_arm_grasp(result.get('evidence')):
+        # The authenticated wrist/arm effect is complete; NAV needs the body
+        # publishing path released, not another O6 object-retention decision.
+        stopped = all(confirmed(k) for k in ('policy_stopped', 'publisher_stopped', 'action_port_released'))
+        return stopped, stopped
     not_started = (result.get('action_started') is False
                    and all(value.get('action_started', False) is False for value in exits)
                    and raw.get('state') in {'failed', 'cancelled'})

@@ -148,7 +148,7 @@ reception_real:
   place_camera_view: ego_view
   # 开门自动核验：默认关闭；先 shadow 校准现有图片与现场时延，再显式 auto。
   # 开门：单头图；抓取：双腕各自确认持物。两动作均复用源端完整双臂回位判定。
-  # 两动作复用此配置，只绑定新任务；正式收尾和持物核验仍由 Runtime 负责。
+  # 两动作复用此配置；无累计观察时长／调用次数上限，单次请求有界。正式收尾和持物核验仍由 Runtime 负责。
   door_verification:
     enabled: false
     mode: shadow  # shadow 只记观察；auto 才提交原命令 finish
@@ -158,8 +158,6 @@ reception_real:
     vlm_timeout_sec: 3
     retry_interval_sec: 3
     max_evidence_age_sec: 6
-    max_observation_sec: 120
-    max_vlm_calls: 10
   # 模型端点复用下方 verification.vlm；自动开门核验单次超时以上方为准。
   grasp_photo_verification_enabled: false
   place_photo_verification_enabled: false

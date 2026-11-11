@@ -27,7 +27,7 @@ class GraspObserverTests(unittest.TestCase):
         self.observer=DoorObserver({'reception_real':{'door_verification':{'enabled':True,'mode':'auto'}}},
             self.tmp.name,camera=self.camera,chat=chat,clock=lambda:self.t)
         self.context=dict(task_id='t',command_id='c',attempt_id='a',operation='grasp_cola',object_id='cola_can_1',
-            execution_ready_at=(self.camera.after-timedelta(seconds=1)).isoformat(),remaining_vlm_calls=10)
+            execution_ready_at=(self.camera.after-timedelta(seconds=1)).isoformat())
     def sample(self):
         self.t+=.6;return self.observer.sample(self.context)
     def test_both_wrists_once_and_no_retreat_or_door_assertions(self):

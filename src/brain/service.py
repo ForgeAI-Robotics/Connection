@@ -262,7 +262,7 @@ class BrainService:
                 self._adopt(runtime)
             else:
                 runtime = self.attach()
-            if action == 'continue' and (step_id is not None or expected_command_id is not None):
+            if action in {'continue', 'skip'} and (step_id is not None or expected_command_id is not None):
                 current = runtime.public_status()
                 if ((step_id is not None and step_id != (current.get('control_step_id') or ''))
                         or (expected_command_id is not None

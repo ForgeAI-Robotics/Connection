@@ -512,7 +512,33 @@ accepted
 
 当前大脑暂停／执行中跳过调用此接口后查询原命令，以实际 `navigation_stopped` 等回执核对停止；原命令可能已完成，不能要求所有情况都改写为 `cancelled`。停止尚未确认时保留原证据。source_gate 下网页“取消任务”也会经后台请求本接口，并单独记录选源全关；历史取消未确认不永久阻断新任务，当前执行条件仍由执行端判断。
 
-当前独立实现的普通取消保留仍有效的定位批准，不因取消自动重播初始化；实际定位失效时按状态中的 `localization_approved` 和 `motion_blockers` 处理，不能伪造或自动批准。
+当前独立实现的普通取消保留已审核定位会话，不因取消自动重播初始化；当前样本是否可用仍按实时质量和时效检查处理，不能仅凭 `localization_approved=true` 认为可以执行，也不自动批准新的定位基准。
+
+<a id="nav-session-approval-20261111"></a>
+
+### 首次批准与实时定位有效性（2026-11-11）
+
+首次初始化仍须 Approve；同一定位会话中，score／inlier_ratio／coverage等质量波动或输入过期只使当前数据不可用，保留原localization_approved和localization_epoch，不再因此重复要求Approve。NAV沿原停止／新鲜观测／重规划恢复流程处理；Harness拿到ready=false、retryable=true时沿原等待分支恢复，数据有效后重新取得一致的新定位再精调。没有自动调用批准接口，也没有将旧坐标包装成新观测。
+
+定位器从已初始化退回未初始化、新的requested_initial_pose或map_generation变化才视为定位基准变化：更新epoch、撤销旧批准并解除本次Arm／在途执行，需确认新的首次定位。Web进程重启本身也是新会话，原显式Lock和停止语义保留。地图、机器人、目标、坐标系和epoch不一致仍按原合同拒绝；未改实时质量、时效、原恢复等待和任务总预算阈值，长时间不恢复仍会按原流程结束任务。
+
+本次改动仅在NX导航Web及关联指纹，需重启9882进程加载；大脑和VLA代码无须因本项更改重启。原问题、离线重放和运行边界见[会话批准恢复验证](多端联调_导航与定位.md#nav-session-approval-validation-20261111)。
+
+<a id="nav-current-arrival-20261111"></a>
+
+## 当前Planner末端到达口径（2026-11-11源码复核）
+
+早间源码核查时NX没有运行NAV／9882／nav2point；同日14:45:01已通过正在运行的/nav2point_sonic参数服务只读复核，进程PID13993，当前continuous_planner_motion=true、planner_terminal_refinement_enabled=true。execution_backend.json选择planner；navigation_sonic.launch.py的参数列表后项planner_overrides覆盖前项Token默认值，以下门限已有本次运行参数证据，不能按nav2point声明的通用默认值解释当前入口。
+
+当前Planner末端有一次提前停车：planner_initial_stop_distance_m=0.60、planner_stable_final_approach=false、unified_path_tracking=true；在目标直线距离及沿当前路径剩余长度均进入60cm内、且尚在18cm捕获范围外时触发，停车确认后继续沿原路线靠近，再按18cm和朝向条件完成到达。若已建立同原生实例的有效实测停车模型，预测停车也可能更早请求IDLE，因此60cm不是精确的物理停住位置。旧Token terminal_control_enabled=false，terminal_entry_distance=0.70不控制当前Planner路径；Planner类默认0.45m在unified模式下也不是该提前停车阈值。开冰箱Harness只在NAV完成并交接后接管，不会因其四向小步库已启用就自动关闭NAV末端。运行参数、判定源码及范围见[末端生效核查](多端联调_导航与定位.md#nav-current-arrival-audit-20261111)。
+
+位置误差按map下当前机体定位与目标XY的平面欧氏距离计算。2026-11-11用户明确确认后，Planner对precision、default、door_alignment和position_only的捕获阈值与最终位置容差统一改为0.18m（此前分别为0.08m／0.10m）。捕获用于请求停车，最终测量仍须在18cm内，并经过原生参考及实测停止观察。原GoalArrivalGate要求final>=trigger，本次同步修改两项，未绕过该约束。Planner稳定窗取max(1秒、位置dwell、朝向dwell)，当前为至少1秒，不把发送零速度当停稳证明。14:45运行参数已确认四类位置门限均为18cm；原修改验证与备份见[导航末端核查](多端联调_导航与定位.md#nav-current-arrival-audit-20261111)。
+
+2026-11-11随后按用户确认修改当前源码：冰箱table_2仍选precision_table2位置配置，但在原_plan_world_goal以reviewed_object_id／agent_target_id识别冰箱点，将该执行计划final_orientation_required=false、goal_mode=position_only。大脑原请求、goal_xyt及命令身份不改；下发Pose不携带最终朝向，NAV位置达标并停稳后不做最终转向，Web普通完成回报也不再要求该点角度通过。保留60cm一次提前停车、后续沿原路径靠近、18cm捕获／最终位置及原停稳确认；最后身体朝向交给开冰箱Harness。普通目标及relay2门前对齐仍按各自原请求要求朝向，名义容差15°（触发值8°）；原table_2的8°／5°参数保留为历史配置，不再用于新冰箱计划的最终朝向门槛。此次只写回NX源码，需重启9882导航Web进程加载后生成新计划，尚未真机复测；大脑、VLA及adapter均不因这项修改自动重启。验证见[冰箱位置交接](多端联调_导航与定位.md#nav-fridge-position-only-20261111)。
+
+**其他仍要求最终朝向的计划继续使用planner_latch_yaw_on_entry=True。** 朝向纠偏过程中一旦原测量进入名义容差，即锁存yaw_entry并请求停车；之后当前位置在最终位置容差内（本次修改后18cm）且站稳，可以凭该历史朝向进入证据完成，不强制最终yaw仍在8°／15°内。nav2point发送TERMINAL_REACHED_YAW_ENTRY结构消息，Web验证原目标／goal_stamp／原采样／时间及当前位置／站稳后接受，并跳过普通Bool分支的最终yaw复查。因此名义角度容差不是当前实现对“最终停稳角度”的保证；该路径没有另一个明确的最终角度上限。不能把NAV成功直接解释为已经满足Harness实时±5°。
+
+同日纯函数反例回放：同命令原yaw_entry为7°、门限8°，最终位置4cm且提供站稳事实、最终yaw为20°，实际valid_yaw_entry_completion返回True。这是合成输入下的合同分支验证，不是现场20°实测，也不是将配置改成20°。源码、启动参数合并及回放证据见[导航末端核查](多端联调_导航与定位.md#nav-current-arrival-audit-20261111)；本轮未修改逻辑或容差。
 
 ## 10. 推荐错误码
 
@@ -546,6 +572,16 @@ accepted
 ## 11. 与VLA动作端口对齐
 
 当前 source_gate：大脑核验 NAV 结果后选通 VLA；操控结束后由大脑选回 NAV，NAV 自行恢复所需 Planner 模式。选源不是模式恢复，也不是停稳证明，完整真机交接尚未验收。当前合同见[接收源开关](接口说明_机器人统一网关.md#sonic-接收源开关source_gate)。
+
+2026-11-10 NAV 源码移除旧 relay／TCP 5556 连接探测：目标受理和自动 Arm 等待不再要求该端口存在 ESTAB 会话，也不以连接缺失报告 `VLA_ACTION_PORT_OWNED`。目标受理后沿原流程恢复 Arm，执行前仍要求定位及批准、`navigation_armed`、Gateway 和 Token 就绪；电机健康、原生保护、命令身份和互斥规则保留。状态中的 `navigation_transport_ready` 改为实际 `gateway_ready && token_ready`，旧 `--navigation-relay-host` 参数仅保留启动兼容。此项已修改远端源码，运行实例是否已加载及测试范围见[接管修复记录](多端联调_导航与定位.md#nav-port-ownership-after-vla-20261110)。
+
+同日后续源码补齐独立入口已有 `G1_SOURCE_GATE_ENABLED=1` 下的适配器生命周期。NAV 复用原生本地 source-status 读取器核对控制器、receiver、revision 和无待处理请求；选通 VLA／none 时停止全部 NAV 发包，保留原反馈／ROS 状态观察，状态 `body_source_gate` 标明当前阶段，ready 为 false。正常让权不因 STREAMED MOTION 模式事件退出，也不向 VLA 发送退出 HOLD。切回 navigation 后由原适配器执行有界 Planner IDLE 准备，沿原模式 ACK 和 ACK 后新反馈确认链重新就绪；重置策略及旧目标／速度缓存，等待新导航输入及原 Arm／软件停止门。Arm 本身仍是本地导航标志，不代替原生模式确认。
+
+2026-11-11实机暴露幂等重入后补核：真正换模式可走新切换ACK；已在Planner／IDLE时，不强求新的切换日志或新generation。后一分支须有本次请求后的新原生START确认，并匹配同实例、当前active／ready的mode0参考和推进且新鲜的反馈；旧参考自身不能单独放行。该保留IDLE确认不伪造SWITCH事件或物理停止事实。真实准备超时保留只读状态、不自动重复START；失败闭锁在同receiver／revision下不会因一次source查询中断后恢复而解除。实际双向与原生语义审计见[复核记录](多端联调_导航与定位.md#nav-pair-audit-20261111)，完整真机往返仍待复验。
+
+同日修复非formal路径的首帧循环等待：切源清旧速度后，原Planner准备及Arm等检查通过时，Token可报告ready=true、waiting_first_command=true、gate_reason=waiting-command，允许Agent先派发新目标。此时继续发布原IDLE，不借用旧速度，也不声明已经行走。收到新目标的首帧即结束等待并恢复原命令时效检查；运行中指令过期、错误输入及已有保护不改。没有新增等待超时、速度阈值或人工确认；formal路径保留原规则。此修复需重启导航adapter进程加载，仅重启大脑／网页或保留旧adapter的NAV HTTP重启不生效。[死锁复现与修复回归](多端联调_导航与定位.md#nav-first-command-deadlock-20261111)。
+
+启动、正常发布和退出路径均核对选源；选源未知／pending、控制器或 receiver 身份改变时不输出，未知停止仍保持未知。相同 NAV 选源下未预期的原生模式抢占、真实保护、模式确认失败仍按故障处理，不自动循环重发 START。未启用该原入口开关的其他模式保持原行为；不新增大脑控制接口、任务循环或后台监督器。源码已写回 NX，但未启动适配器或进行真机往返；具体验证和备份见[同一修复记录](多端联调_导航与定位.md#nav-port-ownership-after-vla-20261110)。
 
 **以下保留旧共享端口时序，仅供历史排障：**
 

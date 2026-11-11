@@ -37,7 +37,8 @@ class DirectVla(FakeVla):
         super().finish(task_id, command_id, observed, authorization)
         row = self.commands[command_id]
         self._stop(row)
-        if row['operation'] == 'grasp_cola':
+        from contracts.vla import visual_arm_grasp
+        if row['operation'] == 'grasp_cola' and not visual_arm_grasp(observed):
             row['result']['holding_evidence'] = dict(deepcopy(observed), task_id=task_id, command_id=command_id,
                 receiver_instance_id='o6-1', valid=True)
         return self.task(command_id)
@@ -46,7 +47,7 @@ class DirectVla(FakeVla):
     def _stop(row):
         row['result'].pop('navigation_port_ready', None)
         row['result'].update(execution_mode='direct', body_stopped=True, hands_stopped=True, hold_verified=True)
-        row['exit_state'] = dict(policy_stopped=True, publisher_stopped=True, output_fenced=True,
+        row['exit_state'] = dict(policy_stopped=True, publisher_stopped=True, output_fenced=True, action_port_released=True,
                                 body_stopped=True, hands_stopped=True, hold_verified=True, action_started=True)
 
     def cancel(self, task_id, command_id):
@@ -57,8 +58,13 @@ class DirectVla(FakeVla):
     def control_status(self):
         self.current_queries += 1
         last = next(reversed(self.commands.values()), {})
-        return dict(execution_mode='direct', current_holding=self.holding,
-                    holding_evidence=deepcopy((last.get('result') or {}).get('holding_evidence')))
+        active = next((key for key,row in self.commands.items() if row['state'] not in {'succeeded','failed','cancelled'}), None)
+        value = dict(execution_mode='direct', current_holding=self.holding,
+                     service_instance_id='vla-current', status_generated_at=now(),
+                     active_command_id=active, policy_running=bool(active), action_port_released=not active,
+                     holding_evidence=deepcopy((last.get('result') or {}).get('holding_evidence')))
+        value.update(self.status_override)
+        return value
 
 
 def vla_request(command='open-1', operation='open_fridge'):
@@ -212,6 +218,19 @@ class DirectVlaTests(unittest.TestCase):
             self.vla.submit_task=reject
             value=self.port.submit(r['body']['command_id'],r)
             self.assertEqual(value['unclear'],code=='SERVICE_UNAVAILABLE')
+
+    def test_holding_conflict_before_task_creation_is_a_submission_refusal(self):
+        self.setup_vla();r=vla_request();self.schedule(r,'reception_real')
+        raw={'success':False,'error':{'code':'HOLDING_STATE_CONFLICT',
+             'message':'open_fridge requires holding=null','details':{}}}
+        with patch.object(self.vla,'submit_task',side_effect=HttpContractError(
+                'holding conflict',status_code=409,payload=raw)):
+            value=self.port.submit(r['body']['command_id'],r)
+        self.assertFalse(value['accepted'])
+        self.assertFalse(value['unclear'])
+        self.assertEqual(value['submission_rejected']['code'],'HOLDING_STATE_CONFLICT')
+        self.assertEqual(self.vla.commands,{})
+        self.assertEqual(self.nav.posts,[])
 
     def test_gate_closed_never_certifies_vla_body_stop(self):
         self.setup_vla();r=vla_request();self.start(r)
