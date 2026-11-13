@@ -389,6 +389,8 @@ def _effect_supported(skill, result, body, *, simulated=False) -> bool:
             if skill == 'open_fridge':
                 return (result.get('door_open') is True and result.get('door_closed') is False
                         and result.get('door_stable_open') is True and result.get('hands_clear_of_door') is True)
+            if skill == 'close_fridge':
+                return result.get('door_closed') is True and result.get('door_open') is False
             return (result.get('object_grasped') is True and result.get('holding') == object_id
                     and result.get('clear_of_fridge') is True)
         try:
@@ -401,6 +403,8 @@ def _effect_supported(skill, result, body, *, simulated=False) -> bool:
             return False
         if skill == 'open_fridge':
             return result.get('door_open') is True and result.get('door_closed') is False
+        if skill in {'close_fridge', 'close_fridge_test'}:
+            return result.get('door_closed') is True and result.get('door_open') is False
         return result.get('object_grasped') is True and result.get('holding') == object_id
     if skill == "pick":
         return (

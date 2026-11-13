@@ -26,7 +26,9 @@ def catalog(config, capabilities):
             raise Rejected('native_vla 导航点无效：' + str(name))
     available = {}
     for operation, binding in bindings.items():
-        if operation not in NATIVE_OPERATIONS or not isinstance(binding, dict):
+        # Generated close is currently compiled only by the fixed reception SOP;
+        # generic tasks do not yet have its same-task holding/stance binding.
+        if operation not in {'open_fridge', 'grasp_cola'} or not isinstance(binding, dict):
             raise Rejected('native_vla 动作绑定无效')
         if set(binding) != {'object_id', 'route', 'timeout_sec'} or not machine_id(binding.get('object_id')):
             raise Rejected('native_vla 动作需要 object_id、route、timeout_sec')

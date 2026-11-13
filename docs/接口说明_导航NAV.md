@@ -1,5 +1,9 @@
 # 接口说明：导航 NAV
 
+2026-11-13网页9882的冰箱位置目标改为按地图分辨率绘制真实NAV 28cm圆，读取原导航backend/profile阈值；不再以固定像素圈冒充位置范围。同时显示Harness独立中心的10cm圆、目标朝向及±5°紫色圆弧。图层下拉可选择开门或关门Harness目标，仅切换/frame.png?harness=open_fridge或close_fridge的缓存图片，不改变导航目标、当前操控任务或任何放行。红圆NAV／绿圆Harness／紫色朝向均保留各自真实中心，不自动合并。
+
+Harness显示值是VLA原fridge_harness.json及scene_policy.DEFAULTS导出的只读派生快照，NX保存于dream/configs/navigation/harness_display_snapshot.json；该文件不参与执行判定，不能作为第二份可调阈值。后续修改VLA目标或容差时，用VLA环境运行python -m g1_fridge_alignment_harness.export_map_overlay <输出文件>，再同步该派生文件。地图不匹配／快照缺失仅显示图层不可用，不影响控制。源码已同步NX，未重启9882或导航／VLA，运行实例需后续正常加载。验证见[10cm圆与地图](多端联调_操控与抓取.md#harness-radius-map-20261113)。
+
 天机／灵猴 S100 参照本合同的完整交接见[天机导航](接口说明_天机导航.md)：大脑独立原子适配及离线工具已实现，保留坐标与命令格式；天机侧兼容、双方联调和多机器人流程仍待完成。
 
 跨端日志专项见大脑维护的[实施约定](多端联调_大脑日志与跨端诊断.md#alignment-table)与[NAV 交付映射](多端联调_大脑日志与跨端诊断.md#nav-delivery)。2026-11-02 NAV 侧报告源码日志增强及 185 项隔离测试通过；发布完整性清单和正式一键入口已更新核验；未执行 brain-navigation-start，正式服务由用户手动启动。应用证据见[主文档](多端联调_大脑日志与跨端诊断.md#deployment-20261102)，诊断不新增导航准入要求。
@@ -77,6 +81,10 @@ VLA 健康只标识同一仿真实例并声明 `manipulation_supported=false`，
 [当日联调](多端联调_导航与定位.md#e-n1)。
 
 ## 1. DREAM侧职责
+
+2026-11-13本地Planner掉拍恢复修复：150ms仍指适配器连续两次生成Planner输入的时间间隔，超过后沿原ExecutionTimingRecovery输出mode0 IDLE请求；10秒累计次数仅作诊断，不再因第4次单独失败，也不再因恢复持续1秒就让正常输入通路ready=false。恢复继续使用原5份递增反馈／0.1秒稳定窗口，并复用上一轮已记录的匹配原生IDLE参考；未匹配时保持IDLE，不另外读取一遍或引入新阈值。真实输入过期、源／原生身份变化、本体保护和取消仍按原通路处理。status.ready表示输入通路就绪，不表示身体已停止或当前motion_permitted=true；Web的真实状态年龄／当前Arm等要求不改。
+
+同一navigation来源内失败／取消后重新Arm，适配器仅在软件急停由true转false的新边沿恢复既有IDLE准备态：清掉上一目标速度／时间，等待新目标首指令；重复false使能心跳不清除正在执行的目标，上一goal身份的迟到输入仍丢弃，不自动重放。控制循环日志复用已有AsyncTimingTrace组件有界排队、异步序列化写盘，原planner_inputs.jsonl路径及保留方式不变，新增loop_timing分段耗时和diagnostic_delivery丢失／错误统计只供诊断，不参与运动许可。源码已写回、离线回归完成，未重启／发动作；范围及既有测试失败见[修复复验](多端联调_导航与定位.md#nav-control-recovery-fixed-20261113)。
 
 DREAM侧负责：
 
@@ -525,12 +533,17 @@ accepted
 本次改动仅在NX导航Web及关联指纹，需重启9882进程加载；大脑和VLA代码无须因本项更改重启。原问题、离线重放和运行边界见[会话批准恢复验证](多端联调_导航与定位.md#nav-session-approval-validation-20261111)。
 
 <a id="nav-current-arrival-20261111"></a>
+<a id="当前planner末端到达口径2026-11-11源码复核"></a>
 
-## 当前Planner末端到达口径（2026-11-11源码复核）
+## 当前Planner末端到达口径（2026-11-12源码更新）
+
+2026-11-12按用户明确要求，仅将冰箱table_2对应precision_table2配置的捕获阈值precision_goal_trigger_tolerance和最终位置容差precision_goal_tolerance从0.18m改为0.28m。冰箱取消最终朝向后也使用该专属位置gate，不再被通用position_only的18cm覆盖；其他default／door_alignment／position_only配置仍为18cm，其他点不变。60cm提前停车和原生IDLE／实测稳定窗口确认保留，冰箱最终朝向仍由Harness调整。NX源码、原指纹及测试已写回，188项离线回归通过；本轮未重启NAV／设置运行参数／发动作，当前旧实例仍须按原正式入口加载匹配源码与启动覆盖才能使用28cm。修改及范围见[冰箱28cm验证](多端联调_导航与定位.md#nav-fridge-28cm-20261112)。
 
 早间源码核查时NX没有运行NAV／9882／nav2point；同日14:45:01已通过正在运行的/nav2point_sonic参数服务只读复核，进程PID13993，当前continuous_planner_motion=true、planner_terminal_refinement_enabled=true。execution_backend.json选择planner；navigation_sonic.launch.py的参数列表后项planner_overrides覆盖前项Token默认值，以下门限已有本次运行参数证据，不能按nav2point声明的通用默认值解释当前入口。
 
-当前Planner末端有一次提前停车：planner_initial_stop_distance_m=0.60、planner_stable_final_approach=false、unified_path_tracking=true；在目标直线距离及沿当前路径剩余长度均进入60cm内、且尚在18cm捕获范围外时触发，停车确认后继续沿原路线靠近，再按18cm和朝向条件完成到达。若已建立同原生实例的有效实测停车模型，预测停车也可能更早请求IDLE，因此60cm不是精确的物理停住位置。旧Token terminal_control_enabled=false，terminal_entry_distance=0.70不控制当前Planner路径；Planner类默认0.45m在unified模式下也不是该提前停车阈值。开冰箱Harness只在NAV完成并交接后接管，不会因其四向小步库已启用就自动关闭NAV末端。运行参数、判定源码及范围见[末端生效核查](多端联调_导航与定位.md#nav-current-arrival-audit-20261111)。
+当前Planner末端有一次提前停车：planner_initial_stop_distance_m=0.60、planner_stable_final_approach=false、unified_path_tracking=true；在目标直线距离及沿当前路径剩余长度均进入60cm内、且尚在所选捕获范围外时触发。停车确认后若已在所选最终容差内即可完成；否则继续沿原路线靠近再捕获停车，冰箱新源码两门限均为28cm，其他点18cm。若已建立同原生实例的有效实测停车模型，预测停车也可能更早请求IDLE，因此60cm不是精确的物理停住位置。旧Token terminal_control_enabled=false，terminal_entry_distance=0.70不控制当前Planner路径；Planner类默认0.45m在unified模式下也不是该提前停车阈值。开冰箱Harness只在NAV完成并交接后接管，不会因其四向小步库已启用就自动关闭NAV末端。此前18cm运行依据保留在[末端生效核查](多端联调_导航与定位.md#nav-current-arrival-audit-20261111)。
+
+2026-11-12修改前实时ROS参数与本轮日志确认旧18cm分工仍生效。普通末段track路径的Planner适配器最低名义速度为0.20；本轮完成前20秒，0.013—0.095m/s的小平移请求被转换为0.20名义输入，不能当成同比例身体低速。随后用户选择仅把冰箱两门限改为28cm，未移除60cm停车／未改其他点或速度映射；该源码更新尚待现场加载，不能把离线结果当真机通过。原测量见[冰箱低速与交接核查](多端联调_导航与定位.md#nav-fridge-low-speed-handoff-20261112)。
 
 位置误差按map下当前机体定位与目标XY的平面欧氏距离计算。2026-11-11用户明确确认后，Planner对precision、default、door_alignment和position_only的捕获阈值与最终位置容差统一改为0.18m（此前分别为0.08m／0.10m）。捕获用于请求停车，最终测量仍须在18cm内，并经过原生参考及实测停止观察。原GoalArrivalGate要求final>=trigger，本次同步修改两项，未绕过该约束。Planner稳定窗取max(1秒、位置dwell、朝向dwell)，当前为至少1秒，不把发送零速度当停稳证明。14:45运行参数已确认四类位置门限均为18cm；原修改验证与备份见[导航末端核查](多端联调_导航与定位.md#nav-current-arrival-audit-20261111)。
 

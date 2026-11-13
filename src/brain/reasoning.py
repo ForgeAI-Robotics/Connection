@@ -26,7 +26,8 @@ def validate_advice_scope(context, advice):
     for kind, pattern in (
             ('place', r'放置|放下|摆放|\bplace\b'),
             ('close_fridge', r'关门|关(?:闭|上)?冰箱|\bclose_fridge\b')):
-        if kind not in kinds and re.search(pattern, text, re.IGNORECASE):
+        allowed = kind in kinds or (kind == 'close_fridge' and 'close_fridge_test' in kinds)
+        if not allowed and re.search(pattern, text, re.IGNORECASE):
             raise ValueError('LLM 建议提及当前任务未登记的操控动作：' + kind)
 
 
@@ -48,6 +49,9 @@ class TaskReasoner:
         chosen = self._select(task, options, sops, variants)
         if chosen["package"] == "reception":
             chosen["workflow"] = skill.snapshot()
+            if chosen['sop']['id'] == 'fridge.close_test':
+                chosen['workflow_variant'] = 'fridge_close_test'
+                return chosen
             if skill.real_sop and chosen['sop']['id'] == skill.real_sop['id']:
                 chosen['workflow_variant'] = 'real'
             elif skill.real_sop and chosen['sop']['id'] == skill.real_sop['id'] + '.sim_manipulation':

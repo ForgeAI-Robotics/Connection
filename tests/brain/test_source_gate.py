@@ -268,7 +268,7 @@ class SourceGateTests(unittest.TestCase):
             service.publish('开始接待（导航真机＋操控模拟）', 'test-task', options={'reflect': False})
         self.assertEqual(service.runtime.state, 'succeeded', service.runtime.public_status())
         self.assertEqual(len(self.nav.posts), 5)
-        self.assertEqual(len(port.vla._commands), 2)
+        self.assertEqual(len(port.vla._commands), 3)
         self.assertEqual(self.gate.puts, [])
 
     def test_application_selects_new_manager_without_legacy_driver(self):

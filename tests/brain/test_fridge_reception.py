@@ -21,7 +21,7 @@ class FridgeDefinitionTests(unittest.TestCase):
     def test_one_reviewed_point_and_same_original_navigation_proof(self):
         steps = self.skill.phases(real=True)
         actions = [s for s in steps if s.kind not in {'local', 'verify'}]
-        self.assertEqual([s.kind for s in actions], ['navigate', 'open_fridge', 'grasp_cola'] + ['navigate'] * 4)
+        self.assertEqual([s.kind for s in actions], ['navigate', 'open_fridge', 'grasp_cola', 'close_fridge'] + ['navigate'] * 4)
         self.assertEqual([s.key for s in actions if s.kind == 'navigate'],
                          ['table2','relay1','relay2','relay3','table1'])
         self.assertEqual(actions[0].navigation, self.skill.navigation_points['table2'])
@@ -118,11 +118,15 @@ class FridgeReceptionTests(unittest.TestCase):
         self.assertEqual(self.vla.posts[0]['navigation_proof'], self.vla.posts[1]['navigation_proof'])
         self.finish_current()
         self.service.control('continue', task_id='fridge-reception')
+        self.assertEqual(runtime.record['phase'], 'VLA_CLOSE_FRIDGE')
+        self.assertEqual(len(self.nav.commands), 1)
+        self.finish_current()
+        self.service.control('continue', task_id='fridge-reception')
         self.assertEqual(runtime.state, 'succeeded', runtime.public_status())
         self.assertEqual(runtime.record['holding'], 'cola_can_1')
         self.assertEqual(len(self.nav.commands), 5)
         self.assertEqual([r['leg_index'] for r in self.nav.commands.values()], [1,2,3,4,5])
-        self.assertEqual(len(self.vla.posts), 2)
+        self.assertEqual(len(self.vla.posts), 3)
 
     def test_skipped_grasp_assumes_holding_and_starts_delivery(self):
         self.publish(); self.finish_current()
@@ -131,6 +135,9 @@ class FridgeReceptionTests(unittest.TestCase):
         runtime.request_pause()
         runtime.skip_current(step_id='VLA_GRASP_COLA')
         runtime.drive()
+        self.assertEqual(runtime.record['phase'], 'VLA_CLOSE_FRIDGE')
+        self.finish_current()
+        self.service.control('continue', task_id='fridge-reception')
         self.assertEqual(runtime.state, 'failed')  # Flow finished with a human skip.
         self.assertEqual(len(self.nav.commands), 5)
         self.assertEqual(runtime.record['holding'], 'cola_can_1')
@@ -139,6 +146,8 @@ class FridgeReceptionTests(unittest.TestCase):
 
     def test_vla_lost_holding_blocks_delivery(self):
         self.publish(); self.finish_current()
+        self.service.control('continue', task_id='fridge-reception')
+        self.finish_current()
         self.service.control('continue', task_id='fridge-reception')
         self.finish_current()
         self.vla.status_override['holding'] = None
@@ -159,6 +168,8 @@ class FridgeReceptionTests(unittest.TestCase):
             self.service.control('continue', task_id='fridge-reception')
             self.finish_current()
             self.service.control('continue', task_id='fridge-reception')
+            self.finish_current()
+            self.service.control('continue', task_id='fridge-reception')
         self.assertEqual(self.service.status()['state'], 'recovery_required')
         self.assertEqual([r['leg_index'] for r in self.nav.commands.values()], [1,2,3])
         self.assertEqual(self.service.runtime.record['holding'], 'cola_can_1')
@@ -172,6 +183,8 @@ class FridgeReceptionTests(unittest.TestCase):
             return result
         with patch.object(self.nav, 'submit_navigation', side_effect=submit):
             self.publish(); self.finish_current()
+            self.service.control('continue', task_id='fridge-reception')
+            self.finish_current()
             self.service.control('continue', task_id='fridge-reception')
             self.finish_current()
             self.service.control('continue', task_id='fridge-reception')

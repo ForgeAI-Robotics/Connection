@@ -95,6 +95,14 @@ class BrainService:
             return Plan(())
         package = chosen["package"]
         backend = select_backend(self.config, package, mock=options.get("mock") is True)
+        if chosen.get('workflow_variant') == 'fridge_close_test':
+            from brain.adapters.source_gate import source_gate_enabled
+            if backend != 'reception_real' or not source_gate_enabled(self.config):
+                raise Rejected('独立精调／关门测试仅支持真机 source_gate 执行端')
+            if options.get('worksite_confirmed') is not True:
+                raise Rejected('独立测试前须确认定位、站立、门和手部状态已准备好')
+            chosen = dict(chosen, test_confirmation=dict(source='operator_confirmation',
+                observed_at=options['worksite_confirmed_at'], reference='fridge-test:'+runtime.record['task_id']))
         if (runtime.record['task_desc'] == '开始接待（导航真机＋操控真机）'
                 and backend != 'reception_real'):
             raise Rejected('该按钮需要真机接待环境，不会改发仿真')
@@ -127,7 +135,7 @@ class BrainService:
                 raise Rejected('真实操控必须启用大脑网关控制')
             from brain.packages.reception_skill import from_snapshot
             areas = {step.target_area for step in from_snapshot(chosen['workflow']).phases(real=True)
-                     if step.kind in {'open_fridge','grasp_cola'}}
+                     if step.kind in {'open_fridge','grasp_cola','close_fridge'}}
             if len(areas) != 1:
                 raise Rejected('导航模拟模式只接受同一现场作业点的操控流程')
             confirmation = dict(observed_at=options['worksite_confirmed_at'],
@@ -172,10 +180,14 @@ class BrainService:
         if not runtime.bind_execution(chosen, backend, target_identity(self.config, backend), port):
             return Plan(())
         result = self.plan_call(runtime, options)
+        if (any(step.kind == 'close_fridge_test' for step in result.steps)
+                and chosen.get('workflow_variant') != 'fridge_close_test'):
+            raise Rejected('独立关门测试只接受已登记的单独测试入口')
         if backend in {'body_real', 'reception_real', 'reception_sim_navigation_real'}:
             if ((self.config.get('reception_real') or {}).get('body_control') or {}).get('enabled') is True:
                 unsupported = [s.kind for s in result.steps if s.kind not in
-                               {'local', 'verify', 'navigate', 'open_fridge', 'grasp_cola'}]
+                               {'local', 'verify', 'navigate', 'open_fridge', 'grasp_cola', 'close_fridge',
+                                'close_fridge_test'}]
                 if unsupported:
                     raise Rejected('联合控制尚未接入这些动作，整份计划未派发: ' + ', '.join(unsupported))
             from brain.skills.native_vla import require_operations

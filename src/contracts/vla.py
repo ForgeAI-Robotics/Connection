@@ -2,7 +2,9 @@
 from datetime import datetime, timedelta, timezone
 import re
 
-NATIVE_OPERATIONS = frozenset({'open_fridge', 'grasp_cola'})
+TEST_OPERATIONS = frozenset({'close_fridge_test'})
+CLOSE_OPERATIONS = frozenset({'close_fridge', 'close_fridge_test'})
+NATIVE_OPERATIONS = frozenset({'open_fridge', 'grasp_cola', 'close_fridge'}) | TEST_OPERATIONS
 MANIPULATION_OPERATIONS = NATIVE_OPERATIONS | {'pick', 'place'}
 HOLDING_SCHEMA = 'g1/o6-holding-evidence/v1'
 VISUAL_ARM_GRASP_CONTRACT = 'fq/vla-grasp-cola-wrist-return-evidence/v2'
@@ -32,11 +34,15 @@ def machine_id(value):
 def validate_request(body):
     from contracts.tasks import CONTRACT_VERSION
     keys = {'contract_version', 'task_id', 'command_id', 'operation', 'object_id', 'target_area', 'navigation_proof'}
+    if isinstance(body, dict) and body.get('operation') in TEST_OPERATIONS:
+        keys.remove('navigation_proof')
     if (not isinstance(body, dict) or set(body) != keys or body['contract_version'] != CONTRACT_VERSION
             or body['operation'] not in NATIVE_OPERATIONS):
         raise ValueError('新 VLA 动作合同无效')
     if not all(machine_id(body[k]) for k in ('task_id', 'command_id', 'object_id', 'target_area')):
         raise ValueError('新 VLA 动作需要 1–128 位机器标识')
+    if body['operation'] in TEST_OPERATIONS:
+        return
     proof = body['navigation_proof']
     if (not isinstance(proof, dict) or set(proof) != {'dream_command_id', 'target_id', 'state'}
             or not machine_id(proof['dream_command_id']) or proof['target_id'] != body['target_area']
@@ -69,6 +75,18 @@ def validate_evidence(operation, object_id, evidence, ready_at):
         else:  # Historical/manual completion evidence retains its original meaning.
             valid = (all(evidence.get(k) is True for k in ('door_open', 'door_stable_open', 'hands_clear_of_door'))
                      and evidence.get('door_closed') is not True)
+    elif operation in CLOSE_OPERATIONS:
+        arm = evidence.get('arm_return') or {}
+        valid = (evidence.get('source') == 'visual_verifier'
+                 and evidence.get('visual_contract') == 'fq/vla-close-fridge-head-arm-evidence/v1'
+                 and evidence.get('door_closed') is True and evidence.get('door_open') is False
+                 and evidence.get('arms_returned') is True
+                 and isinstance(arm, dict) and arm.get('schema') == 'fq/vla-arm-return/v1'
+                 and arm.get('valid') is True and isinstance(arm.get('event_id'), str)
+                 and bool(arm['event_id']) and arm.get('return_dwell_s') == .8)
+        if evidence.get('source') == 'operator_observation' and not evidence.get('visual_contract'):
+            valid = (evidence.get('door_closed') is True and evidence.get('door_open') is not True
+                     and evidence.get('arms_returned') is True and evidence.get('hands_clear_of_door') is True)
     elif operation == 'grasp_cola':
         if evidence.get('visual_contract') == VISUAL_ARM_GRASP_CONTRACT:
             arm=evidence.get('arm_return') or {}

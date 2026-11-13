@@ -23,7 +23,14 @@ class SimNavigationTests(Fixture, unittest.TestCase):
         super().setUp()
         self.config.update(brain={'reception_backend':'real','capture_timeline':False,
                                  'reasoning':{'recovery_advice':False}},reflection={'enabled':False})
-        self.config['reception_real']['skill_file']=str(BASELINE_PATH.with_name('reception_single_can_v2.yaml'))
+        # This suite covers historical unified authorization; generated close
+        # uses direct-v1 and is covered by test_close_fridge/source_gate_vla.
+        import yaml
+        definition=yaml.safe_load(BASELINE_PATH.with_name('reception_single_can_v2.yaml').read_text())
+        definition['real_workflow']['sop']['version']='2'
+        definition['real_workflow']['steps']=[s for s in definition['real_workflow']['steps'] if s['action']!='close_fridge']
+        source=self.root/'historical_unified_v2.yaml';source.write_text(yaml.safe_dump(definition,allow_unicode=True))
+        self.config['reception_real']['skill_file']=str(source)
         self.wire=VlaWire()
         original=self.wire.status
         def status(observation):

@@ -69,6 +69,13 @@ def reception_preflight(config, task, *, client_factory=DreamClient):
             return report
         backend = select_backend(config, 'reception')
         report.update(task_type='reception', execution_backend=backend, skill_sha256=skill.snapshot()['sha256'])
+        if chosen['id'] == 'fridge.close_test':
+            from brain.adapters.source_gate import source_gate_enabled
+            valid = backend == 'reception_real' and source_gate_enabled(config)
+            report.update(ready=valid, required=True,
+                blockers=[] if valid else ['独立测试仅支持真机 source_gate 环境。'],
+                scope='不发起导航；执行端读取实时定位并核对原 Harness 条件。')
+            return report
         if chosen['id'].endswith('.sim_navigation'):
             report.update(execution_backend='reception_sim_navigation_real',
                           scope='导航只在本地模拟；真实操控需现场作业确认及网关准入。')

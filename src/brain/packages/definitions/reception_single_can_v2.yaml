@@ -106,13 +106,13 @@ steps:
     verification_id: VERIFYING_PLACE
 
 # 真机“开始接待”使用本分支；旧 steps 供原仿真及显式混合联调使用。
-# 复用同一份 points；开门与抓取之间不导航，抓取核验后保留原运送路线。
+# 复用同一份 points；抓取核验后执行关门（执行端内部精调），再走原运送路线。
 real_workflow:
   sop:
     id: reception.fridge_pick
-    version: "2"
-    description: "真机接待：导航到冰箱前，开门并原地抓取可乐；核验后经中转点 1、2、3 运送到 1 号桌。"
-    constraints: "单罐 cola_can_1；保留全部登记导航路线，关冰箱和放置暂不派发；到桌后仍持物。两次操控需暂停后的授权效果确认。"
+    version: "3"
+    description: "真机接待：导航到冰箱前，开门、抓取可乐并核验，精调站位后关冰箱并核验，再经中转点 1、2、3 运送到 1 号桌。"
+    constraints: "单罐 cola_can_1；保留全部登记导航路线，关门精调由操控端执行；全程保持持物，到桌后不放置。各次操控均需独立效果确认。"
   steps:
     - id: NAVIGATING_TO_FRIDGE
       action: navigate
@@ -137,6 +137,15 @@ real_workflow:
       display_name: 抓取可乐并后退撤离
       verification_id: VERIFYING_COLA_GRASP
       verification_display_name: 确认后退撤离完成且可乐仍在手
+    - id: VLA_CLOSE_FRIDGE
+      action: close_fridge
+      object_id: fridge_1
+      after_navigation: NAVIGATING_TO_FRIDGE
+      command_prefix: vla-close-fridge
+      timeout_sec: 600
+      display_name: 精调站位并关冰箱
+      verification_id: VERIFYING_FRIDGE_CLOSED
+      verification_display_name: 确认冰箱已关闭且双臂回位保持
     - id: NAVIGATING_TO_RELAY1
       action: navigate
       point: relay1

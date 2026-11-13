@@ -302,7 +302,7 @@ def compile_skill(definition):
 
 
 def _compile_real_workflow(definition, base_steps):
-    """Open/grasp at one stance, then retain the configured delivery route."""
+    """Manipulate at the fridge, then retain the configured delivery route."""
     from contracts.vla import validate_request as validate_native_request
     workflow = definition['real_workflow']
     _keys(workflow, ('sop', 'steps'))
@@ -316,11 +316,14 @@ def _compile_real_workflow(definition, base_steps):
         if not isinstance(sop[key], str) or not sop[key].strip():
             raise Rejected('真机 SOP 版本与范围不能为空')
     actions = workflow['steps']
-    if (not isinstance(actions, list) or len(actions) < 3
+    close = sop['version'] == '3'
+    manipulation_end = 4 if close else 3
+    expected_prefix = ['navigate', 'open_fridge', 'grasp_cola'] + (['close_fridge'] if close else [])
+    if (not isinstance(actions, list) or len(actions) < manipulation_end
             or any(not isinstance(a, dict) for a in actions)
-            or [a.get('action') for a in actions[:3]] != ['navigate', 'open_fridge', 'grasp_cola']
-            or any(a.get('action') != 'navigate' for a in actions[3:])):
-        raise Rejected('真机接待先导航、开门、抓取，随后按登记路线运送；不插入关门或放置')
+            or [a.get('action') for a in actions[:manipulation_end]] != expected_prefix
+            or any(a.get('action') != 'navigate' for a in actions[manipulation_end:])):
+        raise Rejected('真机接待必须按版本依次导航、开门、抓取、关门（v3），随后按登记路线运送')
     route = [s.key for s in base_steps if s.kind == 'navigate']
     # v1 was already persisted by the earlier truncated implementation. Only
     # those historical snapshots may end at grasp; v2 retains the full route.
@@ -354,7 +357,7 @@ def _compile_real_workflow(definition, base_steps):
                 raise Rejected('真机流程必须引用已登记导航点')
             nav_step = replace(template, step_id=step_id, prefix=prefix, deadline_sec=timeout,
                                display_name=title or template.display_name, requires_gate=index == 0,
-                               handoff_before='to_nav' if index == 3 else '', requires_vla_clearance=True,
+                               handoff_before='to_nav' if index == manipulation_end else '', requires_vla_clearance=True,
                                required_holding=definition['parameters']['object_id'] if index > 2 else '',
                                requires_safe_idle=index == len(actions) - 1)
             if index == 0:
@@ -370,11 +373,14 @@ def _compile_real_workflow(definition, base_steps):
         validate_native_request(dict(contract_version=CONTRACT_VERSION, task_id='validate', command_id='validate',
             operation=kind, object_id=obj, target_area=target,
             navigation_proof=dict(dream_command_id='validate', target_id=target, state='succeeded')))
-        effect = 'door_open' if kind == 'open_fridge' else 'object_held'
+        if kind == 'close_fridge' and obj != actions[1]['object_id']:
+            raise Rejected('关门必须引用本任务开门的同一冰箱')
+        effect = {'open_fridge': 'door_open', 'grasp_cola': 'object_held', 'close_fridge': 'door_closed'}[kind]
         steps.append(StepSpec(step_id, kind, prefix=prefix, deadline_sec=timeout, object_id=obj,
             target_area=target, target_name=navigation.target_name, display_name=title,
             navigation_step_id=navigation.step_id, evidence=effect, handoff_before='to_vla',
             requires_object_evidence=True, requires_safe_idle=True,
+            required_holding=definition['parameters']['object_id'] if kind == 'close_fridge' else '',
             writes='in_gripper' if kind == 'grasp_cola' else ''))
         verify_id = _identifier(action.get('verification_id', 'VERIFY_' + step_id))
         if verify_id in ids:

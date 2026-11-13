@@ -33,6 +33,13 @@ class PlanningService:
             snapshot = selected.get("workflow")
             skill = from_snapshot(snapshot) if snapshot else load_skill(self.config)
             sop = selected.get("sop") or {}
+            if selected.get('workflow_variant') == 'fridge_close_test':
+                from brain.packages.fridge_test import SOP, phases
+                if (runtime.record['execution_backend'] != 'reception_real'
+                        or (sop.get('id'), sop.get('version')) != (SOP['id'], SOP['version'])
+                        or not selected.get('test_confirmation')):
+                    raise Rejected('独立测试需要真机执行端和本次现场确认')
+                return Plan(phases(skill), SOP['description'])
             if selected.get('workflow_variant') == 'real_sim_navigation':
                 if (runtime.record['execution_backend'] != 'reception_sim_navigation_real' or not skill.real_sop
                         or (sop.get('id'), sop.get('version')) !=

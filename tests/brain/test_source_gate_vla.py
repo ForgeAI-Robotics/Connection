@@ -182,11 +182,16 @@ class DirectVlaTests(unittest.TestCase):
             service.publish('开始接待（导航模拟＋操控真机）' if simulated_nav else '开始接待（导航真机＋操控真机）',
                             'test-task',options={'reflect':False,'worksite_confirmed':True})
             rt=service.runtime
-            for operation in ('open_fridge','grasp_cola'):
+            for operation in ('open_fridge','grasp_cola','close_fridge'):
                 self.assertEqual(rt.state,'waiting_human',rt.public_status())
                 cid=rt.record['open_command_id']
                 service.vla_effect('test-task',cid,'pause')
-                service.vla_effect('test-task',cid,'finish',evidence=evidence(operation),authorization='Bearer test-only')
+                observed=evidence(operation)
+                if operation == 'grasp_cola':
+                    observed.update(source='visual_verifier',visual_contract='fq/vla-grasp-cola-wrist-return-evidence/v2',
+                        left_grasped=True,right_grasped=True,arms_returned=True,
+                        arm_return=dict(schema='fq/vla-arm-return/v1',valid=True,event_id='offline',return_dwell_s=.8))
+                service.vla_effect('test-task',cid,'finish',evidence=observed,authorization='Bearer test-only')
                 self.assertEqual(rt.state,'waiting_human')  # No auto-next on finish.
                 rt.continue_current();rt.drive()
             self.assertEqual(rt.state,'succeeded',rt.public_status())
@@ -194,12 +199,12 @@ class DirectVlaTests(unittest.TestCase):
 
     def test_full_real_workflow_nav_open_grasp_nav_and_no_repeated_vla_switch(self):
         self.run_flow()
-        self.assertEqual(len(self.nav.posts),5);self.assertEqual(len(self.vla.posts),2)
+        self.assertEqual(len(self.nav.posts),5);self.assertEqual(len(self.vla.posts),3)
         self.assertEqual([x['source'] for x in self.gate.puts],['vla','navigation'])
 
     def test_manipulation_only_button_never_contacts_real_nav(self):
         self.run_flow(simulated_nav=True)
-        self.assertEqual(self.nav.posts,[]);self.assertEqual(len(self.vla.posts),2)
+        self.assertEqual(self.nav.posts,[]);self.assertEqual(len(self.vla.posts),3)
         self.assertEqual([x['source'] for x in self.gate.puts],['vla'])
 
     def test_holding_not_inferred_from_old_grasp_success(self):

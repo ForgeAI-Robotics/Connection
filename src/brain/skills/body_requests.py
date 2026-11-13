@@ -23,6 +23,10 @@ def navigation_body(step: StepSpec, task_id: str, command_id: str) -> dict:
 
 
 def manipulation_body(step: StepSpec, task_id: str, command_id: str, navigation_command_id: str) -> dict:
+    from contracts.vla import TEST_OPERATIONS
+    if step.kind in TEST_OPERATIONS:
+        return dict(contract_version=CONTRACT_VERSION, command_id=command_id, task_id=task_id,
+                    operation=step.kind, object_id=step.object_id, target_area=step.target_area)
     return {
         "contract_version": CONTRACT_VERSION,
         "command_id": command_id,

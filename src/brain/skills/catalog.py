@@ -20,6 +20,8 @@ class SkillEntry:
 CATALOG = (
     SkillEntry('open_fridge', '在已登记冰箱作业点开门并核验', 'VlaClient.submit_task', 'door_open'),
     SkillEntry('grasp_cola', '冰箱已打开后抓取已登记可乐并核验', 'VlaClient.submit_task', 'object_held'),
+    SkillEntry('close_fridge', '抓取核验后精调站位并关冰箱，核验门关闭及双臂回位', 'VlaClient.submit_task', 'door_closed'),
+    SkillEntry('close_fridge_test', '独立复用现有精调和关冰箱流程并核验', 'VlaClient.submit_task', 'door_closed'),
     SkillEntry(
         "navigate",
         "通用任务或 SOP 沿已登记导航合同移动",

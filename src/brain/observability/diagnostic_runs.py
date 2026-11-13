@@ -327,7 +327,7 @@ class DiagnosticRuns:
         specs = record.get('phase_specs') or []
         if backend == 'body_real' and specs:
             return {'navigation_physical': any(s.get('kind') == 'navigate' for s in specs),
-                    'manipulation_physical': any(s.get('kind') in {'open_fridge', 'grasp_cola', 'pick', 'place'} for s in specs),
+                    'manipulation_physical': any(s.get('kind') in {'open_fridge', 'grasp_cola', 'close_fridge', 'close_fridge_test', 'pick', 'place'} for s in specs),
                     'scope': 'planned_physical_skills_not_motion_or_success_evidence'}
         return {'backend_physical': backend in PHYSICAL_BACKENDS,
                 'scope': 'step_applicability_pending'}
@@ -375,7 +375,7 @@ class DiagnosticRuns:
                     self._incomplete(run, 'peer_summary_identity_mismatch')
                     continue
                 skill = (attempt.get('request') or {}).get('skill')
-                source = ('nav' if skill == 'navigate' else 'vla' if skill in {'open_fridge', 'grasp_cola', 'pick', 'place'}
+                source = ('nav' if skill == 'navigate' else 'vla' if skill in {'open_fridge', 'grasp_cola', 'close_fridge', 'close_fridge_test', 'pick', 'place'}
                           else 'vla' if raw.get('operation') else 'nav')
                 explicit_source = small.get('peer')
                 if explicit_source != source:

@@ -102,6 +102,12 @@ class SimulatedManipulationClient:
                                          hands_clear_of_door=True, released=False, object_at_target=False)
                 elif raw['operation'] == 'grasp_cola':
                     raw['result']['clear_of_fridge'] = True
+                elif raw['operation'] == 'close_fridge':
+                    raw['result'].update(door_closed=True, door_open=False, released=False,
+                                         object_at_target=False)
+                    previous = [r for r in self._commands.values() if r['task_id'] == raw['task_id']
+                                and r['operation'] == 'grasp_cola' and r['state'] == 'succeeded']
+                    raw['result']['holding'] = previous[-1]['result']['holding'] if previous else None
             return deepcopy(raw)
 
     def control_status(self, task_id=None):

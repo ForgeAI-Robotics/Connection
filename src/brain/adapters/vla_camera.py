@@ -63,7 +63,7 @@ class VlaCameraClient:
                 raise ValueError('头部图片合同不匹配')
             binding = frame.get('task_binding') or {}
             if command_id and (not isinstance(binding, dict) or binding.get('task_id') != task_id
-                               or binding.get('command_id') != command_id or binding.get('operation') not in {'open_fridge','grasp_cola'}
+                               or binding.get('command_id') != command_id or binding.get('operation') not in {'open_fridge','grasp_cola','close_fridge','close_fridge_test'}
                                or not all(isinstance(frame.get(k), str) and frame[k] for k in
                                           ('service_instance_id', 'camera_receiver_instance_id', 'robot_serial',
                                            'frame_receipt_id', 'binding_proof'))

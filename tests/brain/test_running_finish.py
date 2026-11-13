@@ -1,6 +1,7 @@
 """One human confirmation per direct VLA action; no physical services."""
 from copy import deepcopy
 import os
+from pathlib import Path
 from unittest.mock import patch
 import unittest
 
@@ -68,13 +69,24 @@ class RunningFinishTests(unittest.TestCase):
     setUp = source_gate_fixture.SourceGateTests.setUp
     tearDown = source_gate_fixture.SourceGateTests.tearDown
 
-    def service(self, simulated=False, vla=None):
+    def service(self, simulated=False, vla=None, *, with_close=False):
         self.vla = vla or RunningVla()
         self.port = (DirectSimulatedNavigationAdapter(self.vla, self.control) if simulated
                      else SourceGateBodyAdapter(self.nav, self.vla, self.control))
         self.config.update(brain={'reception_backend':'real','capture_timeline':False,
                                  'reasoning':{'recovery_advice':False}}, reflection={'enabled':False})
         self.config['reception_real']['skill_file'] = str(BASELINE_PATH.with_name('reception_single_can_v2.yaml'))
+        if not with_close:
+            # Keep the original finish/recovery cases on a frozen historical v2
+            # workflow. test_close_fridge exercises the new v3 end-to-end flow.
+            import yaml
+            definition = yaml.safe_load(Path(self.config['reception_real']['skill_file']).read_text())
+            definition['real_workflow']['sop']['version'] = '2'
+            definition['real_workflow']['steps'] = [s for s in definition['real_workflow']['steps']
+                                                   if s['action'] != 'close_fridge']
+            path = self.root/'historical_reception_v2.yaml'
+            path.write_text(yaml.safe_dump(definition, allow_unicode=True))
+            self.config['reception_real']['skill_file'] = str(path)
         service = create_service(self.config, model=lambda _:self.fail('No model'), port_factory=lambda _:self.port)
         service.body_control = self.control
         env = {k:str(self.root/name) for k,name in [('FQ_EXECUTION_STATE','execution.json'),

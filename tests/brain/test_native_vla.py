@@ -23,7 +23,7 @@ def now():
 
 def capabilities():
     return dict(contract_version=CONTRACT_VERSION, real_action_enabled=True, operations={
-        key: {'configured': key in {'open_fridge', 'grasp_cola'}}
+        key: {'configured': key in {'open_fridge', 'grasp_cola', 'close_fridge'}}
         for key in ('open_fridge', 'grasp_cola', 'close_fridge', 'pick', 'place')})
 
 
@@ -45,6 +45,8 @@ def evidence(operation='open_fridge'):
     result = dict(source='operator_observation', reference='offline-observation-1', observed_at=now())
     if operation == 'open_fridge':
         result.update(door_open=True, door_stable_open=True, hands_clear_of_door=True)
+    elif operation == 'close_fridge':
+        result.update(door_closed=True, door_open=False, arms_returned=True, hands_clear_of_door=True)
     else:
         result.update(object_grasped=True, holding='cola_can_1', clear_of_fridge=True)
     return result
@@ -118,6 +120,8 @@ class FakeVla:
             autonomous_effect_verification=False)
         if task['operation'] == 'open_fridge':
             result.update(door_open=True, door_closed=False)
+        elif task['operation'] == 'close_fridge':
+            result.update(door_closed=True, door_open=False, holding=self.holding)
         else:
             result.update(object_grasped=True, holding=task['object_id'])
             self.holding = task['object_id']

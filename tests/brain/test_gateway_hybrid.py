@@ -45,7 +45,7 @@ class GatewayHybridTests(Fixture, unittest.TestCase):
         self.assertEqual(service.runtime.state,'succeeded',service.runtime.public_status())
         self.assertEqual(len(self.posts('grant')),1)
         self.assertEqual(len(self.posts('allow_execute')),1)
-        self.assertEqual(len(port.vla._commands),2)
+        self.assertEqual(len(port.vla._commands),3)
         self.assertTrue(all(r['simulated'] and r['result']['physical_execution'] is False
                             for r in port.vla._commands.values()))
         self.assertEqual({call[0] for call in self.wire.calls},{'nav','gateway'})

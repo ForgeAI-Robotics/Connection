@@ -39,6 +39,7 @@ READ_ONLY_KEYWORDS = (
 )
 
 MOTION_KEYWORDS = (
+    "关冰箱",
     "导航",
     "前往",
     "移动",

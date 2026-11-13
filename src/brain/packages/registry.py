@@ -29,7 +29,7 @@ def reception_catalog(config, *, mock=False):
                   version=skill.sop["version"])
     if skill.real_steps:
         hybrid.update(id=skill.real_sop['id'] + '.sim_manipulation', version=skill.real_sop['version'],
-                      description='导航真机＋操控模拟：与真机接待同一流程，开冰箱和抓可乐使用本地模拟回执。',
+                      description='导航真机＋操控模拟：与真机接待同一流程，开冰箱、抓可乐及关门使用本地模拟回执。',
                       constraints='严格沿用同版本真机接待的步骤和路线；操控及其核验由本地自动模拟，'
                                   '不调用真实 VLA、不需要真实效果确认凭据，也不代表真实物体效果。')
     ros_hybrid = dict(reception.ROS_SIM_MANIPULATION_SOP, id=skill.sop["id"] + ".ros_sim_manipulation",
@@ -47,6 +47,8 @@ def reception_catalog(config, *, mock=False):
     primary['triggers'] = list(primary.get('triggers', [])) + ['开始接待（导航真机＋操控真机）']
     variants = [variant, hybrid, ros_hybrid]
     if skill.real_sop:
+        from brain.packages.fridge_test import SOP as fridge_test_sop
+        variants.append(dict(fridge_test_sop))
         variants.append(dict(reception.SIM_NAVIGATION_SOP, id=skill.real_sop['id']+'.sim_navigation',
                              version=skill.real_sop['version']))
     return dict(SOPS, reception=primary), {"reception": tuple(variants)}, skill

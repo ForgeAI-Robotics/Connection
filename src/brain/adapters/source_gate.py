@@ -128,7 +128,7 @@ class SourceGateBodyAdapter(SourceGateNavigationAdapter):
                 self._current_holding(request)
             return self.authority.submit_navigation(self.dream, request)
         if request['skill'] not in NATIVE_OPERATIONS:
-            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '直连操控只接入开门和抓可乐')
+            raise ControlError('UNSUPPORTED_CONTROL_SKILL', '直连操控只接入已登记的开门、抓可乐和关门')
         return self.authority.submit_vla(self.vla, request)
 
     @staticmethod

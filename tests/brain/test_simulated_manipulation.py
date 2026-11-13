@@ -115,20 +115,20 @@ class MixedReceptionTests(unittest.TestCase):
         self.assertEqual(record["execution_target"], target_identity(self.config, BACKEND))
         self.assertEqual([b["leg_index"] for b in self.nav.submits], [1, 2, 3, 4, 5])
         self.assertNotIn("DREAM_INSPECTING_TABLE2", record["phase_order"])
-        self.assertEqual(len(self.mock._commands), 2)
+        self.assertEqual(len(self.mock._commands), 3)
         from contracts.steps import step_spec_dict
         self.assertEqual(record['phase_specs'], [step_spec_dict(s) for s in load_skill(self.config).phases(real=True)])
         self.assertEqual(record['selection']['workflow_variant'], 'real_sim_manipulation')
         self.assertEqual(record['holding'], 'cola_can_1')
-        self.assertEqual([r['operation'] for r in self.mock._commands.values()], ['open_fridge','grasp_cola'])
-        for step in ("VLA_OPEN_FRIDGE", "VLA_GRASP_COLA"):
+        self.assertEqual([r['operation'] for r in self.mock._commands.values()], ['open_fridge','grasp_cola','close_fridge'])
+        for step in ("VLA_OPEN_FRIDGE", "VLA_GRASP_COLA", "VLA_CLOSE_FRIDGE"):
             a = record["steps"][step]["attempts"][0]
             raw = a["progress"]["evidence"]["downstream"]
             self.assertEqual(a["verdict"], "PASS")
             self.assertTrue(raw["simulated"])
             self.assertFalse(raw["result"]["physical_execution"])
             self.assertEqual(raw["result"]["evidence_level"], "simulated_object")
-        self.assertEqual(sum(t["simulated"] for t in status["subtask_list"]), 4)
+        self.assertEqual(sum(t["simulated"] for t in status["subtask_list"]), 6)
         self.assertTrue(record["handoff_observation"]["simulated"])
         self.assertFalse(record["handoff_observation"]["physical_control_transfer"])
         self.assertIsNone(status['vla_confirmation'])
@@ -140,7 +140,7 @@ class MixedReceptionTests(unittest.TestCase):
         restored = HybridReceptionAdapter(self.nav, SimulatedManipulationClient(self.nav))
         second = self.service(restored)
         second.attach()
-        self.assertEqual(len(restored.vla._commands), 2)
+        self.assertEqual(len(restored.vla._commands), 3)
         self.assertEqual(len(self.nav.submits), 5)
 
     def test_navigation_failure_blocks_mock_until_manual_retry(self):
@@ -304,7 +304,7 @@ class MixedReceptionTests(unittest.TestCase):
         service = self.service()
         service.publish(TRIGGER, 'restart-native-mock')
         self.assertEqual(service.status()['state'], 'recovery_required')
-        self.assertEqual(len(self.mock._commands), 2)
+        self.assertEqual(len(self.mock._commands), 3)
         original = set(self.mock._commands)
         restored = HybridReceptionAdapter(self.nav, SimulatedManipulationClient(self.nav, delay_sec=0))
         second = self.service(restored)

@@ -1,10 +1,14 @@
 # 接口说明：操控 VLA
 
+天机操控的独立原子接口、旧完成事件读取与完整交接统一见[天机操控](接口说明_天机操控.md)。该后端复用 VLA HTTP 客户端及 Runner／Verifier，不改变本页 G1 六字段和专用动作目录，未接入 SOP；天机真实控制器及投放仍待其负责人接通和验收。
+
 跨端日志专项见大脑维护的[实施约定](多端联调_大脑日志与跨端诊断.md#alignment-table)与[VLA 交付映射](多端联调_大脑日志与跨端诊断.md#vla-delivery)。2026-11-02 VLA2 报告日志增强及 97 项定向回归通过；原有 API 已加载日志提交 1911f8f，后续启停由用户手动操作。应用边界见[主文档](多端联调_大脑日志与跨端诊断.md#deployment-20261102)，不改变 direct-v1 请求、效果确认或停止核验规则。
 
 > **2026-10-28 当前源码：** source_gate 模式新增 VLA direct-v1 接入，见下节；原 unified 模式与带日期的 relay／acquire 记录保留。三个接待按钮分别绑定真实／模拟执行端，不静默回退。大脑源码适配、隔离验证及大脑／网页重载完成，已有真实操控失败回执；后续 VLA／O6 修订按下文注明来源，完整动作验收尚未完成。
 
 ## direct-v1：直连操控与接收源选择
+
+2026-11-12 按用户要求，双模型常驻准备的三路相机最低帧率统一为20 FPS（`preparation.camera_min_fps`），生效私有配置、默认值与最低配置界限同步调整；持续15秒窗口、三路时间差≤50 ms、帧间隔≤500 ms和帧新鲜度条件保持。准备统计修订为 `three-camera-15s-20fps-v2`。该阈值用于相机准备，不改变策略动作频率或效果核验。复验见[启动与相机准备](多端联调_操控与抓取.md#capture-start-hash-gate-20261112)。
 
 2026-11-11按用户指令，抓取默认源权重统一为ckpt/checkpoint-30000-cola-101/checkpoint-30000，推理视图为该路径加-inference，使用本次同步的新推理脚本及原grasp-descent配置。正式worker从私有常驻描述符投影source_path／model_path，启动脚本保留这组绑定，不用独立入口默认覆盖；当前正式开门保持200data。大脑六字段请求及双腕／双臂成功判据不改。代码已写回、182项相关回归及单／双模型GPU合成预热通过，正式HTTP尚未启动加载；后续启动VLA应用新版，不能将合成预热当作真实相机／动作就绪。详见[cola-101交付与常驻接线](多端联调_操控与抓取.md#cola-101-resident-integration-20261111)。
 
@@ -12,7 +16,7 @@
 
 本地交付 `/home/fq/workspace/sonic_wbc/g1_brain_vla_bridge/大脑调用接口.md` 与 contracts/direct_vla_v1.json 的修订为 20261028-direct-v1，业务版本 fq/reception-lan/v1。大脑选择 VLA 来源并确认实际生效后，直接 POST `/v1/vla/tasks`；不调用 NAV/VLA prepare、网关 permits、native/O6 操作，不检查模型、相机、身体模式和双手就绪。具体执行条件由 VLA 内部检查并通过原任务回报。大脑规划目录表示已接入的动作种类，不代表远端已经在线或允许真机动作。
 
-请求只发送 contract_version、task_id、command_id、operation、object_id、target_area；operation 支持 open_fridge／grasp_cola。原 Runtime 请求和导航业务关联仍保留在本地账本，不携带 control、旧授权会话、worksite_evidence 或 navigation_proof。连续操控保持 vla 选通；切源只在下一条真实命令派发时进行，不因 finish 或查询自动执行下一步。网关字段及原请求查询规则见[接收源开关](接口说明_机器人统一网关.md#sonic-接收源开关source_gate)。
+请求只发送 contract_version、task_id、command_id、operation、object_id、target_area；operation 支持 open_fridge／grasp_cola；2026-11-11源码增加接待SOP内的close_fridge，见[生成关门](#close-fridge-generated)。原 Runtime 请求和导航业务关联仍保留在本地账本，不携带 control、旧授权会话、worksite_evidence 或 navigation_proof。连续操控保持 vla 选通；切源只在下一条真实命令派发时进行，不因 finish 或查询自动执行下一步。网关字段及原请求查询规则见[接收源开关](接口说明_机器人统一网关.md#sonic-接收源开关source_gate)。
 
 VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}` 路径族。任务调用使用 body_control.vla_token_env（空值沿用 token_env）；finish 使用原请求级 verifier Bearer，不写入任务账本。2026-10-29 新增 running-finish 扩展：在 running／waiting_result_confirmation 一次提交真实人工完成确认，VLA 内部暂停与收尾，大脑后台查询并核验后自动推进；旧未请求自动推进的 pause／finish 接口保留原语义。开门要求门打开且稳定、双手离门；抓取要求物体在手且 clear_of_fridge=true，不用手指闭合或程序退出冒充效果。大脑不发送 SONIC START／STOP 或 Planner 恢复命令；本轮不改 VLA 收尾策略，STOP 与实际姿态影响留待执行端对齐和真机验证。
 
@@ -109,13 +113,14 @@ NX 的 `sonic_managed_o6/last_feedback_fault.json`、`feedback_faults/<fault_id>
 
 ## 新动作接入（2026-10-22）
 
-Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路径，以及原命令的 `/pause`、`/finish`。本次按同级 `sonic_wbc/g1_brain_vla_bridge` 的代码与《大脑调用接口》《导航交接接口》核对。新能力用于 `body_real` 通用身体任务，以及用户明确指定的真机接待分支；真机“开始接待”先导航、开门、原地抓可乐并核验，再沿原中转路线运送到 1 号桌；暂不关门或放置，具体配置见[大脑接待流程](接口说明_大脑%20Brain.md#81-流程与请求身份)。
+Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路径，以及原命令的 `/pause`、`/finish`。本次按同级 `sonic_wbc/g1_brain_vla_bridge` 的代码与《大脑调用接口》《导航交接接口》核对。新能力用于 `body_real` 通用身体任务，以及用户明确指定的真机接待分支；真机“开始接待”先导航、开门、原地抓可乐并核验，随后精调站位、关门并核验，再沿原中转路线运送到1号桌；仍不放置，具体配置见[大脑接待流程](接口说明_大脑%20Brain.md#81-流程与请求身份)。
 
 | 能力 | 接入规则 |
 | --- | --- |
 | `open_fridge` | 登记作业路线与冰箱 ID 后可规划；完成要求门打开且稳定、双手脱离接触区 |
 | `grasp_cola` | 本任务同一目标的开门步骤必须核验 PASS；抓取要求目标在手中且已离开冰箱接触区 |
-| `close_fridge`、旧 `pick/place` | 当前 native 配置不支持；整份计划在首个导航派发前检查，不以改名替代 |
+| `close_fridge` | 接待v3在抓取核验后调用direct-v1生成轨迹执行器；独立中心、原Harness阈值及头图／双臂回位核验，见[当前关门接口](#close-fridge-generated) |
+| 旧 `pick/place` | 当前native配置不支持；整份计划在首个导航派发前检查，不以改名替代 |
 | 原后端 | 能力接口明确 404 时保留旧抓放兼容；网络错误、非法能力回包不当作旧后端 |
 
 `configured=true` 只表示执行器已配置。2026-10-22 的旧接线中，动作仍检查 `real_action_enabled`、`navigation_handoff_ready`、`recovery_required=false` 和 `policy_state_uncertain=false`；VLA 自身继续核查导航原命令、硬件与租约。新任务中的导航也检查 VLA 已停、无活动命令、导航通路就绪及无恢复要求，避免失败／取消后直接导航。仅导航接待变体不依赖 VLA 能力发现；真机许可关闭保持原门控行为。
@@ -123,15 +128,166 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 当前 source_gate 不采用上一段的 NAV lease、旧恢复／端口门禁或远端 readiness 前置。大脑使用已支持动作目录编排，VLA 内部检查具体执行条件；direct-v1 请求与收尾见文首。
 
 <a id="door-auto-verification"></a>
-### 开门前Harness四向位置纠偏（2026-11-11源码接入）
+<a id="开门前harness四向位置纠偏2026-11-11源码接入"></a>
+### 开门前Harness四向位置纠偏（2026-11-12：VLA统一保护）
 
-G1导航定位模式的Harness已接入本机recorded_stride_v4：保留原转向，增加前进、后退、左移、右移。库由原 `config/g1_tasks/fridge_harness.json` 的 `translation.enabled`、`manifest`、`manifest_sha256` 选择；加载时验证四个文件、50Hz／64维、首尾stand、原编码器／解码器和循环索引。v4保留源端实验标记，不将文件或离线测试通过冒称硬件精度验收。
+当前G1导航定位精调已按源端原样迁入并选择recorded_stride_v6，沿原Alignment／HarnessWorker的50Hz循环和唯一发布器执行，不新增大脑步骤、O6手指命令、运动线程或配置源。四向库仍由原fridge_harness.json的translation选择；直接复用迁入的源smpl_keyboard加载器，动作资产合同及原编码器／解码器绑定保持。v6的后退、左移相对v5更新，前进、右移相同；源实验／硬件未验收标记保留。2026-11-12本次只切换动作资产选择，播放代码与源加载器均未修改，见[v6迁移与验证](多端联调_操控与抓取.md#harness-stride-v6-migrated-20261112)。
 
-仍在原Alignment／HarnessWorker的50Hz主循环与唯一发布器执行；不发额外O6手指指令，不新增大脑步骤或导航调用。朝向先沿原路径校正，位置超出既有允许范围才在当前身体坐标系选择一个方向。每次运动参考最多0.8秒，按源库松键方式0.3秒blend到stand，并等待身体速度／角速度至少2秒连续回稳，随后用新定位验证实际效果；时长不对应固定厘米数，也不以播放结束认定到位。
+2026-11-12按用户明确要求，当前真机NAV工厂固定创建NavigationSource(control_only=True)，移除Harness独立的8°倾角／75°/s偏航、静止速度／回稳门限、150ms身体反馈／index与tick间隔、0.5m／65°局部范围、方向净空、2cm无进展、2／3／5次纠偏及内部准备／恢复／总时长拒绝。此内部参数表示当前执行职责，不增加用户配置源；历史scene／校准入口维持原行为。
 
-原中心、x∈[-20,+10]cm、|y|≤20cm、|yaw|≤5°放行范围保持。平移沿原3次前进预算限制，下一步前须至少2cm误差改善；范围超出局部0.5m、缺测、无进展、取消或保护继续拒绝／收尾。前后左右分别复用原始雷达与现有外参链检查对应方向通道，净空及源时间要求保持，前方缓存不能批准后退／侧移。最终仍须两份新鲜一致定位及原交接／采纳核验才能进入开门VLA。
+随后修正本机平移播放：删除motion_start后0.8秒自动收步及TranslationStep额外2秒等待。帧序列对齐源端WASD：先enter_start→loop_start，保持当前方向时重复loop_start→loop_end，释放后原样0.30秒／15帧float32 blend回stand；没有额外固定运动时长、最少循环数、裁剪或重新编码。原Alignment在平移期间复用同一executor读取NAV位置，仍需该方向就保持；位置进入原范围、应换方向或定位真正失效／过期时释放。重复轮询不等于定位失效：保留上一有效位置及其原始时间，不立即松键或刷新年龄；仍在原1秒预算内的新位置可因传输延迟早于按键起始时间。动作后到位确认继续要求动作后的新采样，不能混用。现场问题及修复见[平移定位时序](多端联调_操控与抓取.md#harness-translation-live-pose-20261112)。平移保持期间不因准备段的瞬时yaw误差反复松键，释放后仍按原标准调整最终朝向。释放后取新定位确认，不能把参考播放结束当作物理到位；不补发追赶帧。源端逐帧对照及验证范围见[v5接入](多端联调_操控与抓取.md#harness-stride-v5-aligned-20261112)。
 
-`translation.enabled=false`保留原转向＋有限前进路径。源码与选择配置已写回，运行中服务不会自动整体加载修改，需按原VLA入口重新拉起后复验。此前转向退出／回站回弹算法未在本次重写；各方向真实步幅、收尾和完整开门效果仍待实机验证。测试、备份和已有旧联合模式测试限制见[四向接入记录](多端联调_操控与抓取.md#fridge-four-direction-implemented-20261111)。
+2026-11-13按用户最新要求，当前开门／关门共用NAV Harness最终位置条件改为距各自目标中心≤0.10m，即hypot(x_m,y_m)≤0.10；朝向仍±5°。scene_policy.DEFAULTS.position_radius_m是当前圆形半径的唯一执行定义，平移释放、纠偏方向和到位／交接使用同一圆形判据，保留两份新定位。x=y=8cm虽各小于10cm，欧氏距离11.31cm仍不通过；6cm／8cm边界通过。位置误差以目标中心定义，纠偏方向转入当前身体轴；目标中心、v6原始播放、VLA／SONIC保护和期限保持。此前分别前后／左右±5cm的矩形标准已退出当前NAV路径；历史scene／校准入口不在本次变更范围。地图显示与离线验证见[10cm圆与地图](多端联调_操控与抓取.md#harness-radius-map-20261113)。
+
+2026-11-13按用户要求，当前control_only精调路径去掉外层Alignment的2秒固定settling、HeadingSweep转向前／后各2秒固定等待，以及MicroProbe开始前1秒额外stand；开门／关门共用路径同时适用。源录制从第0帧开始的准备／转动／退出、0.6秒进入与0.5秒返回混合、初次身体准备、到位两份新定位及原保护不变；历史control_only=False校准路径保留原等待。没有借此新增稳定性校验、剪源帧或改变±5cm／±5°。实现和实际离线范围见[等待清理](多端联调_操控与抓取.md#harness-wait-cleanup-20261113)；源码已写回，服务未重启，不能将省掉固定等待等同已验收实机收敛速度。
+
+translation.enabled=false保留原转向／前进能力边界，不增加缺失方向。源码已写回；新的任务worker会读取新版，正在运行HTTP中已导入的生命周期不会热更新，完整一致版本需按原VLA入口重载。本轮未重启服务或发动作。此前转向退出／回站回弹算法未在本次重写；去掉退出门限不代表该轨迹已修复，真实效果仍待验。测试及备份见[VLA统一保护接入](多端联调_操控与抓取.md#harness-vla-owned-20261112)；原迁入来源见[四向接入记录](多端联调_操控与抓取.md#fridge-four-direction-implemented-20261111)。
+
+<a id="harness-remaining-checks-20261112"></a>
+#### 现存附加检查与外层等待：完整清理前的核对
+
+2026-11-12按用户追问沿实际G1 `control_only=True` 调用路径核查：此前“精调局部保护已移除”只适用于Alignment／InitialPose／平移和转向的对应分支，不能泛化为整个关门播放器已没有独立门限。**2026-11-13按用户要求已删除本机CloseClip及其7项关门局部硬停止和100帧进入前缀**；下表保留移除前的失败依据。末两行的共用转向小段退出仍在，本次不改开门／共用精调。
+
+| 11月12日核对位置／条件 | 移除前行为／仍保留的转向行为 |
+| --- | --- |
+| CloseClip相对起点yaw变化>20° | 立即报错并中止关门 |
+| CloseClip调用body_feedback，roll或pitch绝对值>8° | 立即报excess tilt并中止关门 |
+| 同一公共校验，yaw角速度绝对值>75°/s | 立即报excess yaw angular rate并中止关门 |
+| 同一公共校验，身体反馈年龄不在[0,150ms] | 立即报stale measured state并中止关门 |
+| CloseClip连续tick间隔不在[0,100ms] | 立即报publisher tick gap并中止关门 |
+| CloseClip反馈index回退 | 立即报feedback regressed并中止关门 |
+| CloseClip反馈index超过150ms不推进 | 立即报feedback stopped advancing并中止关门 |
+| 当前control_only转向MicroProbe，实测朝要求方向的变化<−3° | reason=opposite_direction，退出当前小段、收步后重新观察；不直接判整条任务失败 |
+| 当前control_only转向小段运动时间≥20秒，第二段≥28秒 | reason=motion_timeout_target_not_reached，同样结束该小段，外层HeadingSweep仍可继续尝试 |
+
+移除前关门的8°／75°/s／150ms由CloseClip在初始化和tick时默认调用 `body_feedback(feedback,now)` 继承；该调用没有传control_only=True，因而重新启用了精调已绕过的MicroProbe.validate_feedback局部门限。现在GeneratedCloseWorker不再调用这套反馈校验作为关门局部拦截。转向的反向／单段时长分支本身没有control_only条件；“无次数上限”不等于单段永远不收步。两条转向小段退出条件与到位即收步、原录制退出、固定站立等待属于不同机制，不能将退出小段写成整条任务失败。
+
+此外仍有以下不同职责的检查，不统一称为重复：最终位置±5cm／yaw±5°及至少两份递增新定位属于到位标准；定位原1秒年龄、机器人／地图／目标／epoch与消息格式核对仍在；VLA自身的命令／代次、采纳、O6、模型租约、本体保护、取消和worker状态检查保持。VLA外层仍有NAV准备预检最多8秒、传感准备180秒、激活10秒、初始站姿等待20秒、精调等待370秒、恢复交接每次等待370秒、resume等待5秒等边界；不是Harness独立纠偏次数上限，也不能宣称整条流程只有一次370秒总预算。
+
+动作准备仍核对静态资产：四向TranslationBank的manifest摘要；生成关门manifest、Token文件及encoder／decoder摘要；格式／有限值、64维、幅度≤1.25、50Hz、生成片段100—3001帧等合同。之前移除的是训练采集启动preflight的固定源码哈希，不代表这些动作资产校验也已删除。当前control_only已清除外层2秒／HeadingSweep前后2秒／MicroProbe前1秒重复等待；仍保留初始1秒混合＋1秒等待、转向原录制进入／退出与混合、四向松键0.30秒。历史校准路径的固定等待不变；关门100帧进入混合已于11月13日删除。固定等待不证明物理停稳，也不等于新增成功条件。
+
+11月12日仅只读审计，7项CloseClip硬停止及3个转向小段边界场景用真实类和内存反馈复现，详见[原核查证据](多端联调_操控与抓取.md#harness-remaining-checks-audit-20261112)。11月13日根据用户明确要求实施关门局部清理，源码已改、服务未重启，实际范围见[清理与回归](多端联调_操控与抓取.md#close-fridge-direct-source-20261113)。
+
+<a id="harness-current-thresholds"></a>
+#### Harness 调整前阈值与失败出口（2026-11-12核对）
+
+本表保留移除Harness独立保护前的排障依据；当前NAV精调的保留／移除范围以上节为准，下表不再作为新版仍生效的门限。2026-11-12按用户要求，VLA采纳回执年龄上限由原 `min(250ms, peer预算)` 改为1秒，源年龄、传输与缓存消耗仍从1秒内扣除；Worker沿同一截止时间检查。SONIC返回的 `current_motor_adoption=true`、控制器／接收实例、session、sequence、epoch、流启用及保护标志仍须符合当前事实，未修改peer自身200ms的采纳状态判定或断流机制。该1秒只调整VLA证据传递上限。
+
+| 阶段／项目 | 当前值 | 未满足时的实际行为 |
+| --- | --- | --- |
+| 初始局部范围 | 每轴偏差绝对值≤0.5m、朝向差≤65° | 超出进入人工处理／失败；不继续局部迈步 |
+| 最终位姿 | 目标朝向轴x∈[−20,+10]cm、y∈[−20,+20]cm、yaw±5° | 在局部范围内继续选转向或平移；不会要求坐标归零 |
+| 采纳回执 | VLA年龄上限1秒；等待取得回执最多5秒 | Worker拒绝过期证据，当前仍直接封锁失败，没有自动刷新重试 |
+| 初始站姿 | blend1秒、实测到达后连续稳定1秒、总准备8秒；64维token最大差≤1e−4 | 20秒外层等待内仍受8秒内部期限约束；不达标失败 |
+| 稳定判据 | 所有关节速度绝对值≤0.15rad/s，基座角速度范数≤2°/s | 初始站姿／转向／平移内部有稳定等待；Alignment非probe路径先调用stationary硬检查，未稳会在等待逻辑前直接异常，仍为已知缺口 |
+| 转向后回稳 | 连续稳定2秒 | 未稳重计；HeadingSweep总期限180秒；外围稳定检查缺口见上一行 |
+| 转向次数 | 外层最多2次，每个HeadingSweep内最多5段 | 到预算且仍超差失败；单段运动通常20秒、第2段28秒，单段期限另加12秒 |
+| 平移单步 | 运动参考最多0.8秒、回站blend0.3秒、稳定2秒；单步总期限25秒 | 超时失败；实际位移由新定位复测 |
+| 平移偏航／进展 | 单步朝向漂移≤5°；最多3次；下一步前矩形外残差至少改善2cm | 漂移、次数或无进展会失败，不自动无限重复 |
+| 身体反馈 | 源年龄≤150ms；index超过150ms不推进拒绝 | 当前直接异常；这是另一条独立时效条件，未随采纳回执改为1秒 |
+| 身体姿态保护 | roll／pitch绝对值≤8°；偏航角速度绝对值≤75°/s | 单帧超限直接异常，无累计确认窗口；r1触发帧读数未保存，不能认定保护误报 |
+| 发布节拍 | 原发布器50Hz；Token适配和平移每tick间隔10–60ms，部分上层检查允许到100ms | 超间隔失败，不补发追赶帧 |
+| NAV观测 | 源年龄加请求耗时≤1秒；约200ms轮询；连续恢复等待8秒；HTTP超时配置0.8秒 | 可恢复缺测原地等待，超过8秒失败；地图／定位epoch、目标、机器人身份改变直接拒绝 |
+| 读定位时身体变化 | HTTP前后IMU朝向变化≤2°，且前后身体静止 | 未通过作为可重试定位不可用，进入上述8秒恢复等待 |
+| 到位确认 | 两份递增新定位；相邻≤1秒、位置变化≤6cm、角度变化≤3° | 继续取新定位；交接前当前IMU相对定位观测变化≤2° |
+| 方向净空 | 实际运动方向距离≥0.5m；源年龄≤0.5秒；约100ms轮询，HTTP超时0.4秒 | 暂时未知／受阻先等待；运动中结束当前脉冲并受控退出再观察，身份／方向绑定改变失败 |
+| 净空与身体一致 | 关联腰部关节变化和整体旋转均≤3°，点云至少1000个有效候选；远距离通道需至少30点 | 当前证据失效，重新观察；不将前方净空用于侧向／后退 |
+| 综合传感／RTC重置 | Harness最新综合相机／身体／O6观测≤1秒；每次reset及新观测最多8秒 | 过期／超时失败；相机自身仍有500ms新鲜度、20FPS／15秒准备窗口 |
+| 全程预算 | Alignment360秒，生命周期外层等待370秒 | 超时失败；没有无限自动纠偏 |
+
+手部raw目标在准备及精调期间要求不变；O6故障、控制源／实例／epoch改变、取消与原本体保护继续按执行端实际状态处理。此表属于用户审阅阶段的旧检查；随后移除Harness独立保护，新策略以上节为准，原VLA核验保持。相关失败、离线及应用范围见[本轮排障](多端联调_操控与抓取.md#harness-initial-pose-adoption-20261112)。
+
+<a id="harness-initialization-error-triggers"></a>
+#### harness_initial_pose 与 fridge_alignment 的调整前触发条件
+
+2026-11-12按移除Harness独立保护前的G1导航定位＋四向Harness执行路径核对，供历史失败排查；新版范围以上节为准。它们是DirectLifecycle `_wait_boundary`的阶段标签，不是两个独立根因码。前者发送prepare_pose后等待同generation的body_ready（外层20秒），后者发送align后等待同generation的alignment_ready（外层370秒）。等待中的检查或worker异常可被包装为 `VLA_INITIALIZATION_FAILED`；纯外层期限耗尽则为 `VLA_INITIALIZATION_TIMEOUT`。显式TASK_CANCELLED沿原取消码返回，不应计作这两个初始化失败。prepare_pose／align之前的启动、相机准备、模型准入和导航preflight失败另有阶段，不混进本表。
+
+**两阶段共有的直接失败条件：**
+
+| 检查位置 | 触发条件 |
+| --- | --- |
+| 模型租约 | 当前binding不等于原租约、租约已fence、compute缺失或进程不存活 |
+| 原任务进程归属 | 原tmux会话不存在／查询失败，或其owner与当前任务session_token不一致 |
+| Worker状态 | worker.json身份或token不符；状态单调时间在未来或超过1秒未更新；worker已fenced／停止 |
+| SONIC／O6实例 | 当前controller_instance_id或O6 receiver_instance_id与任务绑定不一致 |
+| 源控制合同 | source_gate或stream版本不符；receiver／revision缺失或变化；source_gate_peer与controller身份不符；source_gate_error非空 |
+| 源控制状态 | effective_source不是vla、pending_requests非0、enabled不为true、safety_blocked不为false、remote_hold不为false、stream_epoch改变 |
+| O6执行 | status缺失、error非空或receiver_output_fenced不为false；保留匹配原命令／实例的反馈首因，不用后续通用错误覆盖它 |
+| Worker命令 | token不符、generation不是整数／倒退、同generation内容冲突、未知action、prepare_pose重复、align时不是body_ready或已经resume |
+| 综合传感 | 相机／身体／O6综合观测缺失或原观察年龄不在[0,1]秒；异步observe／reset任务抛异常；准备或精调期间手部raw目标变化 |
+| Worker保护与输出 | thermal_blocked触发SAFETY_OVERRIDE；未配置policy_work；匹配的alignment_cancel文件；当前publisher会话／序号缺失或非法；发包／状态持久化异常 |
+| 文件／通信异常 | 状态／命令文件不是同UID私有普通文件、JSON损坏、文件读写／fsync失败；原SSH／查询／进程调用异常。它们也能沿异常出口结束等待，不是数值阈值 |
+
+**prepare_pose和align都使用的采纳证据检查：任一项不满足，统一抛 `motor-stage preparation adoption confirmation required`。**
+
+1. contract_version必须为g1/stream-adoption/v1；receiver_instance_id和source_revision必须等于bootstrap绑定。
+2. enabled、current_motor_adoption必须明确true；safety_blocked、remote_hold必须明确false。
+3. last_motor_published必须是本任务input_session_id，source=vla、session_metadata_valid=true、protocol=4；帧source_revision／stream_epoch必须等于证据同名值。
+4. valid_until_monotonic_s必须是有限数值，Worker当前单调时间不得晚于它。当前VLA总年龄预算为1秒，已消耗的源年龄／传输／缓存时间仍扣除。
+5. 帧input_sequence与Worker activation／preparation首末序号均须为整数，满足activation_sequence < preparation_first_sequence ≤ motor帧序号 ≤ preparation_last_sequence。
+
+生命周期在取得证据时另外核对last_received／last_decoded／last_token_adopted／last_motor_published四级身份、epoch、协议及NX时序字段；缺失或不匹配不会凭mode、PUB发送成功或旧回执通过。取得证据最多等5秒，未取得为独立SONIC_STREAM_ADOPTION_TIMEOUT。Worker只要在上面任一项失败，当前实现立即封锁并退出，不自行刷新再试。
+
+**harness_initial_pose额外条件：**
+
+| 触发条件 | 原检查／含义 |
+| --- | --- |
+| 输入token非法 | start／target／反馈token必须64维、全有限、绝对值≤1.25 |
+| 初始参考未采纳 | 反馈token与保留start的最大差>1e−4 |
+| 初始身体未稳 | 创建InitialPose时任一关节速度>0.15rad/s，或基座角速度范数>2°/s，直接报Body is not stationary |
+| 身体反馈非法／过期 | 缺测；年龄不在[0,150]ms；body_q／body_dq不是29维有限数；gyro不是3维有限数；IMU四元数不是4维有限数或模长偏离1超过0.02 |
+| 姿态保护 | 任一roll／pitch绝对值>8°，或gyro Z绝对值>75°/s，单帧即拒绝 |
+| 发布／反馈连续性 | 准备tick倒退或间隔>100ms；index非法／倒退；index连续>150ms不推进 |
+| 未完成准备 | 1秒blend后，反馈token与target差≤1e−4且连续稳定1秒；8秒内未满足报initial pose feedback/settling timed out |
+| 已就绪后又变化 | InitialPose.ready后，反馈token超1e−4或身体不再满足静止判据，报initial pose changed before alignment；align入口也再次调用此检查 |
+| 重置未完成 | RTC重置及其后新综合观测超过8秒未完成，或后台重置／观察函数抛异常 |
+| 外层等待 | 同generation的body_ready在20秒内未出现，报初始化TIMEOUT；不是FAILED |
+
+此阶段后的原生safe-token／反馈token差>1e−4是独立HARNESS_START_POSE_MISMATCH（harness_initial_pose_confirmation），不能混称本阶段超时。
+
+**fridge_alignment额外条件：**
+
+| 触发条件 | 原检查／含义 |
+| --- | --- |
+| align入口未满足 | 不是body_ready、已resume、采纳证据不合格；InitialPose完成后又变动；Align.start时不静止、重复start／已cancel；保留token或raw双手目标形状／数值不合法 |
+| 身体反馈／姿态 | 继续执行上述150ms、29维、四元数、8°／75°/s检查；Alignment的index非法／倒退或150ms不推进也失败 |
+| 静止硬检查 | 非probe路径进入settling／读新定位前要求静止，任一关节速度>0.15rad/s或角速度范数>2°/s立即失败；这会早于原等待逻辑，仍为已知缺口 |
+| 定位合同／身份改变 | schema、机器人、target／command、只读／motion_authorized声明不符；预期map／frame／epoch不符或已绑定值变化；目标pose改变；owner消费端发现绑定不全／变化、非法字段或sequence倒退 |
+| 定位暂不可用 | NAV未ready／未批准、failed_gates非空、数据字段／时效不足、请求失败、source不递增、读前后身体未稳或朝向变化>2°等可重试情况会等；连续8秒恢复不成失败。不可重试回包立即失败 |
+| 初始局部区域外 | 四向路径任一轴绝对偏差>0.5m或yaw绝对误差>65°，直接要求人工；没有在该区域外一直迈步的路径 |
+| 转向构造／执行 | target非有限数、容差不在[1,10]°、内部目标相对当前朝向>70°；tick倒退／>100ms，底层Token节拍不在10–60ms；状态index倒退；累计转角超min(80°,剩余目标误差+10°)；单段超过运动期限+12秒；HeadingSweep总长>180秒；5段后仍超差，或外层第3次转向 |
+| 平移构造／执行 | 当前stand与库stand不一致（allclose atol=1e−6）；反馈检查失败；tick不在10–60ms、index倒退／150ms不推进；单步朝向漂移>5°、时长>25秒；第4次平移或下一步前矩形外误差改善<2cm |
+| 动作未完成 | probe结束但target_reached=false且不是净空控制的受控退出；转向反方向超过3°会先触发退出，未达到目标仍可能在此失败 |
+| 净空不可恢复 | 未启用实时方向净空却要求平移；方向／机器人／map／epoch／frame／外参绑定冲突、字段非法、sequence倒退、reader异常或回包明确不可重试；运动中受控退出后仍以原fatal原因失败 |
+| 净空暂不可用 | 距离<0.5m、未知、年龄>0.5秒、缺新点云、相对采样身体旋转／腰角变化>3°等会等待或结束当前脉冲后再观察；继续受定位恢复8秒及总预算约束，不是全部即时失败 |
+| 到位／交接未成立 | 需要位姿在x[−20,+10]cm、y±20cm、yaw±5°，两份递增新定位相邻≤1秒／变化≤6cm和3°，当前IMU相对观测变化≤2°；不满足通常继续观察或恢复，持续不满足最终预算失败，不是第一次超±5°就失败 |
+| 总预算／其他异常 | Alignment>360秒直接失败；外层370秒未得到同generation的alignment_ready为TIMEOUT；动作库／尾段缺失、运行时数值／文件／发布异常也会进入worker封锁出口 |
+
+当前导航定位路径不运行历史scene分支的视觉重定位／跨boot静态窗口、7次scene观测预算；未把这些旁路条件列为本轮触发项。电机90°C同步核验在DirectLifecycle.phase=running时才执行，也不是这两个初始化阶段的当前触发条件。原本体保护仍可通过thermal_blocked或流状态触发公共失败。
+
+排障优先读原worker.error及worker_phase，再读顶层execution_boundary.cause：worker先异常→发STOP→SONIC enabled／remote_hold／epoch改变时，后续SONIC_STREAM_CONTROL_LOST可能成为页面cause，不能倒置为最早原因。该错误表达缺口尚未修改；原始首因仍在worker文件及日志。触发条件列表是代码核查，不代表每个条件都在真机触发过。
+
+<a id="close-fridge-generated"></a>
+### 抓取后精调站位与源录制回放关冰箱（2026-11-13）
+
+当前真机接待SOP v3在抓取及原O6＋VLM核验之后，用close_fridge完成关门站位精调、源端录制回放，再沿原O6＋VLM／finish核验推进运送。六字段请求和原command_id不变；失败、取消或UNKNOWN不自动重做或运送。旧v1/v2任务保存原快照；独立通用Planner和历史unified分支未接入此回放。
+
+本机VLA原config/g1_tasks/fridge_harness.json的close_fridge.alignment_center_pose选择关门中心，close_fridge.replay.dataset／episode选择data/g1_2_close_fridge_o6_dual_threecam_v1的episode 0；不再选择生成manifest。关门前沿用同一Harness，距中心≤10cm、yaw±5°、v6和两份新定位，详见[共用精调](#开门前harness四向位置纠偏2026-11-12vla统一保护)。
+
+RecordedCloseWorker复用原fridge启动器、相机／reset准备、任务生命周期和唯一50Hz发布器，直接调用迁入源g1_close_fridge_replay的原load_episode／Replay函数。663帧原action.motion_token按原timestamp保持输出，总时长22.0666676秒；保留源3秒smoothstep进入录制首帧和结束后保持末帧。按时间取录制样本，不重新求解SMPL或编码、不按每tick一行改变原30Hz时间轴，不输出学习模型预测。发布包只含身体Token，录制手指目标不发送，抓取后的当前O6目标保持。
+
+源回放DONE后将原ArmReturnGate回位事件供现有头图VLM和finish消费；原gate在播放期间继续采样，不新增关门判断器或动作包络。recorded_replay.phase／play_time_s／clip_complete只说明回放进度，physical_effect_verified保持false，不能代替真实关门成功。无额外20°、倾角、局部tick或反馈中止阈值；原VLA／SONIC、身份、取消、O6及结果核验保持。源函数对数据格式的原检查保留，不新增运行时哈希门槛。
+
+自动证据合同仍为fq/vla-close-fridge-head-arm-evidence/v1：ego_view给原VLM宽松判断门基本关闭，看不清保持UNKNOWN；复用原ArmReturnGate离开／双臂回位／0.8秒保持。帧收据、command／epoch、置信度、时效与原停止收尾不变。人工finish显式确认door_closed、arms_returned、hands_clear_of_door；成功后沿原持物登记运送，不新增抓取事实。
+
+正式close_fridge继续要求本任务抓取及持物登记。旧生成关门执行器和本机关门生成入口已移除，原生成资产只保留为失败诊断证据。源端独立回放在迁移前已存在；此前“源端仅有生成框架”的来源说明不完整，已在[来源与替换验证](多端联调_操控与抓取.md#close-fridge-recorded-source-20261113)纠正。源码及离线通过不代表运行实例已加载或关门转身根因已实机消除；本次未重启服务、未触发机器人动作。
+
+<a id="close-fridge-test"></a>
+### 单独测试关冰箱（2026-11-12）
+
+任务网页新增“单独测试关冰箱”按钮，按登记fridge.close_test v1只执行一个close_fridge_test操控命令和其核验，不执行接待、导航、开门、抓取或运送。该测试身份直接复用close_fridge的同一DirectLifecycle／Harness／RecordedCloseWorker、原关门中心和原对齐阈值、原录制Token及单头图／ArmReturnGate核验；精调完成后直接关门，没有额外精调确认阶段。
+
+请求仍是原六字段，operation=close_fridge_test，object_id／target_area继承当前Skill的关门步骤；没有导航命令，不构造navigation_proof。测试前网页按原现场确认字段提交worksite_confirmed=true，只接受source_gate真机环境和已登记的独立测试入口。该显式测试不要求先抓取，不写抓取／持物成功，不修改正式close_fridge的同任务抓取前置。相机／O6／原生采纳、定位与净空、停止及反馈保护保持；取消和网络不确定沿原command_id查询，不重复发送动作。测试成功不等于接待完成。应用和离线范围见[按钮接入验证](多端联调_操控与抓取.md#close-fridge-button-20261112)。
 
 ### 开门自动视觉确认与准备状态（2026-11-05）
 

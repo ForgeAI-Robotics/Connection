@@ -175,8 +175,8 @@ class BrainApplication:
             result = self.owner.wait(self._door_future,
                 timeout_sec=context['options']['vlm_timeout_sec'] + 2.)
         except TimeoutError:
-            from brain.adapters.door_verification import SCHEMA, GRASP_SCHEMA
-            result = dict(schema=GRASP_SCHEMA if context.get('operation') == 'grasp_cola' else SCHEMA, status='unknown', reason='observation_deadline_exceeded',
+            from brain.adapters.door_verification import SCHEMA, GRASP_SCHEMA, CLOSE_SCHEMA
+            result = dict(schema=GRASP_SCHEMA if context.get('operation') == 'grasp_cola' else CLOSE_SCHEMA if context.get('operation') in {'close_fridge','close_fridge_test'} else SCHEMA, status='unknown', reason='observation_deadline_exceeded',
                           vlm_calls=1)
         if result is None:
             return

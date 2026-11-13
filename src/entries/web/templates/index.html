@@ -77,6 +77,7 @@
                 <button id="task-start" disabled class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="startReception('开始接待（导航真机＋操控真机）')">🤝 开始接待（导航真机＋操控真机）</button>
                 <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="与左侧同一接待流程：真实导航，开冰箱和抓可乐使用本地模拟，不执行真实操控" onclick="startReception('开始接待（导航真机＋操控模拟）')">🧭 开始接待（导航真机＋操控模拟）</button>
                 <button id="task-start-vla" disabled class="btn btn-sm" style="background:#0f766e;color:#fff" title="导航只模拟；确认现场作业姿态后，开冰箱和抓可乐真实执行" onclick="startReception('开始接待（导航模拟＋操控真机）')">🦾 开始接待（导航模拟＋操控真机）</button>
+                <button id="task-fridge-test" disabled class="btn btn-sm" style="background:#7c3aed;color:#fff" onclick="startReception('单独测试关冰箱')">单独测试关冰箱</button>
                 <button id="task-skip" disabled class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
                 <button id="task-pause" disabled class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
                 <button id="task-continue" disabled class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
@@ -242,6 +243,8 @@
                 observed_at:new Date().toISOString()};
             if (vla.operation === 'open_fridge') Object.assign(evidence,
                 {door_open:true, door_stable_open:true, hands_clear_of_door:true});
+            else if (['close_fridge','close_fridge_test'].includes(vla.operation)) Object.assign(evidence,
+                {door_closed:true, door_open:false, arms_returned:true, hands_clear_of_door:true});
             else Object.assign(evidence, {object_grasped:true, holding:vla.object_id, clear_of_fridge:true});
             const body = {task_id:current.task_id, command_id:vla.command_id, evidence, auto_advance:true};
             vlaFinishIntents.set(key, body);
@@ -271,6 +274,7 @@
                 start: ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 'start-vla': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
+                'fridge-test': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 skip: ready && active && !!displayedTask?.can_skip,
                 pause: ready && active && (['running', 'verifying'].includes(state)
                     || (state === 'waiting_human' && !!displayedTask?.vla_confirmation)),
@@ -279,9 +283,11 @@
             };
             for (const [name, allowed] of Object.entries(enabled)) {
                 const button = document.getElementById('task-' + name);
+                if (!button) continue;
                 button.disabled = !allowed;
                 const descriptions = {start: '同一接待流程；导航与操控均为真机', 'start-nav': '同一接待流程；导航真实，开门和抓可乐为模拟',
                     'start-vla': '同一接待流程；导航仅模拟，开门和抓可乐真实执行，需现场作业确认',
+                    'fridge-test': '直接复用精调、关门和核验；不执行导航、抓取或运送',
                     pause: '暂停整轮流程，并请求停止当前动作', continue: '继续当前环节；未完成则重新下发一次指令',
                     skip: '放弃当前环节并进入下一步，不记为成功', cancel: displayedTask?.control_recovery?.enabled
                         ? '取消本轮任务并请求停止，取消后可重新发布'
@@ -341,6 +347,10 @@
                 }
                 document.getElementById('task-command-feedback').textContent = (preflight.warnings || []).join('\n');
                 const payload = {task: task};
+                if (task === '单独测试关冰箱') {
+                    if (!window.confirm('将直接执行现有的精调、关门和核验流程。\n请确认定位已批准、机器人已站稳在冰箱点附近、冰箱门已打开、手部状态适合推门，现场已准备好。')) return;
+                    payload.worksite_confirmed = true;
+                }
                 if (['开始接待（导航模拟＋操控真机）', '开始接待(导航模拟+操控真机)'].includes(task)) {
                     const preparationNote = displayedTask?.control_recovery?.mode === 'source_gate'
                         ? '开门和抓可乐将真实执行，操控端会检查实际执行条件。'
