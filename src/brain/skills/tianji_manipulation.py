@@ -9,9 +9,12 @@ from contracts.tasks import CONTRACT_VERSION, SkillContract
 from contracts.tianji_manipulation import validate_request
 
 
-def manipulation_request(task_id, command_id, *, operation, object_id, target_area, arm):
-    return validate_request(dict(contract_version=CONTRACT_VERSION, task_id=task_id,
-        command_id=command_id, operation=operation, object_id=object_id, target_area=target_area, arm=arm))
+def manipulation_request(task_id, command_id, *, operation, object_id, target_area, arm, prompt=None):
+    body = dict(contract_version=CONTRACT_VERSION, task_id=task_id,
+        command_id=command_id, operation=operation, object_id=object_id, target_area=target_area, arm=arm)
+    if prompt is not None:
+        body['prompt'] = prompt
+    return validate_request(body)
 
 
 class TianjiManipulationSkill:

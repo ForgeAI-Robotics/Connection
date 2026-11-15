@@ -187,8 +187,19 @@ class SourceGateControl:
                 raise ControlError('SOURCE_GATE_UNKNOWN', '选源结果未确认；保留原 request_id，仅查询不重发')
             time.sleep(self.poll)
 
-    def _select(self, source, key):
-        current = self.client.current()
+    def _select(self, source, key, *, expected_receiver_instance_id=None):
+        def current_receiver():
+            value = self.client.current()
+            if (expected_receiver_instance_id is not None
+                    and value['receiver_instance_id'] != expected_receiver_instance_id):
+                _diagnose('cleanup_receiver_changed', state='unknown', level='WARNING',
+                    expected_receiver_instance_id=expected_receiver_instance_id,
+                    receiver_instance_id=value['receiver_instance_id'])
+                raise ControlError('SOURCE_GATE_RECEIVER_CHANGED',
+                                   '原任务接收实例已变化，取消收尾不作用于新实例')
+            return value
+
+        current = current_receiver()
         # A delayed old selection must not overtake a newer close/select operation.
         for previous_key, op in self._read()['operations'].items():
             if op.get('resolved') or op.get('retired_receiver'):
@@ -203,7 +214,7 @@ class SourceGateControl:
                               receiver_instance_id=current['receiver_instance_id'], state='unknown')
                 continue  # Preserve the unknown old receipt; never replay into the new receiver.
             self._observe_operation(previous_key)
-        current = self.client.current()
+        current = current_receiver()
         if current['pending_requests']:
             raise ControlError('SOURCE_GATE_PENDING', 'SONIC 仍有未完成选源请求')
         self._update(lambda g: g.update(observation=deepcopy(current)))
@@ -234,7 +245,7 @@ class SourceGateControl:
                       state='unknown', level='ERROR')
             first = None
         receipt = self._observe_operation(key, first=first)
-        current = self.client.current()
+        current = current_receiver()
         if (current['receiver_instance_id'] != receipt['receiver_instance_id']
                 or current['effective_source'] != source or current['revision'] != receipt['revision']
                 or current['pending_requests']):
@@ -345,11 +356,15 @@ class SourceGateControl:
                                 request_timeout_sec=float(real.get('request_timeout_sec', 10)))
             dream.http.auth_token_env = self.settings.get('nav_token_env') or self.settings.get('token_env', 'BRAIN_CONTROL_TOKEN')
             errors, stopped = [], True
+            receiver_ids = []
             source_stops, seen_sources = {}, set()
             # Source-specific cancel remains necessary; closing the gate is not a stop receipt.
             for row in self._read()['commands'].values():
                 if row['request']['body']['task_id'] != task_id:
                     continue
+                if row.get('submitted'):
+                    selection = row.get('selection')
+                    receiver_ids.append(selection.get('receiver_instance_id') if isinstance(selection, dict) else None)
                 direct = row['request']['skill'] in NATIVE_OPERATIONS
                 source = 'vla' if direct else 'navigation'
                 seen_sources.add(source)
@@ -374,7 +389,23 @@ class SourceGateControl:
                     source_stops[source] = False
             closed = False
             try:
-                self._select('none', 'cancel:' + task_id)
+                # Also cover a selected source whose business POST was prevented
+                # by cancellation. Never derive an old cleanup's target from a
+                # current GET or from a potentially misbound historical close.
+                command_ids = {attempt['command_id'] for step in record.get('steps', {}).values()
+                               for attempt in step.get('attempts', []) if attempt.get('command_id')}
+                if record.get('open_command_id'):
+                    command_ids.add(record['open_command_id'])
+                selection_keys = {prefix + self._key({'body': {'task_id': task_id, 'command_id': command}})
+                                  for command in command_ids for prefix in ('nav:', 'vla:')}
+                receiver_ids.extend(op['request'].get('receiver_instance_id')
+                    for key, op in self._read()['operations'].items() if key in selection_keys
+                    and op['request'].get('source') in {'navigation', 'vla'})
+                if (not receiver_ids or any(not isinstance(v, str) or not v for v in receiver_ids)
+                        or len(set(receiver_ids)) != 1):
+                    raise ControlError('SOURCE_GATE_RECEIVER_UNKNOWN',
+                                       '原任务接收实例缺失或不唯一，取消收尾不关源')
+                self._select('none', 'cancel:' + task_id, expected_receiver_instance_id=receiver_ids[0])
                 closed = True
             except (HttpContractError, ControlError) as exc:
                 errors.append(str(exc))

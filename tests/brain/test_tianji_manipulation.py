@@ -61,6 +61,46 @@ class TianjiManipulationTests(unittest.TestCase):
                 self.skill.submit(invalid)
         self.assertEqual(self.fixture['posts'], [])
 
+    def test_detailed_prompt_passes_unchanged_through_http_and_result(self):
+        prompt = 'Use the left arm to pick up the brown cup on the left. Keep the right arm still.'
+        body = manipulation_request('mission-1', 'prompt-command', operation='grasp_trash',
+            object_id='fixture_success', target_area='test_table', arm='left', prompt=prompt)
+        result = self.execute(body)
+        self.assertEqual(result['verdict'], 'PASS')
+        self.assertEqual(self.fixture['posts'][0]['prompt'], prompt)
+        row = self.fixture['rows']['prompt-command']
+        self.assertEqual(row['result']['evidence']['prompt'], prompt)
+        row['prompt'] = 'other prompt'
+        self.assertEqual(self.skill.query(body)['verdict'], 'UNKNOWN')
+        row['prompt'] = prompt
+        row['result']['evidence']['prompt'] = 'other prompt'
+        self.assertEqual(self.skill.query(body)['verdict'], 'UNKNOWN')
+
+    def test_invalid_or_opposite_arm_prompt_is_rejected_before_http(self):
+        for prompt in ('', '  ', None, True, 123, 'x'*4097,
+                       'Use the right arm to pick up the cup.', '请用右手抓取杯子'):
+            with self.subTest(prompt=prompt), self.assertRaises(ValueError):
+                self.skill.submit(dict(self.body(), prompt=prompt))
+        self.assertEqual(self.fixture['posts'], [])
+
+    def test_grasp_completes_without_withdrawal_or_carry_pose_claim(self):
+        body, row = self.result_row()
+        for value in (None, False):
+            row['result'].update(arms_clear=value, carrying_posture_confirmed=value)
+            self.assertEqual(self.skill.query(body)['verdict'], 'PASS')
+        row['result'].pop('arms_clear')
+        row['result'].pop('carrying_posture_confirmed')
+        self.assertEqual(self.skill.query(body)['verdict'], 'PASS')
+        row['result']['publisher_stopped'] = False
+        self.assertEqual(self.skill.query(body)['verdict'], 'UNKNOWN')
+
+    def test_dispose_still_requires_arm_clear(self):
+        body = self.body(operation='dispose_trash')
+        self.assertEqual(self.execute(body)['verdict'], 'PASS')
+        row = self.fixture['rows']['command-1']
+        row['result']['arms_clear'] = False
+        self.assertEqual(self.skill.query(body)['verdict'], 'UNKNOWN')
+
     def test_contract_snapshots_and_finite_budgets(self):
         body = self.body()
         contract = self.skill.contract(body)

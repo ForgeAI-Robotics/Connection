@@ -102,7 +102,8 @@ class TianjiManipulationAdapter:
         result = raw.get('result') if isinstance(raw.get('result'), dict) else {}
         state = str(raw.get('state') or '').lower()
         terminal = state if state in {'succeeded', 'failed', 'cancelled'} else ''
-        identity = all(raw.get(k) == body[k] for k in IDENTITY_FIELDS)
+        identity = (all(raw.get(k) == body[k] for k in IDENTITY_FIELDS)
+                    and ('prompt' not in body or raw.get('prompt') == body['prompt']))
         simulated = raw.get('simulated') is True or result.get('simulated') is True
         nonphysical = raw.get('physical_execution') is False or result.get('physical_execution') is False
         scope_ok = (raw.get('simulated') is True and raw.get('physical_execution') is False
@@ -116,7 +117,7 @@ class TianjiManipulationAdapter:
                       ('policy_stopped', 'publisher_stopped', 'action_port_released'))
         proof_ok = validate_effect(raw, body)
         contradicts = result.get('success') is False
-        effect_fields = ('object_grasped', 'holding_at_event', 'carrying_posture_confirmed') \
+        effect_fields = ('object_grasped', 'holding_at_event') \
             if body['operation'] == 'grasp_trash' else ('released', 'bin_verified', 'object_at_target')
         contradicts = contradicts or any(result.get(k) is False for k in effect_fields)
         supports = terminal == 'succeeded' and proof_ok and stopped

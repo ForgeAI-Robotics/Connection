@@ -229,6 +229,150 @@ class SourceGateTests(unittest.TestCase):
         self.assertEqual(len(self.nav.cancels), 1)
         self.assertEqual([b['source'] for b in self.gate.puts], ['none'])
 
+    def _cancel_current(self):
+        record = self.store.load_state()
+        record.update(state='cancelled', dispatch_closed=True)
+        self.store.save_state(record)
+        with patch('brain.kernel.source_gate.DreamClient', return_value=self.nav):
+            self.control.cancel_task('test-task')
+            self.control._futures['test-task'].result(2)
+        return self.control._read()['tasks']['test-task']
+
+    def test_old_task_cancel_never_closes_restarted_receiver_or_fakes_stop(self):
+        request = nav_request(); self.schedule(request); self.port.submit('nav-1', request)
+        self.nav.commands['nav-1'].update(state='cancelled')
+        self.nav.commands['nav-1']['result']['navigation_stopped'] = False
+        original = deepcopy(self.control._read()['commands'][self.control._key(request)]['selection'])
+        self.gate.instance, self.gate.source, self.gate.revision = 'sonic-2', 'navigation', 0
+        task = self._cancel_current()
+        self.assertEqual(self.gate.puts, [])
+        self.assertEqual(self.gate.source, 'navigation')
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertFalse(task['navigation_stopped'])
+        self.assertIn('接收实例已变化', task['error'])
+        self.assertNotIn('cancel:test-task', self.control._read()['operations'])
+        self.assertEqual(self.control._read()['commands'][self.control._key(request)]['selection'], original)
+        for source in ('vla', 'none'):
+            self.gate.source = source
+            task = self._cancel_current()
+            self.assertFalse(task['gate_closed'])
+            self.assertEqual(self.gate.source, source)
+            self.assertEqual(self.gate.puts, [])
+        self.gate.source = 'navigation'
+        newer = nav_request('nav-2')
+        newer['task_id'] = newer['body']['task_id'] = 'new-task'
+        self.schedule(newer)
+        self.assertTrue(self.port.submit('nav-2', newer)['accepted'])
+        self.assertFalse(self.control._read()['tasks']['test-task']['completed'])
+
+    def test_receiver_change_between_close_reads_cannot_target_new_receiver(self):
+        request = nav_request(); self.schedule(request); self.port.submit('nav-1', request)
+        original, calls = self.gate.current, []
+        def changed():
+            calls.append(True)
+            if len(calls) == 2:
+                self.gate.instance, self.gate.revision = 'sonic-2', 0
+            return original()
+        self.gate.current = changed
+        task = self._cancel_current()
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertEqual(self.gate.puts, [])
+        self.assertEqual(self.gate.source, 'navigation')
+
+    def test_receiver_change_after_old_close_receipt_remains_unconfirmed_and_not_replayed(self):
+        request = nav_request(); self.schedule(request); self.port.submit('nav-1', request)
+        original = self.gate.set
+        def changed(body):
+            result = original(body)
+            self.gate.instance, self.gate.source, self.gate.revision = 'sonic-2', 'navigation', 0
+            return result
+        self.gate.set = changed
+        task = self._cancel_current()
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertEqual([row['receiver_instance_id'] for row in self.gate.puts], ['sonic-1'])
+        old = deepcopy(self.control._read()['operations']['cancel:test-task'])
+        self._cancel_current()
+        self.assertEqual(self.control._read()['operations']['cancel:test-task'], old)
+        self.assertEqual(len(self.gate.puts), 1)
+        self.assertEqual(self.gate.source, 'navigation')
+
+    def test_receiver_change_at_put_is_sent_only_to_old_instance_and_not_retried(self):
+        request = nav_request(); self.schedule(request); self.port.submit('nav-1', request)
+        attempts = []
+        def changed(body):
+            attempts.append(deepcopy(body))
+            self.gate.instance, self.gate.source, self.gate.revision = 'sonic-2', 'navigation', 0
+            raise HttpContractError('RECEIVER_CHANGED', status_code=409)
+        self.gate.set = changed
+        with patch.object(self.gate, 'query', side_effect=HttpContractError('original request unknown', status_code=404)):
+            task = self._cancel_current()
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]['receiver_instance_id'], 'sonic-1')
+        self.assertEqual(self.gate.source, 'navigation')
+        original = self.control._read()['operations']['cancel:test-task']
+        self.assertFalse(original['resolved'])
+        self.assertEqual(original['request']['receiver_instance_id'], 'sonic-1')
+
+    def test_missing_original_receiver_is_not_replaced_by_current_receiver(self):
+        request = nav_request(); self.schedule(request); self.port.submit('nav-1', request)
+        self.control._update(lambda g: g['commands'][self.control._key(request)].pop('selection'))
+        task = self._cancel_current()
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertIn('接收实例缺失或不唯一', task['error'])
+        self.assertEqual(self.gate.puts, [])
+
+    def test_task_with_ambiguous_receiver_history_does_not_guess_current_owner(self):
+        first = nav_request(); self.schedule(first); self.port.submit('nav-1', first)
+        self.gate.instance, self.gate.revision = 'sonic-2', 0
+        second = nav_request('nav-2'); self.schedule(second); self.port.submit('nav-2', second)
+        task = self._cancel_current()
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertEqual(self.gate.puts, [])
+
+    def test_old_bad_close_binding_is_preserved_but_cannot_certify_new_receiver(self):
+        request = nav_request(); self.schedule(request); self.port.submit('nav-1', request)
+        self.gate.instance, self.gate.source, self.gate.revision = 'sonic-2', 'none', 1
+        bad = dict(request=dict(request_id='old-misbound-close', receiver_instance_id='sonic-2', source='none'),
+                   resolved=True, receipt=dict(state='applied', receiver_instance_id='sonic-2', revision=1))
+        self.control._update(lambda g: g['operations'].__setitem__('cancel:test-task', deepcopy(bad)))
+        task = self._cancel_current()
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertEqual(self.control._read()['operations']['cancel:test-task'], bad)
+        self.assertEqual(self.gate.puts, [])
+
+    def test_task_without_dispatch_or_selection_has_no_authority_to_close_source(self):
+        request = nav_request(); self.schedule(request)
+        task = self._cancel_current()
+        self.assertFalse(task['gate_closed']); self.assertFalse(task['completed'])
+        self.assertTrue(task['navigation_not_submitted'])
+        self.assertIsNone(task['navigation_stopped'])
+        self.assertEqual(self.gate.puts, [])
+
+    def test_diagnostic_task_tag_alone_cannot_authorize_source_close(self):
+        request = nav_request(); self.schedule(request)
+        self.control._update(lambda g: g['operations'].__setitem__('nav:unrelated-command', dict(
+            request=dict(request_id='unrelated', source='navigation', receiver_instance_id='sonic-1'),
+            resolved=True, diagnostic_identity=dict(task_id='test-task'))))
+        task = self._cancel_current()
+        self.assertFalse(task['gate_closed'])
+        self.assertEqual(self.gate.puts, [])
+
+    def test_selected_but_not_submitted_attempt_uses_runtime_identity_without_diagnostics(self):
+        request = nav_request(); self.schedule(request)
+        self.gate.source = 'none'
+        self.control._select('navigation', 'nav:' + self.control._key(request))
+        record = self.store.load_state()
+        record.update(open_command_id=None, steps={'nav': {'attempts': [{'command_id': 'nav-1'}]}})
+        self.store.save_state(record)
+        task = self._cancel_current()
+        self.assertTrue(task['gate_closed'])
+        self.assertTrue(task['navigation_not_submitted'])
+        self.assertIsNone(task['navigation_stopped'])
+        self.assertEqual([row['source'] for row in self.gate.puts], ['navigation', 'none'])
+        self.assertEqual({row['receiver_instance_id'] for row in self.gate.puts}, {'sonic-1'})
+        self.assertEqual(self.nav.posts, [])
+
     def test_restart_preserves_original_intent_and_never_replays_put_or_goal(self):
         self.gate.source, self.gate.lost = 'none', True
         r = nav_request(); self.schedule(r); self.port.submit('nav-1', r)

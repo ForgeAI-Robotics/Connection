@@ -1,6 +1,6 @@
 # 接口说明：导航 NAV
 
-2026-11-13网页9882的冰箱位置目标改为按地图分辨率绘制真实NAV 28cm圆，读取原导航backend/profile阈值；不再以固定像素圈冒充位置范围。同时显示Harness独立中心的10cm圆、目标朝向及±5°紫色圆弧。图层下拉可选择开门或关门Harness目标，仅切换/frame.png?harness=open_fridge或close_fridge的缓存图片，不改变导航目标、当前操控任务或任何放行。红圆NAV／绿圆Harness／紫色朝向均保留各自真实中心，不自动合并。
+2026-11-13网页9882的冰箱位置目标改为按地图分辨率绘制真实NAV 28cm圆，读取原导航backend/profile阈值；不再以固定像素圈冒充位置范围。同时显示Harness独立中心的5cm圆（2026-11-13后续调整）、目标朝向及±5°紫色圆弧。图层下拉可选择开门或关门Harness目标，仅切换/frame.png?harness=open_fridge或close_fridge的缓存图片，不改变导航目标、当前操控任务或任何放行。红圆NAV／绿圆Harness／紫色朝向均保留各自真实中心，不自动合并。
 
 Harness显示值是VLA原fridge_harness.json及scene_policy.DEFAULTS导出的只读派生快照，NX保存于dream/configs/navigation/harness_display_snapshot.json；该文件不参与执行判定，不能作为第二份可调阈值。后续修改VLA目标或容差时，用VLA环境运行python -m g1_fridge_alignment_harness.export_map_overlay <输出文件>，再同步该派生文件。地图不匹配／快照缺失仅显示图层不可用，不影响控制。源码已同步NX，未重启9882或导航／VLA，运行实例需后续正常加载。验证见[10cm圆与地图](多端联调_操控与抓取.md#harness-radius-map-20261113)。
 

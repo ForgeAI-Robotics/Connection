@@ -6,6 +6,14 @@
 
 > **2026-10-28 当前源码：** source_gate 模式新增 VLA direct-v1 接入，见下节；原 unified 模式与带日期的 relay／acquire 记录保留。三个接待按钮分别绑定真实／模拟执行端，不静默回退。大脑源码适配、隔离验证及大脑／网页重载完成，已有真实操控失败回执；后续 VLA／O6 修订按下文注明来源，完整动作验收尚未完成。
 
+<a id="source-generic-thermal-20261114"></a>
+
+## 源通用温升减载：原生源码接入边界
+
+2026-11-14本机SONIC源码接入源AdaptiveTrackingErrorShadow原Core，针对本轮硬件索引5／22／25／27；G1GenericThermal仅转换现有反馈／候选目标、选轴及原模式，不改VLA开门／抓可乐推理、权重或O6。模型目录旁adaptive_tracking_error.mode在原生构造时读取：off关闭、shadow只算建议、active才采纳源修正；本机交付shadow，**没有主动减温效果生效**。新源码须编译并由NX原生实例加载，重启VLA HTTP不能加载该能力。
+
+源算法的温度、力矩、误差、静止窗口和修正上限未放宽，所有原生最终保护仍在下游；源左踝Pitch4专用stable参数不套到肩腕。当前源通用15Nm门槛不能覆盖本轮部分5–12Nm升温和腕部低力矩场景，且不能解除保护拒绝后的旧目标保持。未更换NX已选发布、未重启、未开展动作，不能将本次接入写成高温根因已修复。具体源参数与操作维护在VLA项目sonic_safety_gate/README.md的“源通用关节温升减载接入”，本轮验证与证据见[接入记录](多端联调_操控与抓取.md#source-generic-thermal-integration-20261114)。
+
 ## direct-v1：直连操控与接收源选择
 
 2026-11-12 按用户要求，双模型常驻准备的三路相机最低帧率统一为20 FPS（`preparation.camera_min_fps`），生效私有配置、默认值与最低配置界限同步调整；持续15秒窗口、三路时间差≤50 ms、帧间隔≤500 ms和帧新鲜度条件保持。准备统计修订为 `three-camera-15s-20fps-v2`。该阈值用于相机准备，不改变策略动作频率或效果核验。复验见[启动与相机准备](多端联调_操控与抓取.md#capture-start-hash-gate-20261112)。
@@ -137,7 +145,11 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 
 随后修正本机平移播放：删除motion_start后0.8秒自动收步及TranslationStep额外2秒等待。帧序列对齐源端WASD：先enter_start→loop_start，保持当前方向时重复loop_start→loop_end，释放后原样0.30秒／15帧float32 blend回stand；没有额外固定运动时长、最少循环数、裁剪或重新编码。原Alignment在平移期间复用同一executor读取NAV位置，仍需该方向就保持；位置进入原范围、应换方向或定位真正失效／过期时释放。重复轮询不等于定位失效：保留上一有效位置及其原始时间，不立即松键或刷新年龄；仍在原1秒预算内的新位置可因传输延迟早于按键起始时间。动作后到位确认继续要求动作后的新采样，不能混用。现场问题及修复见[平移定位时序](多端联调_操控与抓取.md#harness-translation-live-pose-20261112)。平移保持期间不因准备段的瞬时yaw误差反复松键，释放后仍按原标准调整最终朝向。释放后取新定位确认，不能把参考播放结束当作物理到位；不补发追赶帧。源端逐帧对照及验证范围见[v5接入](多端联调_操控与抓取.md#harness-stride-v5-aligned-20261112)。
 
-2026-11-13按用户最新要求，当前开门／关门共用NAV Harness最终位置条件改为距各自目标中心≤0.10m，即hypot(x_m,y_m)≤0.10；朝向仍±5°。scene_policy.DEFAULTS.position_radius_m是当前圆形半径的唯一执行定义，平移释放、纠偏方向和到位／交接使用同一圆形判据，保留两份新定位。x=y=8cm虽各小于10cm，欧氏距离11.31cm仍不通过；6cm／8cm边界通过。位置误差以目标中心定义，纠偏方向转入当前身体轴；目标中心、v6原始播放、VLA／SONIC保护和期限保持。此前分别前后／左右±5cm的矩形标准已退出当前NAV路径；历史scene／校准入口不在本次变更范围。地图显示与离线验证见[10cm圆与地图](多端联调_操控与抓取.md#harness-radius-map-20261113)。
+2026-11-13后续按用户现场确认，将开门Harness中心X/Y从[-3.683258,3.756121]对齐到当时NAV红圆目标[-3.615286,3.658955]；开门目标yaw仍−2.932046rad，位置10cm圆／朝向±5°不变，关门中心保持原值。这是实际执行配置变更，同时重新导出并同步NX只读显示快照；地图两个圆同心。settings每次新动作准备读取原配置，新开门任务采用新中心，已有worker的bootstrap不热换。显示快照由网页重绘读取，刷新即可看到新图层，无需为这次配置变更重启进程。验证见[中心对齐](多端联调_操控与抓取.md#harness-open-center-nav-20261113)。
+
+2026-11-13后续按用户明确要求，将绿色开门目标沿其原目标yaw=−2.932046rad前移5cm。当前开门中心为[-3.664192265938214,3.6485541754182313,-2.932046]，相对先前NAV同心点位移为dx=−0.048906265938214m、dy=−0.010400824581769m；5cm圆形半径、±5°、关门目标及NAV红圆中心均不变。显示快照已同步，新开门执行读取新中心；此前“两圆同心”描述对应前一版点位。
+
+2026-11-13按用户最新要求，当前开门／关门共用NAV Harness最终位置条件改为距各自目标中心≤0.05m，即hypot(x_m,y_m)≤0.05；朝向仍±5°。scene_policy.DEFAULTS.position_radius_m是当前圆形半径的唯一执行定义，平移释放、纠偏方向和到位／交接使用同一圆形判据，保留两份新定位。x=y=4cm虽各小于5cm，欧氏距离5.66cm仍不通过；3cm／4cm边界通过。位置误差以目标中心定义，纠偏方向转入当前身体轴；目标中心、v6原始播放、VLA／SONIC保护和期限保持。此前分别前后／左右±5cm的矩形标准已退出当前NAV路径；历史scene／校准入口不在本次变更范围。地图显示与离线验证见[圆形判据与地图](多端联调_操控与抓取.md#harness-radius-map-20261113)。
 
 2026-11-13按用户要求，当前control_only精调路径去掉外层Alignment的2秒固定settling、HeadingSweep转向前／后各2秒固定等待，以及MicroProbe开始前1秒额外stand；开门／关门共用路径同时适用。源录制从第0帧开始的准备／转动／退出、0.6秒进入与0.5秒返回混合、初次身体准备、到位两份新定位及原保护不变；历史control_only=False校准路径保留原等待。没有借此新增稳定性校验、剪源帧或改变±5cm／±5°。实现和实际离线范围见[等待清理](多端联调_操控与抓取.md#harness-wait-cleanup-20261113)；源码已写回，服务未重启，不能将省掉固定等待等同已验收实机收敛速度。
 
@@ -272,7 +284,7 @@ translation.enabled=false保留原转向／前进能力边界，不增加缺失�
 
 当前真机接待SOP v3在抓取及原O6＋VLM核验之后，用close_fridge完成关门站位精调、源端录制回放，再沿原O6＋VLM／finish核验推进运送。六字段请求和原command_id不变；失败、取消或UNKNOWN不自动重做或运送。旧v1/v2任务保存原快照；独立通用Planner和历史unified分支未接入此回放。
 
-本机VLA原config/g1_tasks/fridge_harness.json的close_fridge.alignment_center_pose选择关门中心，close_fridge.replay.dataset／episode选择data/g1_2_close_fridge_o6_dual_threecam_v1的episode 0；不再选择生成manifest。关门前沿用同一Harness，距中心≤10cm、yaw±5°、v6和两份新定位，详见[共用精调](#开门前harness四向位置纠偏2026-11-12vla统一保护)。
+本机VLA原config/g1_tasks/fridge_harness.json的close_fridge.alignment_center_pose选择关门中心，close_fridge.replay.dataset／episode选择data/g1_2_close_fridge_o6_dual_threecam_v1的episode 0；不再选择生成manifest。关门前沿用同一Harness，距中心≤5cm、yaw±5°、v6和两份新定位，详见[共用精调](#开门前harness四向位置纠偏2026-11-12vla统一保护)。
 
 RecordedCloseWorker复用原fridge启动器、相机／reset准备、任务生命周期和唯一50Hz发布器，直接调用迁入源g1_close_fridge_replay的原load_episode／Replay函数。663帧原action.motion_token按原timestamp保持输出，总时长22.0666676秒；保留源3秒smoothstep进入录制首帧和结束后保持末帧。按时间取录制样本，不重新求解SMPL或编码、不按每tick一行改变原30Hz时间轴，不输出学习模型预测。发布包只含身体Token，录制手指目标不发送，抓取后的当前O6目标保持。
 
