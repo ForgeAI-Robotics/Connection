@@ -59,7 +59,7 @@ venv/core/bin/python -m execution.slaver
 
 从仓库外部署时设置 `CONNECTION_WORKSPACE` 指向配置和数据根目录。配置不会从进程工作目录猜测。入口可独立部署，无需挂载大脑的数据。
 
-安装系统级面板：`sudo bash infra/systemd/install_panel.sh`。服务单元直接运行 `python -m ops`，不经过旧脚本。三端启动、现场确认和收工顺序见[控制面板接口说明](docs/接口说明_控制面板.md#三端启动与任务发布)；操控独立维护见[操控接口说明](docs/接口说明_操控VLA.md#操控侧检查与独立启停)。
+安装系统级面板：`sudo bash infra/systemd/install_panel.sh`。服务单元直接运行 `python -m ops`。面板进程启动时拉起已停止的大脑、任务网页、飞书和语音，已在运行的不重启。三端启动、现场确认和收工顺序见[控制面板接口说明](docs/接口说明_控制面板.md#三端启动与任务发布)；操控独立维护见[操控接口说明](docs/接口说明_操控VLA.md#操控侧检查与独立启停)。
 
 ## 日常配置与数据
 

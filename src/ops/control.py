@@ -118,6 +118,35 @@ def _logs(service, lines: int, kind: str | None = None) -> tuple[str, str | None
     return tail_file(log_path, lines), display_log_path(log_path), pin
 
 
+def ensure_brain_layer():
+    """Start stopped brain-layer services with the panel process.
+
+    Sessions that are already running stay in place. One failure is recorded
+    and does not stop the panel or the remaining services.
+    """
+    from ops.services import catalog
+    from shared.execution_profile import admission
+
+    results = []
+    for service in catalog():
+        if service.layer != "brain" or not service.controllable:
+            continue
+        state = _brain_state(service)
+        if state != "stopped":
+            results.append({"id": service.id, "action": "skipped", "state": state})
+            continue
+        try:
+            with admission(check_block=False):
+                _start(service)
+        except Exception as exc:
+            print(f"大脑层随面板启动失败：{service.name}：{exc}", flush=True)
+            results.append({"id": service.id, "action": "failed", "error": str(exc)})
+            continue
+        print(f"大脑层已随面板启动：{service.name}", flush=True)
+        results.append({"id": service.id, "action": "started"})
+    return results
+
+
 def _start(service) -> None:
     if service.remote_control == 'ssh_vla_camera':
         raise RuntimeError('相机已由 VLA 统一管理，请使用 VLA 启动入口')

@@ -46,6 +46,7 @@ systemctl enable --now fqplanner-panel.service
 systemctl --no-pager --full status fqplanner-panel.service || true
 echo
 echo "面板已开机自启: http://0.0.0.0:5678"
-echo "业务进程不会随开机启动，请在面板里按需点启动。"
-echo "systemctl restart fqplanner-panel 只重拉监视进程，不会停止 Redis/Master 等业务。"
+echo "大脑、任务网页、飞书和语音会随面板进程启动；已在运行的不重启。"
+echo "Redis、仿真、导航和 VLA 仍在面板里手动启动。"
+echo "systemctl restart fqplanner-panel 只重拉监视进程，不会停止已在运行的业务。"
 echo "本机查看日志: logs/YYYY-MM-DD/<服务>/"
