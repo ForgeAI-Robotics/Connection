@@ -1,7 +1,7 @@
-"""NX 语音触发接待 —— M260 USB 麦克风 → 云 ASR → 关键词"开始接待" → 触发大脑接待。
+"""NX 语音触发接待与示教 —— M260 USB 麦克风 → 云 ASR → 关键词 → 转发大脑。
 
 在 G1 的 NX(Jetson Orin)上常驻运行,循环:录一段音 → 音量门限(VAD)滤掉静音/底噪 →
-qwen-omni 云 ASR 转文字 → 文字含"开始接待"就 POST 给大脑 deploy 的 /publish_task 触发接待。
+qwen-omni 云 ASR 转文字 → "开始示教"转发原句,"结束示教"/"开始接待"转发关键词。
 部署 / 依赖 / 运维 / 为什么不用板载麦,见同目录 README.md。
 
 可选环境变量:
@@ -18,7 +18,7 @@ ASR_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completio
 ASR_MODEL = 'qwen3-omni-flash'   # sk-ws- 型 key 只能走兼容模式,音频只能用 omni 系列(不支持 paraformer 原生)
 SEG = 5                # 每段录音秒数
 SILENCE_RMS = 800      # 音量 RMS 门限:低于=静音/底噪,跳过 ASR(省 API + 防 qwen 对底噪幻觉)。实测说话 rms 1200~1400
-TRIGGER = '开始接待'   # 触发词(去标点空格后精确匹配,避免"不要接待"等误触发)
+TRIGGERS = ('开始示教', '结束示教', '开始接待')   # 去标点空格后按顺序包含匹配
 HALLUC = ['提升自己的幸福感', '通过一些简单的方法', '我今天要讲的是', '[空]', '没有清晰']  # qwen 对噪音的高频幻觉句,命中即丢
 # ----------------------------------------------------------
 
@@ -78,8 +78,8 @@ def asr(p):
     return t
 
 
-def trigger():
-    req = urllib.request.Request(DEPLOY, data=json.dumps({'task': '开始接待'}).encode('utf-8'),
+def trigger(task):
+    req = urllib.request.Request(DEPLOY, data=json.dumps({'task': task}).encode('utf-8'),
                                  headers={'Content-Type': 'application/json'})
     return urllib.request.urlopen(req, timeout=15).status
 
@@ -97,10 +97,14 @@ def main():
                 continue
             if txt.strip():
                 print('  heard(rms=%d):' % level, txt, flush=True)
-            if TRIGGER in _clean(txt):
-                print('  >> hit! trigger reception', flush=True)
-                print('  trigger HTTP', trigger(), flush=True)
-                time.sleep(8)   # 触发后冷却,防连发
+            cleaned = _clean(txt)
+            for keyword in TRIGGERS:
+                if keyword in cleaned:
+                    task = txt if keyword == '开始示教' else keyword
+                    print('  >> hit! trigger', keyword, flush=True)
+                    print('  trigger HTTP', trigger(task), flush=True)
+                    time.sleep(8)   # 触发后冷却,防连发
+                    break
         except Exception as e:
             print('  err:', str(e)[:70], flush=True)
             time.sleep(2)
