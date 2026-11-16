@@ -165,6 +165,19 @@ Connection 已接入 `GET /v1/vla/capabilities`、原提交／查询／取消路
 
 translation.enabled=false保留原转向／前进能力边界，不增加缺失方向。源码已写回；新的任务worker会读取新版，正在运行HTTP中已导入的生命周期不会热更新，完整一致版本需按原VLA入口重载。本轮未重启服务或发动作。此前转向退出／回站回弹算法未在本次重写；去掉退出门限不代表该轨迹已修复，真实效果仍待验。测试及备份见[VLA统一保护接入](多端联调_操控与抓取.md#harness-vla-owned-20261112)；原迁入来源见[四向接入记录](多端联调_操控与抓取.md#fridge-four-direction-implemented-20261111)。
 
+<a id="harness-o6-stage-split-20261116"></a>
+#### 开门前身体精调与O6分阶段执行
+
+2026-11-16按用户授权更新源码：只对`open_fridge`且采用NAV Harness的任务，将身体准备／精调与O6执行依赖拆开。沿原DirectLifecycle、HarnessWorker、PolicyWork队列和唯一身体发布者推进，保留原任务、步骤、尝试与command_id；位置5cm圆、朝向±10°、方向锁存及源动作播放不变。关门前持物精调、关门测试和抓取不套用空手解耦。
+
+开门任务准入／精调不再要求O6反馈可用，也不绑定精调开始时的O6实例；仍检查身体、源控制、任务所有者、原租约／取消及已有执行保护。已有O6输出占用仍拒绝新任务。精调观测只取原身体反馈，不以零值或旧值冒充手指反馈，不发送手指目标，也不提前`start`本任务双手。
+
+精调完成后若O6不可用，原任务保持`preparing`，进度为`harness_ready_waiting_o6`；VLA策略不运行。恢复必须是当前健康、双手反馈新鲜、原协议能力齐全且输出已封禁的实例，然后沿原O6事务绑定本任务并启动，切回原完整相机／身体／双手观测与RTC重置，重新核对Harness到位和SONIC采纳收据，才进入策略执行。完整交接已准备后及VLA运行／暂停期间恢复原O6实例和故障检查。等待可取消；不自动重启O6、修CAN或重放原任务。停止前从未启动本任务双手时不封禁其他O6实例，手部停止未知仍如实保留。
+
+同一原任务`progress`新增诊断子阶段`execution_stage`，不新增业务状态：`harness_preparing`身体准备、`harness_aligning`精调中、`harness_ready`精调完成、`harness_ready_waiting_o6`等待双手、`vla_preparing`策略交接、`vla_running`开门／抓取策略执行；关门播放显示`recorded_close_running`。阶段、实际运动方向或计数变化时更新原进度；大脑沿原下游查询日志显示`progress.message`，不另建状态机或每帧同步落盘。
+
+本次仅源码及离线验证，HTTP、worker与导航服务均未重启，不能认为当前运行实例已加载。需原VLA HTTP重新加载并创建新任务worker才能完整生效；导航目标与网页图层不变，无需因本次改动重启NAV。统一服务启动器的外设准备规则未改，O6自身保护继续负责手指。实现、失败边界和实际验证见[分阶段执行记录](多端联调_操控与抓取.md#harness-stage-decoupling-proposal-20261116)。
+
 <a id="harness-remaining-checks-20261112"></a>
 #### 现存附加检查与外层等待：完整清理前的核对
 

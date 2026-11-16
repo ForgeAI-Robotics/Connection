@@ -129,6 +129,22 @@ class BrainJournalTests(unittest.TestCase):
         other["motor_health"] = {"motors": [9]}
         self.assertEqual(fingerprint(base), fingerprint(other))
 
+    def test_harness_and_vla_stages_are_logged_under_same_command(self):
+        call = OutboundCall('vla', 'open_fridge', command_id='open-stages', task_id='task-stages')
+        for state, message in (
+            ('preparing', 'Harness精调中｜后退'),
+            ('preparing', 'Harness精调完成；等待O6就绪，VLA策略未启动'),
+            ('running', '开冰箱VLA执行中；等待效果确认或取消'),
+        ):
+            payload = dict(state=state, command_id='open-stages', progress={'message': message})
+            self.assertTrue(call.update(payload))
+            self.assertFalse(call.update(payload))
+            self.assertIn(message, self._brain_text())
+        records = [json.loads(line) for line in self.journal.paths()['jsonl'].read_text().splitlines()]
+        changes = [row for row in records if row['event'] == 'state']
+        self.assertEqual(len(changes), 3)
+        self.assertTrue(all(row['cmd'] == 'open-stages' for row in changes))
+
     def test_analysis_is_archived_without_process_dump_but_advice_errors_still_print(self):
         from contextlib import redirect_stdout
         from io import StringIO
