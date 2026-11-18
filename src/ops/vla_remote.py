@@ -6,6 +6,7 @@ import os
 import copy
 import json
 import math
+import re
 import shlex
 import subprocess
 import threading
@@ -372,6 +373,58 @@ def run(action: str, *, runner: Optional[Runner] = None):
         _ACTION_LOCK.release()
 
 
+_EXCEPTION_LINE = re.compile(
+    r'^(?:[\w.]+\.)?[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Interrupt): \S'
+)
+_WRAPPER_ERROR = ('CalledProcessError', 'TimeoutExpired')
+_TRACE_PREFIX = (
+    'Traceback (most recent call last)',
+    'During handling of the above exception',
+    'The above exception was the direct cause',
+    'File ',
+    'raise ',
+)
+
+
+def _failure_detail(stdout, stderr):
+    """Inner exception text for the panel line.
+
+    Traceback frames and the command embedded in CalledProcessError stay in the log.
+    """
+    causes, wrappers, fallback = [], [], []
+    for raw in (stderr or '').splitlines() + (stdout or '').splitlines():
+        if raw[:1] in ' \t' or raw.startswith(RESULT_PREFIX):
+            continue
+        line = ' '.join(raw.split())
+        if not line or line.startswith(_TRACE_PREFIX):
+            continue
+        if _EXCEPTION_LINE.match(line):
+            head, _, rest = line.partition(': ')
+            if any(name in head for name in _WRAPPER_ERROR):
+                wrappers.append(head)
+                continue
+            command_at = rest.find('Command [')
+            if command_at >= 0:
+                rest = rest[:command_at].rstrip(' :')
+            causes.append(((head + ': ' + rest).strip() if rest else head)[:240])
+            continue
+        if any(c in line for c in '{}[]'):
+            continue
+        fallback.append(line[:180])
+    chosen = []
+    for item in causes:
+        if any(item in previous or previous in item for previous in chosen):
+            continue
+        chosen.append(item)
+        if len(chosen) == 2:
+            break
+    if chosen:
+        return '；'.join(chosen)[:480]
+    if wrappers:
+        return wrappers[0][:180]
+    return fallback[-1] if fallback else ''
+
+
 def _action_failure_message(action, completed):
     """Extract a bounded error summary; the complete receipt stays in the log."""
     lines = [line[len(RESULT_PREFIX):] for line in (completed.stdout or '').splitlines()
@@ -387,18 +440,15 @@ def _action_failure_message(action, completed):
                 message = ' '.join(receipt['message'].split())[:220]
         except ValueError:
             pass
-    # stderr can hold the actionable shell error, but never dump another JSON
-    # envelope or an unbounded traceback into the panel's single status line.
-    stderr = [line.strip() for line in (completed.stderr or '').splitlines()
-              if line.strip() and not any(c in line for c in ('{', '}', '[', ']'))]
-    detail = stderr[-1][:180] if stderr else ''
+    detail = _failure_detail(completed.stdout, completed.stderr)
     if not message:
         message = _friendly_error(RuntimeError(f'SSH 退出码 {completed.returncode}'), detail)[:220]
         detail = ''
     elif detail and detail in message:
         detail = ''
     label = '启动' if action == 'start' else '停止'
-    return f'VLA {label}未完成：{message}' + ('；' + detail if detail else '') + '。详情见 VLA 日志。'
+    text = f'VLA {label}未完成：{message}' + ('；' + detail if detail else '') + '。详情见 VLA 日志。'
+    return text[:700]
 
 
 def _run_action(action: str, *, runner: Optional[Runner] = None):

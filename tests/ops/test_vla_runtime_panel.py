@@ -145,6 +145,34 @@ class VlaRuntimeStatusTests(unittest.TestCase):
         self.assertNotIn('large_detail',message)
         self.assertTrue(any('large_detail' in str(call) for call in log.call_args_list))
 
+    def test_nonzero_receipt_shows_inner_exception_not_traceback_frame(self):
+        result = action_result('start', ok=False, confirmed=False)
+        result['message'] = 'VLA service step failed: python_capture.sh'
+        raw = 'VLA_RUNTIME_RESULT ' + json.dumps(result) + '\n'
+        stderr = '\n'.join([
+            'Traceback (most recent call last):',
+            '  File "<string>", line 14, in require_can_up',
+            'RuntimeError: O6_CAN_UNAVAILABLE: can1: no network changes performed',
+            '',
+            'Traceback (most recent call last):',
+            '  File "/home/fq/workspace/sonic_wbc/g1_brain_vla_bridge/managed_o6_runtime.py", line 194, in start',
+            '    subprocess.run(ssh()+[shlex.join([\'python3\', \'-c\', bootstrap])], check=True)',
+            '    raise CalledProcessError(retcode, process.args,',
+            'subprocess.CalledProcessError: Command \'[\'ssh\', \'-T\', \'-p\', \'22\', \'dev@192.168.31.5\', \'python3 -c bootstrap\']\' returned non-zero exit status 1.',
+            'OSError: [Errno 100] Network is down',
+        ])
+        runner = lambda *args: subprocess.CompletedProcess(args, 1, raw, stderr)
+        with self.assertRaises(RuntimeError) as caught:
+            vla_remote.run('start', runner=runner)
+        message = str(caught.exception)
+        self.assertIn('python_capture.sh', message)
+        self.assertIn('RuntimeError: O6_CAN_UNAVAILABLE: can1: no network changes performed', message)
+        self.assertIn('OSError: [Errno 100] Network is down', message)
+        self.assertNotIn('raise CalledProcessError', message)
+        self.assertNotIn('dev@192.168.31.5', message)
+        self.assertNotIn('VLA_RUNTIME_RESULT', message)
+        self.assertLess(len(message), 700)
+
     def test_timeout_summary_does_not_dump_command_or_partial_json(self):
         failure=subprocess.TimeoutExpired(['ssh','x'*20000],600,output=b'VLA_RUNTIME_RESULT {"large":"partial"}')
         def runner(*args):raise failure
