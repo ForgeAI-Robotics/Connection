@@ -10,9 +10,9 @@
 
 ## 源通用温升减载：原生源码接入边界
 
-2026-11-14本机SONIC源码接入源AdaptiveTrackingErrorShadow原Core，针对本轮硬件索引5／22／25／27；G1GenericThermal仅转换现有反馈／候选目标、选轴及原模式，不改VLA开门／抓可乐推理、权重或O6。模型目录旁adaptive_tracking_error.mode在原生构造时读取：off关闭、shadow只算建议、active才采纳源修正；本机交付shadow，**没有主动减温效果生效**。新源码须编译并由NX原生实例加载，重启VLA HTTP不能加载该能力。
+2026-11-17按用户确认修复原易热关节的补偿接入：沿用2026-11-14的G1GenericThermal薄适配，将源AdaptiveTrackingErrorShadow原Core及接线编译进G1板端发布，同日后续按用户要求补齐左侧，当前选定硬件索引5（左踝Roll）、15／22（左右肩Pitch）、18／25（左右肘）、20／27（左右腕Pitch）。模型目录旁adaptive_tracking_error.mode在原生构造时读取：off关闭、shadow只算建议、active才采纳源修正；本机及新NX发布设为active。此前仅源码／shadow，所选NX二进制未包含该能力，不能把那时的接入当成主动减温已生效。
 
-源算法的温度、力矩、误差、静止窗口和修正上限未放宽，所有原生最终保护仍在下游；源左踝Pitch4专用stable参数不套到肩腕。当前源通用15Nm门槛不能覆盖本轮部分5–12Nm升温和腕部低力矩场景，且不能解除保护拒绝后的旧目标保持。未更换NX已选发布、未重启、未开展动作，不能将本次接入写成高温根因已修复。具体源参数与操作维护在VLA项目sonic_safety_gate/README.md的“源通用关节温升减载接入”，本轮验证与证据见[接入记录](多端联调_操控与抓取.md#source-generic-thermal-integration-20261114)。
+NX已选发布为/home/dev/sonic/releases/g1-thermal-bilateral-20261117，保留上一项VLA断流保持修复；原brain-navigation-start入口的版本登记已同步，并完成不启动服务的入口核对。下次人工启动SONIC加载该版本；本次未启动／重启服务、未发送机器人动作，重启VLA HTTP不能加载原生温补。源算法的温度、力矩、误差、静止窗口和修正上限未放宽，原生最终保护仍在下游；源左踝Pitch4专用stable参数和热保护转圈流程不套到肩腕。当前源通用15Nm门槛不能覆盖部分5–12Nm升温和腕部低力矩场景，且不能代替保护拒绝后旧目标保持路径的修复，实际降温尚未验收。具体源参数与操作维护在VLA项目sonic_safety_gate/README.md的“源通用关节温升减载接入”，验证与证据见[接入记录](多端联调_操控与抓取.md#source-generic-thermal-integration-20261114)。
 
 <a id="harness-yaw10-axis-latch-20261116"></a>
 
@@ -52,6 +52,24 @@ VLA 查询、pause、finish、cancel 继续使用原 `/v1/vla/tasks/{command_id}
 适用范围：大脑到 VLA 的任务、原命令查询与核验。2026-10-22 起支持新 native `open_fridge/grasp_cola`；旧 `pick/place` 合同保留给原后端。
 
 > 当前 source_gate 以文首 direct-v1 和大脑接口为准；“新动作接入”保留业务效果及旧后端范围；2026-10-09 及更早章节描述旧抓放链路。源码接入、运行实例更新和真机验收分别确认。
+
+<a id="vla-outage-hold-20261117"></a>
+### VLA观测／通信中断保持与恢复（2026-11-17）
+
+按用户指定源服务器`g1_groot_task_chain/OUTAGE_RECOVERY.md`适配当前G1 direct-v1正式开门／抓可乐。新增的是`vla-outage-hold-v1`接收行为与原发布／推理循环的配套恢复，未替换开门／抓取模型、Harness、关门回放、温控或任务编排；源G1_2的完整文件不直接覆盖当前G1。
+
+| 场景 | 当前实现行为 |
+| --- | --- |
+| 有效VLA动作块耗尽，暂时取不到合格新观测 | 原50Hz发布线程继续发送最后实际发送的Token和双手目标；不继续执行过期预测轨迹 |
+| 有标记的VLA操作包普通断流 | NX按最后已接受包的`stale_policy=vla-outage-hold-v1`保持Token，不因普通超时自动回stand；本体仍由SONIC闭环执行，不等于关节刚性冻结或物理平衡验收 |
+| 同一控制器／来源／会话恢复 | NX连续确认5帧、间隔≤100ms后按原恢复插值接续；工作站丢弃旧代次结果，由原推理线程reset RTC、再采新观测，恢复首帧从保持目标开始，1秒过渡到新预测，身体与双手一起过渡 |
+| 控制器／源实例或来源revision改变 | 仍按原身份／选源保护终止旧任务，要求现场重新初始化；不对新实例自动重放旧动作 |
+| NAV、Harness、初始化、关门或普通交接 | 不携带该标记，保留原路径；显式STOP、温度／硬件保护优先，不因保持功能被取消 |
+| 正式任务运行中只读控制观测链路暂不可达 | 明确的SSH／持久观测流超时或断开，仅记录原命令的观测未知并继续查询；不能推断动作已停止或成功。恢复后重新核验原控制器、O6、源、epoch及保护；身份错误、控制器明确消失、真实硬件故障仍终止 |
+
+标记仅请求接收行为，不是控制权；既有CURVE、source_gate和会话身份保持。仅正式`open_fridge/grasp_cola`工作者环境设置`VLA_OUTAGE_HOLD=1`，关门为0；未整套迁入源G1_2任务链、力控或其它策略功能。工作者启动时核对**实际运行中**NX可执行文件的标记，旧二进制返回`SONIC_VLA_OUTAGE_HOLD_REQUIRED`，不会只看磁盘新发布就宣称启用。日志沿原诊断和progress：`vla_outage_hold`、`vla_outage_history_reset`、`vla_outage_recovery_started`／`complete`、`vla_outage_session_changed`；发布成功仍非电机确认。
+
+已在G1 NX构建ARM64发布并选择`/home/dev/sonic/releases/g1-vla-outage-hold-20261117`；`previous`保留`g1-writer-recovery-20261102-17a4093a`，兼容入口`/home/dev/sonic/gear_sonic_deploy`指向新发布。构建／选择时SONIC未运行，本轮没有启动控制器、停止原厂控制或发动作；**NX新代码需下次按原流程启动SONIC，发送端需重载VLA HTTP并创建新worker，才完整生效**。已有账本不清除、失败任务不重放、真机断流／持物恢复尚未验收。部署、回滚与离线测试范围见[移植验证](多端联调_操控与抓取.md#vla-outage-hold-applied-20261117)。
 
 <a id="vla-diagnostic-field-scope"></a>
 
