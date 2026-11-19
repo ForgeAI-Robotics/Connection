@@ -108,6 +108,9 @@ def classify_task(text: str) -> Classification:
     """
 
     normalized = (text or "").strip().lower()
+    from contracts.teaching import is_start
+    if is_start(normalized):
+        return Classification(Intent.TASK, RiskLevel.READ_ONLY)
     read_matches = tuple(word for word in READ_ONLY_KEYWORDS if word in normalized)
     motion_matches = tuple(word for word in MOTION_KEYWORDS if word in normalized)
 

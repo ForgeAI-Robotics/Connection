@@ -12,7 +12,9 @@
 
 2026-11-17按用户确认修复原易热关节的补偿接入：沿用2026-11-14的G1GenericThermal薄适配，将源AdaptiveTrackingErrorShadow原Core及接线编译进G1板端发布，同日后续按用户要求补齐左侧，当前选定硬件索引5（左踝Roll）、15／22（左右肩Pitch）、18／25（左右肘）、20／27（左右腕Pitch）。模型目录旁adaptive_tracking_error.mode在原生构造时读取：off关闭、shadow只算建议、active才采纳源修正；本机及新NX发布设为active。此前仅源码／shadow，所选NX二进制未包含该能力，不能把那时的接入当成主动减温已生效。
 
-NX已选发布为/home/dev/sonic/releases/g1-thermal-bilateral-20261117，保留上一项VLA断流保持修复；原brain-navigation-start入口的版本登记已同步，并完成不启动服务的入口核对。下次人工启动SONIC加载该版本；本次未启动／重启服务、未发送机器人动作，重启VLA HTTP不能加载原生温补。源算法的温度、力矩、误差、静止窗口和修正上限未放宽，原生最终保护仍在下游；源左踝Pitch4专用stable参数和热保护转圈流程不套到肩腕。当前源通用15Nm门槛不能覆盖部分5–12Nm升温和腕部低力矩场景，且不能代替保护拒绝后旧目标保持路径的修复，实际降温尚未验收。具体源参数与操作维护在VLA项目sonic_safety_gate/README.md的“源通用关节温升减载接入”，验证与证据见[接入记录](多端联调_操控与抓取.md#source-generic-thermal-integration-20261114)。
+11-17 较早的 NX 发布为/home/dev/sonic/releases/g1-thermal-bilateral-20261117，保留上一项VLA断流保持修复；原brain-navigation-start入口的版本登记已同步，并完成不启动服务的入口核对。该次登记供后续人工启动SONIC使用；本次未启动／重启服务、未发送机器人动作，重启VLA HTTP不能加载原生温补。源算法的温度、力矩、误差、静止窗口和修正上限未放宽，原生最终保护仍在下游；源左踝Pitch4专用stable参数和热保护转圈流程不套到肩腕。该较早版本的源通用15Nm门槛不能覆盖部分5–12Nm升温和腕部低力矩场景，且不能代替保护拒绝后旧目标保持路径的修复，实际降温尚未验收。具体源参数与操作维护在VLA项目sonic_safety_gate/README.md的“源通用关节温升减载接入”，验证与证据见[接入记录](多端联调_操控与抓取.md#source-generic-thermal-integration-20261114)。
+
+11-18 真机原生进程实际加载后续 `g1-thermal-slew-20261117` 的 `g1-specific-aligned-hot-v3`。该版启用 G1 静态热负载判据，力矩门槛 0.5 Nm，绕组高温判据 80°C、释放温度 75°C，保留对目标运动的优先判断。现场判定及是否实际施加修正见[本轮电机记录](多端联调_操控与抓取.md#cola-101-incident-20261118)。
 
 <a id="harness-yaw10-axis-latch-20261116"></a>
 
@@ -29,6 +31,8 @@ NX已选发布为/home/dev/sonic/releases/g1-thermal-bilateral-20261117，保留
 2026-11-12 按用户要求，双模型常驻准备的三路相机最低帧率统一为20 FPS（`preparation.camera_min_fps`），生效私有配置、默认值与最低配置界限同步调整；持续15秒窗口、三路时间差≤50 ms、帧间隔≤500 ms和帧新鲜度条件保持。准备统计修订为 `three-camera-15s-20fps-v2`。该阈值用于相机准备，不改变策略动作频率或效果核验。复验见[启动与相机准备](多端联调_操控与抓取.md#capture-start-hash-gate-20261112)。
 
 2026-11-11按用户指令，抓取默认源权重统一为ckpt/checkpoint-30000-cola-101/checkpoint-30000，推理视图为该路径加-inference，使用本次同步的新推理脚本及原grasp-descent配置。正式worker从私有常驻描述符投影source_path／model_path，启动脚本保留这组绑定，不用独立入口默认覆盖；当前正式开门保持200data。大脑六字段请求及双腕／双臂成功判据不改。代码已写回、182项相关回归及单／双模型GPU合成预热通过，正式HTTP尚未启动加载；后续启动VLA应用新版，不能将合成预热当作真实相机／动作就绪。详见[cola-101交付与常驻接线](多端联调_操控与抓取.md#cola-101-resident-integration-20261111)。
+
+2026-11-18 正式抓可乐已加载源端新版 `grasp-descent`。左右腕可在上一段自然结束、实测下降至少 1 cm 并取得新的预测确认后继续下一段。实机本轮断流时发现启动器漏传 `VLA_OUTAGE_HOLD`，默认回站影响及两端原始证据见[抓取推理同步与现场排障](多端联调_操控与抓取.md#cola-101-incident-20261118)。
 
 2026-11-11 起，direct 模式的 VLA HTTP 每次启动建立新的持物登记会话：不把磁盘中上一会话的 holding 恢复为当前登记，控制状态和持久化状态以 holding_session_id 标明本次服务实例。holding=null 在此表示本会话尚未登记持物，不是视觉确认双手为空。原成功结果、命令身份和历史人工状态回执保留；原命令查询不重放动作，未完成命令仍按原服务重启规则处理，损坏账本继续阻断准入。同一会话中抓取成功后的持物冲突检查保留，当前 worker、O6 占用和实时执行条件仍由 VLA 判断。此变更只随 HTTP 重启加载，不重启 O6 或身体控制器。
 

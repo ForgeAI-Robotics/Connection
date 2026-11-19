@@ -56,6 +56,9 @@ def compare_navigation_contract(points, contract, version):
 
 
 def reception_preflight(config, task, *, client_factory=DreamClient):
+    from contracts.teaching import is_start
+    if is_start(task):
+        return {'ready': True, 'required': False, 'task_type': 'teaching', 'blockers': [], 'warnings': []}
     report = {'ready': True, 'required': False, 'task_type': 'runtime', 'blockers': [],
               'warnings': [], 'checked': False, 'checked_at': datetime.now().astimezone().isoformat(),
               'scope': '只读接口与定义检查；不代表定位批准、运动许可或真实抓放能力。'}

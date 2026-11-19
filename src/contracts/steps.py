@@ -25,10 +25,12 @@ class StepSpec:
     display_name: str = ""
     target_name: str = ""
     required_holding: str = ""
+    parameters: dict = field(default_factory=dict)
+    wait_for: str = ""
 
     @property
     def body(self) -> bool:
-        return self.kind not in {"describe", "desk_check", "local", "verify"}
+        return self.kind not in {"describe", "desk_check", "local", "verify", "teaching_start", "teaching_finish"}
 
 
 def step_spec_dict(step: StepSpec) -> dict:

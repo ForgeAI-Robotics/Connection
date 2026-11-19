@@ -263,7 +263,7 @@ class BrainApplication:
                     emit('control_cleanup_unconfirmed', record, error=str(exc))
         emit(event, record)
         self._diagnostic_call('event', event, record)
-        if (self.config.get("brain") or {}).get("capture_timeline", True):
+        if record.get('package') != 'teaching' and (self.config.get("brain") or {}).get("capture_timeline", True):
             self.media.event(event, record)
 
     def start(self):

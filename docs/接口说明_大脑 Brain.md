@@ -870,9 +870,39 @@ VLA 在创建命令前返回的 HTTP 409／HOLDING_STATE_CONFLICT 归为明确�
 
 大脑收到后的分类、预检、控制和执行与网页、飞书提交的同一段文字相同。NX 上的 `reception_voice.py` 仍向网页 `http://192.168.0.229:8888/publish_task` 发送任务，不经过本入口。
 
-NX 脚本去掉空格和部分标点后，按「开始示教」「结束示教」「开始接待」的顺序做包含匹配，每段识别结果最多提交一次。「开始示教」的 `task` 保留完整 ASR 原文（包括空格和标点）；「结束示教」「开始接待」只提交相应关键词。仍保留音量门限、噪声误识别过滤及触发后 8 秒冷却。本次接入的是文字转发，示教会话与点位采集需另行实现。
+NX 脚本去掉空格和部分标点后，按「开始示教」「结束示教」「开始接待」的顺序做包含匹配，每段识别结果最多提交一次。「开始示教」的 `task` 保留完整 ASR 原文（包括空格和标点）；「结束示教」「开始接待」只提交相应关键词。仍保留音量门限、噪声误识别过滤及触发后 8 秒冷却。开始原句与结束关键词的转发逻辑已存在于工作站源码。隔离实例的真实双源快照闭环已通过；NX 同步及正式网页／真实麦克风验证本轮暂缓，源码合并不代表部署生效。
 
-2026-11-16 示教流程实施交接：直接在同一个 `/home/fq/workspace/Connection` 项目持续修改并复用 Runtime，不复制项目；用独立配置／运行数据及测试实例实现“开始示教→读取当前位姿→录制头部画面→结束示教并核验保存”，首版不派发运动、不自动学习、不接网页。保持 G1 接待默认行为、配置和接线，公共代码改动仍需回归，不因进程独立就认为无影响。Skill、录制、原任务结束路由和启动隔离检查均待实施，不能将现有单帧读取、真机拒绝的通用录像代理或上传视频解析当作已完成。代码位置、API 模板、语音分流和持续回写要求见[开始示教联调](多端联调_开始示教.md)，实施后在本接口修正真实行为与字段。
+<a id="teaching-session-v1"></a>
+<a id="teaching-start-snapshot"></a>
+### 示教起始快照 v2（2026-11-18，源码已合入）
+
+已将 `/home/fq/workspace/Connection-teaching` 中验证过的示教实现逐项合入 `/home/fq/workspace/Connection`。示教作为新增业务接入，无需专用模式开关；接待、观察、整理及通用规划保持原路径。单个 Runtime 仍一次接收一个活动任务，示教结束或取消后可直接提交其他业务。2026-11-18 隔离实例已完成真实位姿／头图的文本闭环；本轮因 G1 正在被使用，仅合并源码，正式实例尚未重载，网页／真实麦克风入口验证待现场空闲。参数 Prompt 位于 `TaskReasoner._select_teaching()`，两个 SOP 更新为 [teaching_session_v2.yaml](../src/brain/packages/definitions/teaching_session_v2.yaml)。本版开始时保存一次当前位姿和一张头部 JPEG，不持续录像；示教继续跳过自动时间线抓图和任务反思学习。
+
+开始沿用 `POST /publish_task`，例如 `{"task":"开始示教，这是第1次，流程名称是迎宾讲解。","task_id":"teaching-001"}`。模型仅提取 `{"intent":"start_teaching","index":1,"name":"迎宾讲解"}`；必须恰有这三个字段，`index` 为正整数，`name` 去除首尾空白后为 1–128 字。缺参、额外字段、否定／询问／冲突意图的 `clarify` 均不执行 SOP。任务先登记再解析，解析失败保留原任务并进入 `recovery_required`，不会读取传感器；没有多轮补参，可取消后重新提交完整口令。
+
+| 阶段 | 同一任务内的行为 |
+| --- | --- |
+| `teaching.start` v2 | 绑定 YAML 快照、参数及数据源地址；`TEACHING_STARTED` 只读获取当前位姿和头图，保存 `head.jpg`、`start.json` 并读回核验 |
+| 等待结束 | `state=waiting_human`、`waiting_input=finish_teaching`；保留起始快照，不持续采集，不作为异常请求模型建议 |
+| `teaching.finish` v2 | 收到结束信号后执行 `TEACHING_FINISHED`，核对原任务／参数／数据源和图片哈希，写入引用原快照的 `finish.json`，核验后才进入 `succeeded` |
+
+网页文本框的“结束示教”经意图识别后沿原 `/publish_task` 转发，并携带刚读取的 `target_task_id`；不会拼接不存在的 `/api/task_finish_teaching`，也不会被新任务占用检查拦下，后端仍核对原任务与示教包。
+
+结束仍走 `POST /publish_task`：`{"task":"结束示教","target_task_id":"teaching-001"}`。原入口在新任务准入前将关键词转成 `finish_teaching` 控制，结束原任务，不生成第二个任务，不调用模型。`task_id` 是本次请求身份，不能代替 `target_task_id`；语音未带目标时仅在当前活动任务属于示教时绑定它，不操作接待或观察任务。无示教任务或显式目标已改变会拒绝；重复结束已完成任务返回 `no_op=true`。解析期间提前收到的结束信号保存在原 Runtime，计划建立后依次执行两个 SOP。重复开始不会覆盖活动会话；取消沿用原控制，本版不支持暂停、继续或跳步。
+
+数据源沿用当前工作区的 `config/networks.yaml`：位姿地址为 `lan().review_url()`，相机使用网络配置解析后的 `reception_real.vla_base_url`。`execution_target` 同时绑定输出目录和两端 URL；重启后地址改变会拒绝接续，不切换到新源采集。位姿由 [NavigationPoseClient](../src/brain/adapters/navigation_pose.py) 读取现有 9882 `GET /status.json?motor_details=0`，具体字段及新鲜度见[当前位姿合同](接口说明_导航NAV.md#teaching-pose-snapshot)。头图复用 [VlaCameraClient.latest()](../src/brain/adapters/vla_camera.py)，只请求 `GET /v1/camera/frames/latest?camera=ego_view`；使用既有 `vla_token_env`／`token_env`／`BRAIN_CONTROL_TOKEN` 及对应 `_FILE` 凭据读取机制，不执行 VLA 策略，不改变全局观察路由。定位服务和原相机接收服务须已经运行。
+
+产物位于 `reception_real.kernel_runtime_dir`（默认工作区 `data/tasks`）下的 `teaching/<task_id 的 SHA256>/`：
+
+| 文件 | 内容与核验 |
+| --- | --- |
+| `start.json` | `task_id`、`step_id`、原始文本、示教参数、SOP 身份／定义摘要、数据源 URL、保存时间；`mode=start_snapshot`、`capture_status=captured`；`pose` 保存 `x/y/yaw`、地图／坐标系、定位代次、源时间和接收时间；`camera` 保存 `path=head.jpg`、帧 ID、源时间、尺寸、SHA256 及服务返回的来源身份 |
+| `head.jpg` | 实际头部 JPEG，独占创建并刷盘，不覆盖已有文件；与客户端验证过的图片 SHA256 一致 |
+| `finish.json` | 原任务的结束步骤身份、参数、数据源与保存时间，`start_artifact=start.json` 和 `start_sha256` 关联原始快照 |
+
+Runner／Verifier 仅在文件读回、身份／时间与图片哈希核验后报告步骤成功。查询、重复提交和结束均读取既存产物，不重新拍照；结束时核对的是图片在开始采集时的时效，不要求历史快照在结束时仍是新帧。两份源时间独立保留，不宣称硬件同步。位姿未初始化、源过期、缺少凭据、图片损坏或写盘失败沿原 Runner 进入 `recovery_required`，不填空数据假报成功。图片已落盘但开始元数据写入中断时保留该片段，拒绝原步骤自动重拍；可核对后取消并使用新任务身份开始。
+
+这些文件只是执行产物，任务状态仍以 Runtime 账本为准；`accepted=true` 只表示受理，结束结果须查询 `/api/task_status`。旧 v1 的 `session_only` 元数据不升级为 v2 的真实采集证据；本次无常驻旧示教实例或待迁移采集数据。配置、复现与验证边界见[开始示教联调](多端联调_开始示教.md)。
 
 
 ### 持续 NAV 控制会话候选接线（2026-10-27）

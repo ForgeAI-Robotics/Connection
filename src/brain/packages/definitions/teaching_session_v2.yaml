@@ -1,0 +1,22 @@
+schema_version: 1
+package: teaching
+sops:
+  start:
+    id: teaching.start
+    version: '2'
+    description: 建立示教会话，保存一次当前位姿和一张头部快照。
+    triggers: [开始示教]
+    steps:
+      - step_id: TEACHING_STARTED
+        kind: teaching_start
+        display_name: 保存起始位姿与头部快照
+  finish:
+    id: teaching.finish
+    version: '2'
+    description: 收到结束示教后核验并归档原任务快照；不重复采集或新建任务。
+    triggers: [结束示教]
+    steps:
+      - step_id: TEACHING_FINISHED
+        kind: teaching_finish
+        display_name: 保存并结束示教会话
+        wait_for: finish_teaching

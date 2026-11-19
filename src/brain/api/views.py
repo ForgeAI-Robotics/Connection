@@ -165,9 +165,13 @@ def register_views(app, application):
     @app.get('/api/sops')
     def registered_sops():
         from brain.packages.registry import reception_catalog
+        from brain.packages.teaching import load_definition, metadata
         from contracts.tasks import Rejected
         try:
             packages, variants, skill = reception_catalog(application.config)
+            teaching = load_definition()
+            packages['teaching'] = metadata(teaching, 'start')
+            variants['teaching'] = (metadata(teaching, 'finish'),)
         except Rejected as exc:
             return jsonify({'success': False, 'error': str(exc)}), 422
         return jsonify({'success': True, 'packages': packages, 'variants': variants,

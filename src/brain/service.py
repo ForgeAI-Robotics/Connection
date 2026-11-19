@@ -39,6 +39,8 @@ class BrainService:
         from contracts.task_control import control_action
         if control_action(task):
             raise Rejected("任务控制指令应使用控制入口，不创建新任务")
+        from contracts.teaching import is_start
+        teaching = is_start(task)
         from shared.execution_profile import admission
         with admission(), _ADMISSION:
             if resume:
@@ -68,12 +70,12 @@ class BrainService:
                 options = dict(options, worksite_confirmed_at=stamp())
             # Own a cancellable task before any model or remote planning call.
             from brain.adapters.ports import UnselectedPort
-            runtime = self.runtime_factory(self.config, UnselectedPort(), package="generic")
+            runtime = self.runtime_factory(self.config, UnselectedPort(), package="teaching" if teaching else "generic")
             desc = task if isinstance(task, str) else (task[0] if task else "")
             from shared.execution_profile import applied_profile
             runtime.open_task(task_id, task_desc=desc, execution_backend="unselected", planning=True,
                               execution_target={"backend": "unselected"},
-                              reflection_enabled=options.get("reflect", True) is not False,
+                              reflection_enabled=not teaching and options.get("reflect", True) is not False,
                               origin={"entry": options.get("entry", "api"),
                                       "environment_revision": (applied_profile() or {}).get("revision")})
             self._adopt(runtime)
@@ -252,7 +254,7 @@ class BrainService:
         return runtime
 
     def control(self, action, *, task_id=None, step_id=None, expected_command_id=None):
-        if action not in {'pause', 'continue', 'cancel', 'skip'}:
+        if action not in {'pause', 'continue', 'cancel', 'skip', 'finish_teaching'}:
             raise Rejected(f'未知控制动作: {action}')
         from shared.execution_profile import admission
         with admission(check_block=(action in {'continue', 'skip'})), _ADMISSION:
@@ -262,6 +264,19 @@ class BrainService:
                 raise Rejected('跳过必须指定 task_id 和 step_id')
             if task_id is not None and task_id != current_id:
                 raise Rejected("控制目标任务已变化，未操作新任务")
+            if action == 'finish_teaching':
+                if not current_id or existing.get('package') != 'teaching':
+                    raise Rejected('当前没有可结束的示教任务')
+                if existing.get('state') == 'succeeded':
+                    return {'accepted': True, 'completed': True, 'no_op': True,
+                            'task_id': current_id, 'state': 'succeeded'}
+                runtime = self.attach()
+                result = runtime.accept_input('finish_teaching')
+                if runtime.record.get('plan_ready') and runtime.state == 'running':
+                    self._launch(runtime)
+                return dict(result, accepted=True, task_id=current_id, state=runtime.state)
+            if existing.get('package') == 'teaching' and action != 'cancel':
+                raise Rejected('本版示教只支持结束或取消，不支持暂停、续录或跳步')
             from contracts.tasks import TERMINAL_STATES
             if not current_id or existing.get('state') in TERMINAL_STATES:
                 return {'accepted': True, 'completed': True, 'no_op': True,
@@ -377,6 +392,8 @@ class BrainService:
         if self.reasoner is None:
             return
         snapshot = runtime.snapshot()
+        if snapshot.get('state') == 'waiting_human' and snapshot.get('waiting_input'):
+            return  # Waiting for the user's finish signal is not a recovery incident.
         if snapshot.get("state") not in RECOVERY_STATES:
             return
         confirmation = snapshot.get('vla_confirmation') or {}

@@ -316,7 +316,8 @@
                     body: JSON.stringify({task: task})
                 });
                 const intent = await intentResp.json();
-                if (intent.intent === 'control') {
+                const teachingFinish = intent.intent === 'control' && intent.action === 'finish_teaching';
+                if (intent.intent === 'control' && !teachingFinish) {
                     await controlReception(intent.action);
                     return;
                 }
@@ -332,11 +333,11 @@
                     }
                 }
                 const st = await readTaskStatus();
-                if (st.blocks_new_motion) {
+                if (st.blocks_new_motion && !teachingFinish) {
                     showTaskResponse(st, '当前任务尚未结束，请先处理原任务。');
                     return;
                 }
-                const preflight = await taskJSON('/api/task_preflight', {
+                const preflight = teachingFinish ? {warnings: []} : await taskJSON('/api/task_preflight', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({task: task})
@@ -347,6 +348,7 @@
                 }
                 document.getElementById('task-command-feedback').textContent = (preflight.warnings || []).join('\n');
                 const payload = {task: task};
+                if (teachingFinish) payload.target_task_id = st.task_id;
                 if (task === '单独测试关冰箱') {
                     if (!window.confirm('将直接执行现有的精调、关门和核验流程。\n请确认定位已批准、机器人已站稳在冰箱点附近、冰箱门已打开、手部状态适合推门，现场已准备好。')) return;
                     payload.worksite_confirmed = true;

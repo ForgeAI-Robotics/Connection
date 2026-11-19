@@ -78,12 +78,15 @@ class PackagePolicy:
         return {"generic": "reorder_remaining", "reception": "preserve_order"}.get(name, "disabled")
 
     def phases(self, name):
-        return [] if name in {"generic", "desk"} else phases_for(name)
+        return [] if name in {"generic", "desk", "teaching"} else phases_for(name)
 
     def enabled(self, step, config):
         return not step.optional or reception.inspection_enabled(config)
 
     def physical(self, kind):
+        # Session steps belong to this SOP, not the general action / learning catalog.
+        if kind in {'teaching_start', 'teaching_finish'}:
+            return False
         from brain.skills.catalog import is_physical
         return is_physical(kind)
 

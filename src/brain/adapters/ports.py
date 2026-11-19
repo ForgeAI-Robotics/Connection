@@ -318,6 +318,8 @@ class DeskAdapter(SimAdapter):
 
 
 def select_backend(config, package, *, mock=False):
+    if package == 'teaching':
+        return 'teaching'
     import os
     from shared.execution_profile import applied_profile
     profile = applied_profile()
@@ -380,6 +382,12 @@ def body_simple_endpoints():
 
 
 def target_identity(config, backend):
+    if backend == 'teaching':
+        from pathlib import Path
+        from brain.service_support import runtime_dir
+        from brain.adapters.teaching import snapshot_sources
+        return {'backend': backend, 'output_dir': str(Path(runtime_dir(config)).resolve() / 'teaching'),
+                **snapshot_sources(config)}
     from shared.execution_profile import applied_profile
     profile = applied_profile()
     if backend == 'body_simple':
@@ -419,6 +427,11 @@ def target_identity(config, backend):
 
 
 def build_port(config, backend, *, agent=None, body_control=None):
+    if backend == 'teaching':
+        from brain.adapters.teaching import TeachingAdapter
+        target = target_identity(config, backend)
+        return TeachingAdapter(target['output_dir'], pose_url=target['pose_url'],
+                               camera_url=target['camera_url'], config=config)
     from brain.config_flags import kernel_enabled
     from brain.adapters.source_gate import source_gate_enabled, SourceGateNavigationAdapter, SourceGateBodyAdapter
     if source_gate_enabled(config) and backend in {'body_real', 'reception_real', 'reception_real_sim_manipulation', 'reception_sim_navigation_real'}:

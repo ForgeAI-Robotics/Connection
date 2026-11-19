@@ -256,6 +256,24 @@ HTTP 200示例：
 }
 ```
 
+<a id="teaching-pose-snapshot"></a>
+### 5.3.1 示教当前位姿只读快照（9882，2026-11-18）
+
+G1 示教复用 NX 已有定位审核服务 `GET /status.json?motor_details=0`，端口由 `config/networks.yaml` 的 `roles.nav.review_port` 解析（当前 9882）。此路径与 8001 `/v1/status`／`/v1/world` 不同，后两者不是本次起始位姿来源。NX 实现为 `/home/dev/g1_navigation_migration_20260930/dream/tools/g1_hybrid_localization_web_view.py` 的 `snapshot()` 与 GET handler；导航 Agent 自身也通过 `web_status()` 读取该快照。示教客户端位于 [navigation_pose.py](../src/brain/adapters/navigation_pose.py)，仅新增大脑侧薄封装，没有修改 NX 或增加传感器订阅。
+
+| 原字段 | 含义／采集条件 |
+| --- | --- |
+| `accepted_pose` | `[x, y, yaw]`，三项有限数；单位米、米、弧度，使用现有定位输出，不另加朝向偏移 |
+| `accepted_pose_frame_id`、`accepted_pose_basis` | 必须为 `map`、`navigation_localization_body`；保留原 `accepted_pose_body_reference`，不冒称相机光心或 `base_link` |
+| `status.initialized`、`status.failed_gates`、`source_timing_fresh` | 必须为 `true`、空列表、`true`；只读定位有效性与 Arm／Approve／运动许可分开 |
+| `accepted_pose_age_sec`、`status_receipt_age_sec`、`source_timing_consumer_age_sec` | 各自非负，加本次 HTTP 耗时后不超过 0.5 秒 |
+| `accepted_pose_source_time_ns`、`source_timing` | 保留真实源时间；用 odom 源年龄、消费者年龄、位姿相对 odom 的滞后及 HTTP 耗时核对源年龄不超过 1 秒，同时检查源时间与大脑时钟（未来容差 50 毫秒） |
+| `map_sha256`、`localization_epoch` | 地图身份与定位代次，必须存在，随快照保存 |
+
+该端点当前未提供机器人序列号；大脑绑定配置指定的 NX URL，保留地图、定位代次与源 topic，不凭空补造序列号。相机若返回机器人／服务身份则原样保存。缺字段、过期或 HTTP 不可达明确失败，不回退到目标点、旧命令 `final_xyt` 或零坐标。客户端只读，不发导航目标、不初始化定位、不调用 Arm／Approve。
+
+2026-11-18 方案核对时，从工作站只读 GET 实际收到 `accepted_pose=[0.11069490144689435, 0.29440158050477266, -2.8837122895928493]`，`frame_id=map`、初始化为真、质量失败列表为空、`source_timing_fresh=true`，接收年龄约 0.052 秒。它只证明当次原接口读取可用；随后同日的示教客户端与真实相机已在隔离实例完成闭环，结果及正式部署边界见[示教记录](多端联调_开始示教.md#teaching-production-merge)；该证据不代表网页／真实麦克风已经验证。
+
 ### 5.4 `GET /total_scene_graph_latest.json`
 
 关系图至少能让大脑确认以下对象存在：

@@ -278,6 +278,7 @@ def status_from_record(record) -> dict:
         "command_unknown": bool((record or {}).get("command_unknown")),
         "phase": (record or {}).get("phase") or "",
         "selection": deepcopy((record or {}).get("selection")),
+        "waiting_input": (record or {}).get("waiting_input") or "",
         "recovery_advice": advice,
         "recovery_policy": deepcopy((record or {}).get("recovery_policy")),
         "recovery_observation": deepcopy((record or {}).get("recovery_observation")),
@@ -829,6 +830,24 @@ class TaskRuntime:
             self.record["dispatch_closed"] = False
             self.record["control_request"] = ""
             self._save("human_continue")
+
+    def accept_input(self, name):
+        """Persist an input on this task, including one arriving during planning."""
+        with self._exclusive():
+            self._reload_locked()
+            if self.state not in {'running', 'verifying', 'waiting_human'}:
+                raise Rejected('当前任务状态不能接收结束信号')
+            if self.record.get('plan_ready') and name not in {step.wait_for for step in self.phases}:
+                raise Rejected('当前计划没有对应的等待条件')
+            inputs = self.record.setdefault('input_events', {})
+            if inputs.get(name):
+                return {'no_op': True}
+            inputs[name] = True
+            if self.state == 'waiting_human' and self.record.get('waiting_input') == name:
+                self.apply('human_continue')
+                self.record.update(waiting_input='', blocked_reason='', dispatch_closed=False)
+            self._save('input_received')
+            return {'no_op': False}
 
     def _clear_cancel_locked(self):
         """Abandon brain orchestration only; never manufacture a remote stop receipt."""
@@ -1616,6 +1635,12 @@ class TaskRuntime:
                     self._save("drive_cursor")
                     if self._halted():
                         return self._stop_locked("drive_stopped")
+                    if step.wait_for and not (self.record.get('input_events') or {}).get(step.wait_for):
+                        self.record.update(waiting_input=step.wait_for, blocked_reason='等待输入：' + step.wait_for,
+                                           breakpoint_phase=step.step_id)
+                        self.apply('gate')
+                        self._save('waiting_input')
+                        return self.state
                     need_safe = False
                     need_handoff = ""
                     next_id = ""
@@ -1989,6 +2014,8 @@ class TaskRuntime:
                     "subtask": step.key,
                 },
             }
+        if step.parameters:
+            request['parameters'] = deepcopy(step.parameters)
         attempt_id = f"{step.step_id}-a{number}"
         previous = attempts[-1] if attempts else None
         contract = self._contract(step, attempt_id, command_id, request)

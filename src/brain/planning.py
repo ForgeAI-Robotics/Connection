@@ -12,6 +12,9 @@ class PlanningService:
 
     def plan(self, runtime, options):
         package = runtime.package_name
+        if package == 'teaching':
+            from brain.packages.teaching import plan
+            return plan(runtime.record['selection'])
         if package == 'generic' and runtime.record['execution_backend'] in {'body_real', 'body_simple'}:
             from brain.skills.body_plan import plan
             snapshot = runtime.record['selection']['body_capabilities']
