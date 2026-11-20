@@ -868,15 +868,15 @@ VLA 在创建命令前返回的 HTTP 409／HOLDING_STATE_CONFLICT 归为明确�
 
 `POST /publish_task` 要求 JSON 字段 `task` 为非空字符串。缺省时入口生成 `task_id`，并把 `refresh` 设为 true，然后原样转发到大脑 `POST /publish_task`。请求头固定为 `X-FQ-Source: voice`、`X-FQ-Via: voice`。空文本返回 400；大脑不可达返回 503。`GET /health` 只表示入口进程在听，不表示大脑已接受任务。
 
-大脑收到后的分类、预检、控制和执行与网页、飞书提交的同一段文字相同。NX 上的 `reception_voice.py` 仍向网页 `http://192.168.0.229:8888/publish_task` 发送任务，不经过本入口。
+大脑收到后的分类、预检、控制和执行与网页、飞书提交的同一段文字相同。NX 的 `/home/dev/reception_voice.py` 经网页入口转发，不经过独立 `:8890` 入口。2026-11-20 已对齐工作站维护的脚本；默认目标改为当前可达的 `http://192.168.31.144:8888/publish_task`，可通过 `DEPLOY_URL` 覆盖。旧 `192.168.0.229:8888` 在当次只读检查中超时。
 
-NX 脚本去掉空格和部分标点后，按「开始示教」「结束示教」「开始接待」的顺序做包含匹配，每段识别结果最多提交一次。「开始示教」的 `task` 保留完整 ASR 原文（包括空格和标点）；「结束示教」「开始接待」只提交相应关键词。仍保留音量门限、噪声误识别过滤及触发后 8 秒冷却。开始原句与结束关键词的转发逻辑已存在于工作站源码。隔离实例的真实双源快照闭环已通过；NX 同步及正式网页／真实麦克风验证本轮暂缓，源码合并不代表部署生效。
+NX 脚本去掉空格和部分标点后，按「开始示教」「结束示教」「开始接待」的顺序做包含匹配，每段识别结果最多提交一次。「开始示教」的 `task` 保留完整 ASR 原文（包括空格和标点）；「结束示教」「开始接待」只提交相应关键词。仍保留音量门限、噪声误识别过滤及触发后 8 秒冷却。2026-11-20 已同步 NX 脚本，三个触发词的离线转发检查通过。隔离实例的真实双源快照闭环已通过；当次未检测到 M260/XFM USB 麦克风，语音进程未启动；随后按用户授权重启正式大脑，开始／结束示教 SOP v2 已在目录加载，接待 v3 保留。正式网页提交／真实麦克风验收仍待硬件就绪，目录可达不等于完整链路已验收；最新状态见[开始示教部署进度](多端联调_开始示教.md#teaching-production-merge)。
 
 <a id="teaching-session-v1"></a>
 <a id="teaching-start-snapshot"></a>
 ### 示教起始快照 v2（2026-11-18，源码已合入）
 
-已将 `/home/fq/workspace/Connection-teaching` 中验证过的示教实现逐项合入 `/home/fq/workspace/Connection`。示教作为新增业务接入，无需专用模式开关；接待、观察、整理及通用规划保持原路径。单个 Runtime 仍一次接收一个活动任务，示教结束或取消后可直接提交其他业务。2026-11-18 隔离实例已完成真实位姿／头图的文本闭环；本轮因 G1 正在被使用，仅合并源码，正式实例尚未重载，网页／真实麦克风入口验证待现场空闲。参数 Prompt 位于 `TaskReasoner._select_teaching()`，两个 SOP 更新为 [teaching_session_v2.yaml](../src/brain/packages/definitions/teaching_session_v2.yaml)。本版开始时保存一次当前位姿和一张头部 JPEG，不持续录像；示教继续跳过自动时间线抓图和任务反思学习。
+已将 `/home/fq/workspace/Connection-teaching` 中验证过的示教实现逐项合入 `/home/fq/workspace/Connection`。示教作为新增业务接入，无需专用模式开关；接待、观察、整理及通用规划保持原路径。单个 Runtime 仍一次接收一个活动任务，示教结束或取消后可直接提交其他业务。2026-11-18 隔离实例已完成真实位姿／头图的文本闭环；11 月 18 日先合并源码，11 月 20 日已按用户授权重启正式实例并确认两个示教 SOP 加载；网页／真实麦克风输入验证仍待现场安排。参数 Prompt 位于 `TaskReasoner._select_teaching()`，两个 SOP 更新为 [teaching_session_v2.yaml](../src/brain/packages/definitions/teaching_session_v2.yaml)。本版开始时保存一次当前位姿和一张头部 JPEG，不持续录像；示教继续跳过自动时间线抓图和任务反思学习。
 
 开始沿用 `POST /publish_task`，例如 `{"task":"开始示教，这是第1次，流程名称是迎宾讲解。","task_id":"teaching-001"}`。模型仅提取 `{"intent":"start_teaching","index":1,"name":"迎宾讲解"}`；必须恰有这三个字段，`index` 为正整数，`name` 去除首尾空白后为 1–128 字。缺参、额外字段、否定／询问／冲突意图的 `clarify` 均不执行 SOP。任务先登记再解析，解析失败保留原任务并进入 `recovery_required`，不会读取传感器；没有多轮补参，可取消后重新提交完整口令。
 
@@ -886,7 +886,7 @@ NX 脚本去掉空格和部分标点后，按「开始示教」「结束示教�
 | 等待结束 | `state=waiting_human`、`waiting_input=finish_teaching`；保留起始快照，不持续采集，不作为异常请求模型建议 |
 | `teaching.finish` v2 | 收到结束信号后执行 `TEACHING_FINISHED`，核对原任务／参数／数据源和图片哈希，写入引用原快照的 `finish.json`，核验后才进入 `succeeded` |
 
-网页文本框的“结束示教”经意图识别后沿原 `/publish_task` 转发，并携带刚读取的 `target_task_id`；不会拼接不存在的 `/api/task_finish_teaching`，也不会被新任务占用检查拦下，后端仍核对原任务与示教包。
+任务网页的「开始示教」按钮打开表单，填写示教次数和流程名称后，按上述文本格式提交。大脑状态为 `waiting_human` 且 `waiting_input=finish_teaching` 时，同一按钮显示「结束示教」，并在提交前核对仍是刚才显示的示教任务。也可直接在任务文本框发送完整的开始指令或「结束示教」。两种结束方式均沿原 `/publish_task` 转发并携带 `target_task_id`，由大脑核对原任务与示教包。
 
 结束仍走 `POST /publish_task`：`{"task":"结束示教","target_task_id":"teaching-001"}`。原入口在新任务准入前将关键词转成 `finish_teaching` 控制，结束原任务，不生成第二个任务，不调用模型。`task_id` 是本次请求身份，不能代替 `target_task_id`；语音未带目标时仅在当前活动任务属于示教时绑定它，不操作接待或观察任务。无示教任务或显式目标已改变会拒绝；重复结束已完成任务返回 `no_op=true`。解析期间提前收到的结束信号保存在原 Runtime，计划建立后依次执行两个 SOP。重复开始不会覆盖活动会话；取消沿用原控制，本版不支持暂停、继续或跳步。
 

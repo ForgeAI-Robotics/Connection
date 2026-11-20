@@ -2,7 +2,7 @@
 
 在 G1 的 NX(Jetson Orin)上常驻运行,循环:录一段音 → 音量门限(VAD)滤掉静音/底噪 →
 qwen-omni 云 ASR 转文字 → "开始示教"转发原句,"结束示教"/"开始接待"转发关键词。
-部署 / 依赖 / 运维 / 为什么不用板载麦,见同目录 README.md。
+部署与联调说明见 docs/多端联调_开始示教.md。
 
 可选环境变量:
   DEPLOY_URL    大脑 deploy 的触发地址(默认见下;交接到别的机器要改成对应 deploy 机的 IP:8888)
@@ -12,7 +12,7 @@ qwen-omni 云 ASR 转文字 → "开始示教"转发原句,"结束示教"/"开�
 import os, json, base64, subprocess, urllib.request, time, wave, audioop
 
 # ---------------- 配置(换机器 / 调参改这里) ----------------
-DEPLOY = os.environ.get('DEPLOY_URL', 'http://192.168.0.229:8888/publish_task')  # 大脑 deploy 触发地址
+DEPLOY = os.environ.get('DEPLOY_URL', 'http://192.168.31.144:8888/publish_task')  # 大脑 deploy 触发地址
 KEY = open(os.path.expanduser(os.environ.get('VLM_KEY_FILE', '~/.vlm_key'))).read().strip()  # dashscope 兼容模式 key
 ASR_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions'
 ASR_MODEL = 'qwen3-omni-flash'   # sk-ws- 型 key 只能走兼容模式,音频只能用 omni 系列(不支持 paraformer 原生)

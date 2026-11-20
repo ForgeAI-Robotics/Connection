@@ -23,6 +23,12 @@
         .btn-sm { padding: 8px 14px; font-size: 13px; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+        .teaching-dialog { width: min(360px, calc(100% - 32px)); margin: auto; padding: 20px; color: #e2e8f0; }
+        .teaching-dialog::backdrop { background: #020617b3; }
+        .teaching-dialog form { display: grid; gap: 14px; }
+        .teaching-dialog label { display: grid; gap: 6px; font-size: 14px; }
+        .teaching-dialog h2 { margin: 0; }
+        .teaching-dialog .btn-row { justify-content: flex-end; }
         .result { margin-top: 14px; padding: 14px; background: #0f172a; border-radius: 8px; white-space: pre-wrap; font-size: 13px; font-family: inherit; line-height: 1.6; display: none; max-height: 180px; overflow-y: auto; }
         .status-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: center; font-size: 13px; color: #64748b; margin-bottom: 20px; }
         .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
@@ -78,6 +84,7 @@
                 <button id="task-start-nav" disabled class="btn btn-sm" style="background:#0369a1;color:#fff" title="与左侧同一接待流程：真实导航，开冰箱和抓可乐使用本地模拟，不执行真实操控" onclick="startReception('开始接待（导航真机＋操控模拟）')">🧭 开始接待（导航真机＋操控模拟）</button>
                 <button id="task-start-vla" disabled class="btn btn-sm" style="background:#0f766e;color:#fff" title="导航只模拟；确认现场作业姿态后，开冰箱和抓可乐真实执行" onclick="startReception('开始接待（导航模拟＋操控真机）')">🦾 开始接待（导航模拟＋操控真机）</button>
                 <button id="task-fridge-test" disabled class="btn btn-sm" style="background:#7c3aed;color:#fff" onclick="startReception('单独测试关冰箱')">单独测试关冰箱</button>
+                <button id="task-teaching" disabled class="btn btn-outline btn-sm" onclick="handleTeachingButton()">开始示教</button>
                 <button id="task-skip" disabled class="btn btn-sm" style="background:#f59e0b;color:#111" onclick="controlReception('skip')">跳过继续</button>
                 <button id="task-pause" disabled class="btn btn-sm" style="background:#64748b;color:#fff" onclick="controlReception('pause')">暂停</button>
                 <button id="task-continue" disabled class="btn btn-sm" style="background:#22c55e;color:#fff" onclick="controlReception('continue')">继续</button>
@@ -88,6 +95,22 @@
         </div>
 
     </div>
+
+    <dialog id="teaching-dialog" class="card teaching-dialog" aria-labelledby="teaching-dialog-title">
+        <form id="teaching-form" method="dialog">
+            <h2 id="teaching-dialog-title">开始示教</h2>
+            <label>示教次数
+                <input id="teaching-index" type="text" inputmode="numeric" pattern="[0-9]*[1-9][0-9]*" title="请输入正整数" value="1" required>
+            </label>
+            <label>流程名称
+                <input id="teaching-name" type="text" placeholder="例如：迎宾讲解" required autofocus>
+            </label>
+            <div class="btn-row">
+                <button class="btn btn-outline btn-sm" type="button" onclick="document.getElementById('teaching-dialog').close()">取消</button>
+                <button class="btn btn-primary btn-sm" type="submit">开始示教</button>
+            </div>
+        </form>
+    </dialog>
 
     <script>
         const TASK_LABELS = {{ task_labels|tojson }};
@@ -266,15 +289,22 @@
         }
 
 
+        function isWaitingForTeachingFinish(task) {
+            return task?.state === 'waiting_human' && task.waiting_input === 'finish_teaching';
+        }
+
         function updateTaskButtons() {
             const state = displayedTask?.state;
             const active = !!displayedTask?.task_id && !displayedTask.terminal;
             const ready = taskStatusKnown && !taskControlPending;
+            const teachingFinish = active && isWaitingForTeachingFinish(displayedTask);
+            document.getElementById('task-teaching').textContent = teachingFinish ? '结束示教' : '开始示教';
             const enabled = {
                 start: ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 'start-nav': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 'start-vla': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
                 'fridge-test': ready && !taskSubmitting && !active && !displayedTask?.blocks_new_motion && !displayedTask?.control_recovery?.blocked,
+                teaching: ready && !taskSubmitting && (teachingFinish || (!active && !displayedTask?.blocks_new_motion)),
                 skip: ready && active && !!displayedTask?.can_skip,
                 pause: ready && active && (['running', 'verifying'].includes(state)
                     || (state === 'waiting_human' && !!displayedTask?.vla_confirmation)),
@@ -288,6 +318,7 @@
                 const descriptions = {start: '同一接待流程；导航与操控均为真机', 'start-nav': '同一接待流程；导航真实，开门和抓可乐为模拟',
                     'start-vla': '同一接待流程；导航仅模拟，开门和抓可乐真实执行，需现场作业确认',
                     'fridge-test': '直接复用精调、关门和核验；不执行导航、抓取或运送',
+                    teaching: teachingFinish ? '归档当前示教任务' : '填写示教次数和流程名称',
                     pause: '暂停整轮流程，并请求停止当前动作', continue: '继续当前环节；未完成则重新下发一次指令',
                     skip: '放弃当前环节并进入下一步，不记为成功', cancel: displayedTask?.control_recovery?.enabled
                         ? '取消本轮任务并请求停止，取消后可重新发布'
@@ -298,7 +329,8 @@
         // 发布任务
         async function sendTask(options) {
             options = options || {};
-            const task = document.getElementById('task').value.trim();
+            const taskInput = document.getElementById('task');
+            const task = (options.task ?? taskInput.value).trim();
             if (!task || taskSubmitting) return;
             taskReceiptId = null;
             taskSubmitting = true;
@@ -332,7 +364,14 @@
                         return;
                     }
                 }
+                // An end button click must recheck the displayed task after any earlier poll.
+                if (options.targetTaskId && statusReadPending) await statusReadPending;
                 const st = await readTaskStatus();
+                if (options.targetTaskId && (st.task_id !== options.targetTaskId || !isWaitingForTeachingFinish(st))) {
+                    showTaskResponse(st, '示教任务状态已变化，请确认当前任务后再操作。');
+                    await refreshTaskStatus();
+                    return;
+                }
                 if (st.blocks_new_motion && !teachingFinish) {
                     showTaskResponse(st, '当前任务尚未结束，请先处理原任务。');
                     return;
@@ -379,12 +418,12 @@
             } catch (e) {
                 result.textContent = '请求失败: ' + e.message;
             } finally {
+                if (taskReceiptId) await refreshTaskStatus();
                 taskSubmitting = false;
                 updateTaskButtons();
                 btn.disabled = false;
                 btn.textContent = '发送';
-                document.getElementById('task').value = '';
-                if (taskReceiptId) await refreshTaskStatus();
+                if (options.task === undefined) taskInput.value = '';
             }
         }
         // 会议接待:一键触发(填"开始接待"→ master 命中接待 skill → 复用 task_status 显示 🧠+子任务✓)
@@ -392,6 +431,27 @@
             document.getElementById('task').value = text || '开始接待（导航真机＋操控真机）';
             sendTask({skipConfirm: true});
         }
+        function handleTeachingButton() {
+            if (document.getElementById('task-teaching').disabled) return;
+            if (isWaitingForTeachingFinish(displayedTask)) {
+                return sendTask({task: '结束示教', targetTaskId: displayedTask.task_id});
+            }
+            document.getElementById('teaching-dialog').showModal();
+        }
+        const teachingNameInput = document.getElementById('teaching-name');
+        teachingNameInput.addEventListener('input', () => teachingNameInput.setCustomValidity(''));
+        document.getElementById('teaching-form').addEventListener('submit', event => {
+            event.preventDefault();
+            const name = teachingNameInput.value.trim();
+            if (!name || [...name].length > 128) {
+                teachingNameInput.setCustomValidity('请填写 1–128 字的流程名称');
+                teachingNameInput.reportValidity();
+                return;
+            }
+            const index = document.getElementById('teaching-index').value.replace(/^0+/, '');
+            document.getElementById('teaching-dialog').close();
+            return sendTask({task: `开始示教，这是第${index}次，流程名称是${name}。`});
+        });
         async function controlReception(action) {
             if (taskControlPending || (action === 'continue' && pendingTaskControl)) return;
             taskReceiptId = null;
@@ -541,7 +601,8 @@
                 statusLabel = '已暂停';
                 statusCls = 'status-run';
             } else if (data.state === 'waiting_human') {
-                statusLabel = data.vla_confirmation?.auto_verification ? '自动核验中' : '等待人工';
+                statusLabel = isWaitingForTeachingFinish(data) ? '等待结束示教'
+                    : data.vla_confirmation?.auto_verification ? '自动核验中' : '等待人工';
                 statusCls = 'status-run';
             } else if (data.state === 'cancelling') {
                 statusLabel = '取消中，停止尚未核清';
